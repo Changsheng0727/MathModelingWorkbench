@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import os
 import re
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,6 +12,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
 from app.config import APP_ROOT
+from app.services.process_utils import describe_returncode, find_external_command, run_external_command
 
 
 DOCX_RELATIVE = "paper/main.docx"
@@ -25,9 +26,9 @@ EXTERNAL_PANDOC_REFERENCE_DOC = Path(r"E:\AI_MATHMODELING\dongSanShengB\B题\pan
 def export_word_document(root: Path) -> dict[str, Any]:
     """Export paper/main.tex to paper/main.docx.
 
-    Pandoc is preferred when available because it preserves more structure.
-    A python-docx fallback still creates an editable Word document when Pandoc
-    is missing or cannot parse the LaTeX source.
+    Pandoc is preferred when it is healthy. If Pandoc is missing or fails to
+    start inside the packaged app, python-docx still creates an editable Word
+    fallback and records the Pandoc failure in artifacts/word_export.log.
     """
     tex_path = root / "paper" / "main.tex"
     if not tex_path.exists():
@@ -38,7 +39,8 @@ def export_word_document(root: Path) -> dict[str, Any]:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     logs: list[str] = []
 
-    pandoc = shutil.which("pandoc")
+    pandoc, check_log = find_healthy_pandoc()
+    logs.append(check_log)
     if pandoc:
         result = run_pandoc(pandoc, tex_path, docx_path, default_pandoc_reference_doc())
         logs.append(result["log"])
@@ -62,8 +64,42 @@ def export_word_document(root: Path) -> dict[str, Any]:
     }
 
 
+def find_healthy_pandoc() -> tuple[str | None, str]:
+    pandoc = find_external_command("pandoc")
+    if not pandoc:
+        return None, "===== pandoc health check =====\n未找到 pandoc，转入 python-docx 兜底导出。"
+    try:
+        result = run_external_command(
+            [pandoc, "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return None, f"===== pandoc health check =====\nPandoc 启动超时：{pandoc}。已转入 python-docx 兜底导出。"
+    except Exception as exc:
+        return None, (
+            "===== pandoc health check =====\n"
+            f"Pandoc 无法启动：{pandoc}\n{type(exc).__name__}: {exc}\n"
+            "已转入 python-docx 兜底导出。"
+        )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or describe_returncode(result.returncode)
+        return None, (
+            "===== pandoc health check =====\n"
+            f"Pandoc 启动失败：{pandoc}\n{describe_returncode(result.returncode)}\n{detail}\n"
+            "已转入 python-docx 兜底导出。"
+        )
+    first_line = (result.stdout.strip().splitlines() or ["pandoc available"])[0]
+    return pandoc, f"===== pandoc health check =====\nPandoc 可用：{pandoc}\n{first_line}"
+
+
 def run_pandoc(pandoc: str, tex_path: Path, docx_path: Path, reference_doc: Path | None = None) -> dict[str, Any]:
-    resource_path = ".;..;../results;../artifacts"
+    docx_path.parent.mkdir(parents=True, exist_ok=True)
+    resource_path = os.pathsep.join([".", "..", "../results", "../artifacts"])
     temp_path = write_pandoc_friendly_tex(tex_path)
     command = [pandoc, temp_path.name, "-o", "main.docx", f"--resource-path={resource_path}"]
     reference_note = "未配置 Pandoc reference-doc。"
@@ -73,8 +109,9 @@ def run_pandoc(pandoc: str, tex_path: Path, docx_path: Path, reference_doc: Path
             reference_note = f"已使用 Pandoc reference-doc：{reference_doc}"
         else:
             reference_note = f"Pandoc reference-doc 不存在，未使用模板：{reference_doc}"
+
     try:
-        result = subprocess.run(
+        result = run_external_command(
             command,
             cwd=tex_path.parent,
             capture_output=True,
@@ -84,17 +121,34 @@ def run_pandoc(pandoc: str, tex_path: Path, docx_path: Path, reference_doc: Path
             timeout=180,
             check=False,
         )
+        success = result.returncode == 0 and docx_path.exists()
+        stdout = result.stdout
+        stderr = result.stderr or ("" if success else describe_returncode(result.returncode))
+    except subprocess.TimeoutExpired as exc:
+        success = False
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or f"Pandoc timeout after {exc.timeout} seconds"
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+    except Exception as exc:
+        success = False
+        stdout = ""
+        stderr = f"{type(exc).__name__}: {exc}"
     finally:
         temp_path.unlink(missing_ok=True)
-    success = result.returncode == 0 and docx_path.exists()
+
     return {
         "success": success,
         "log": "===== pandoc tex to docx =====\n"
         + reference_note
-        + "\n"
-        + result.stdout
-        + "\n"
-        + result.stderr
+        + "\ncommand="
+        + " ".join(map(str, command))
+        + "\n===== STDOUT =====\n"
+        + stdout
+        + "\n===== STDERR =====\n"
+        + stderr
         + ("\nPandoc 导出成功。" if success else "\nPandoc 导出失败，转入 python-docx 兜底导出。"),
     }
 
@@ -401,10 +455,10 @@ def clean_latex_text(text: str, keep_commands: bool = False) -> str:
     text = text.replace(r"\%", "%").replace(r"\&", "&").replace(r"\_", "_")
     text = text.replace(r"\#", "#").replace(r"\$", "$").replace(r"\{", "{").replace(r"\}", "}")
     replacements = {
-        r"\times": "×",
-        r"\cdot": "·",
-        r"\leq": "≤",
-        r"\geq": "≥",
+        r"\times": "x",
+        r"\cdot": ".",
+        r"\leq": "<=",
+        r"\geq": ">=",
         r"\alpha": "alpha",
         r"\beta": "beta",
         r"\gamma": "gamma",

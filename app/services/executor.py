@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from app.config import DATA_ROOT
+from app.services.process_utils import describe_returncode, find_external_command, run_external_command
 
 
 def python_script_command(script_path: Path) -> list[str]:
@@ -43,33 +43,41 @@ def detect_environments() -> dict[str, Any]:
 
 
 def detect_command(version_cmd: list[str], health_cmd: list[str] | None = None) -> dict[str, Any]:
-    executable = shutil.which(version_cmd[0])
+    executable = find_external_command(version_cmd[0])
     if not executable:
-        return {"available": False, "reason": f"未找到 {version_cmd[0]}"}
-    version = subprocess.run(
-        version_cmd,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=10,
-        check=False,
-    )
-    available = version.returncode == 0
-    reason = version.stdout.strip() or version.stderr.strip()
-    if health_cmd and available:
-        health = subprocess.run(
-            health_cmd,
+        return {"available": False, "reason": f"{version_cmd[0]} not found"}
+    try:
+        version = run_external_command(
+            [executable, *version_cmd[1:]],
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=15,
+            timeout=10,
             check=False,
         )
+    except Exception as exc:
+        return {"available": False, "executable": executable, "reason": f"{type(exc).__name__}: {exc}"}
+
+    available = version.returncode == 0
+    reason = version.stdout.strip() or version.stderr.strip() or describe_returncode(version.returncode)
+    if health_cmd and available:
+        try:
+            health_executable = find_external_command(health_cmd[0]) or health_cmd[0]
+            health = run_external_command(
+                [health_executable, *health_cmd[1:]],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+                check=False,
+            )
+        except Exception as exc:
+            return {"available": False, "executable": executable, "detail": f"{type(exc).__name__}: {exc}"}
         available = health.returncode == 0
         if not available:
-            reason = health.stderr.strip() or health.stdout.strip() or reason
+            reason = health.stderr.strip() or health.stdout.strip() or describe_returncode(health.returncode)
     return {"available": available, "executable": executable, "detail": reason}
 
 
@@ -89,7 +97,7 @@ def load_dependency_install_status() -> dict[str, Any]:
 def run_python_script(root: Path, script_relative: str, log_relative: str, timeout: int = 240) -> dict[str, Any]:
     script_path = (root / script_relative).resolve()
     if root.resolve() not in script_path.parents and script_path != root.resolve():
-        raise ValueError("脚本路径不在项目目录内")
+        raise ValueError("script path is outside the project directory")
     if not script_path.exists():
         raise FileNotFoundError(script_relative)
 
@@ -118,7 +126,7 @@ def run_python_script(root: Path, script_relative: str, log_relative: str, timeo
                 [
                     "executor=local_python",
                     f"python={sys.executable}",
-                    f"returncode=timeout",
+                    "returncode=timeout",
                     f"timeout_seconds={timeout}",
                     "===== STDOUT =====",
                     stdout,

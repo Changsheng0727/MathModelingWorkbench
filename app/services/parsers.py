@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import csv
 import re
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 from docx import Document
 from openpyxl import load_workbook
+
+from app.services.process_utils import find_external_command, run_external_command
 
 
 TEXT_EXTENSIONS = {".txt", ".md"}
@@ -72,10 +72,10 @@ def extract_document_text(path: Path) -> str:
 
 
 def extract_pdf_text(path: Path) -> str:
-    pdftotext = shutil.which("pdftotext")
+    pdftotext = find_external_command("pdftotext")
     if not pdftotext:
         return "[未找到 pdftotext，无法解析 PDF 文本]"
-    result = subprocess.run(
+    result = run_external_command(
         [pdftotext, "-layout", "-enc", "UTF-8", str(path), "-"],
         capture_output=True,
         text=True,
@@ -99,10 +99,10 @@ def extract_docx_text(path: Path) -> str:
 
 
 def extract_legacy_doc_text(path: Path) -> str:
-    pandoc = shutil.which("pandoc")
+    pandoc = find_external_command("pandoc")
     if not pandoc:
         return "[未找到 pandoc，无法解析旧版 DOC 文本]"
-    result = subprocess.run(
+    result = run_external_command(
         [pandoc, str(path), "-t", "plain"],
         capture_output=True,
         text=True,

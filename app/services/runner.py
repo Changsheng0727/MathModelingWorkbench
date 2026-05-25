@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from app.services.docx_export import export_word_document
+from app.services.process_utils import find_external_command, run_external_command
 
 
 def compile_latex(root: Path) -> dict[str, Any]:
@@ -13,14 +12,14 @@ def compile_latex(root: Path) -> dict[str, Any]:
     tex_file = tex_dir / "main.tex"
     if not tex_file.exists():
         raise FileNotFoundError("paper/main.tex 不存在")
-    xelatex = shutil.which("xelatex")
+    xelatex = find_external_command("xelatex")
     if not xelatex:
         raise FileNotFoundError("未找到 xelatex")
 
     logs = []
     success = True
     for index in range(2):
-        result = subprocess.run(
+        result = run_external_command(
             [xelatex, "-interaction=nonstopmode", "-halt-on-error", "main.tex"],
             cwd=tex_dir,
             capture_output=True,

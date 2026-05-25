@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
-import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.services.process_utils import find_external_command, run_external_command
 from app.services.templates import DEFAULT_TEMPLATE_ID, get_template
 
 
@@ -1050,10 +1049,10 @@ def load_json_if_exists(path: Path) -> dict[str, Any]:
 def read_pdf_info(pdf_path: Path) -> dict[str, str]:
     if not pdf_path.exists():
         return {}
-    pdfinfo = shutil.which("pdfinfo")
+    pdfinfo = find_external_command("pdfinfo")
     if pdfinfo:
         try:
-            result = subprocess.run(
+            result = run_external_command(
                 [pdfinfo, str(pdf_path)],
                 capture_output=True,
                 text=True,

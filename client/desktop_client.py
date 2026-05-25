@@ -124,8 +124,13 @@ def start_dependency_bootstrap(root: Path) -> None:
         str(log_path),
     ]
     try:
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        subprocess.Popen(command, cwd=root, creationflags=creationflags)
+        try:
+            from app.services.process_utils import popen_external_command
+
+            popen_external_command(command, cwd=root)
+        except Exception:
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            subprocess.Popen(command, cwd=root, creationflags=creationflags)
         log_client_event("dependency bootstrap started")
     except Exception:
         log_client_event("dependency bootstrap failed:\n" + traceback.format_exc())
