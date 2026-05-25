@@ -13,9 +13,39 @@ $setupPath = Join-Path $releaseDir "$appName-Setup.exe"
 $sedPath = Join-Path $releaseDir "$appName-Setup.sed"
 $pandocReferenceSource = "E:\AI_MATHMODELING\dongSanShengB\B题\pandoc模板.docx"
 $pandocReferenceDest = Join-Path $root "app\resources\pandoc_reference.docx"
+$frontendDir = Join-Path $root "frontend"
 
 Write-Host "==> Installing desktop build dependencies"
 python -m pip install -r (Join-Path $root "requirements-desktop.txt")
+
+if (Test-Path (Join-Path $frontendDir "package.json")) {
+  Write-Host "==> Building Next.js frontend"
+  $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+  if (-not $npm) {
+    $npm = Get-Command npm -ErrorAction SilentlyContinue
+  }
+  if (-not $npm) {
+    throw "Node.js/npm is required to build the Next.js frontend. Install Node.js 22+ and retry."
+  }
+  $npmPath = if ($npm.Path) { $npm.Path } else { $npm.Source }
+  Push-Location $frontendDir
+  try {
+    if (Test-Path (Join-Path $frontendDir "package-lock.json")) {
+      & $npmPath ci
+    } else {
+      & $npmPath install
+    }
+    if ($LASTEXITCODE -ne 0) {
+      throw "npm dependency installation failed with exit code $LASTEXITCODE"
+    }
+    & $npmPath run build
+    if ($LASTEXITCODE -ne 0) {
+      throw "Next.js frontend build failed with exit code $LASTEXITCODE"
+    }
+  } finally {
+    Pop-Location
+  }
+}
 
 Write-Host "==> Bundling Pandoc Word reference template"
 New-Item -ItemType Directory -Force (Split-Path -Parent $pandocReferenceDest) | Out-Null

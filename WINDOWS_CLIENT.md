@@ -59,6 +59,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows-installer.ps
 
 脚本会自动安装桌面端构建依赖，使用 PyInstaller 打包客户端，并生成安装包和便携版压缩包。
 
+从 Next.js 前端版本开始，构建安装包的机器还需要安装 Node.js/npm。打包脚本会自动进入 `frontend/` 安装前端依赖、构建静态页面，并把产物同步到 `app/static/`；最终安装后的用户电脑不需要 Node.js。
+
 ## 当前边界
 
 客户端已经内置 Python 后端、前端页面、常用数据分析库、自动解题脚本执行入口以及 Word 导出所用的 Pandoc reference docx 模板。PDF 编译、Word 转换等能力仍依赖本机可用的 LaTeX、Pandoc 或相关办公文档工具；客户端会尝试自动检测并用 `winget` 安装缺失依赖，但若目标用户电脑没有 `winget`、网络受限或安装器需要人工确认，仍可能需要手动安装。

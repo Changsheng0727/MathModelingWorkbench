@@ -68,6 +68,20 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 http://127.0.0.1:8765
 ```
 
+## 前端
+
+前端源码已迁移到 `frontend/`，使用 Next.js 静态导出。构建后产物会同步到 `app/static/`，仍由 FastAPI 或 Rust 后端通过 `/` 与 `/static/...` 托管，因此桌面客户端和本地 Web 入口保持兼容，不需要额外启动 Node 服务。
+
+开发或重新生成静态前端：
+
+```powershell
+cd E:\AI_MATHMODELING\ModelingWorkbench\frontend
+npm install
+npm run build
+```
+
+Windows 安装包构建脚本会自动执行 Next.js 前端构建。构建机器需要安装 Node.js/npm；最终用户运行已打包的 `.exe` 不需要安装 Node.js。
+
 ## 桌面客户端
 
 如果希望像普通 Windows 客户端一样启动，可以运行：
@@ -164,5 +178,4 @@ LLM 参与节点会生成以下文件：
 
 - 扩展面向具体题型的模型代码生成，例如整数规划、聚类评价、多指标评价和仿真模型。
 - 继续增强 LaTeX 回填质量，例如自动生成摘要最终版、图表交叉引用审查和更细的敏感性分析。
-- 将静态前端替换为 Next.js。
 - 增加人工确认节点、联网数据源确认和多 Agent 并发任务。
