@@ -82,7 +82,7 @@ def build_code_graph(root: Path) -> dict[str, Any]:
             "parsed": False,
         }
         try:
-            source = path.read_text(encoding="utf-8", errors="replace")
+            source = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError as exc:
             parse_errors.append({"path": relative, "error": f"{type(exc).__name__}: {exc}"})
             files.append(file_info)
