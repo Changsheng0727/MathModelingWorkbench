@@ -13,7 +13,7 @@ from app.services.store import save_json
 
 ANALYSIS_PROGRESS_RELATIVE = "artifacts/analysis_progress.json"
 GLOBAL_ANALYSIS_PROGRESS_ROOT = DATA_ROOT / "client" / "analysis_progress"
-TOTAL_ANALYSIS_STEPS = 7
+TOTAL_ANALYSIS_STEPS = 8
 
 
 class AnalysisProgress:

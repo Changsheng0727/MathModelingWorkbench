@@ -31,6 +31,7 @@ from app.services.llm_assistant import (
     run_baseline_llm_review,
     run_full_llm_refresh,
     run_custom_model_assistance,
+    run_problem_structure_enhancement,
     run_problem_llm_analysis,
     run_specialized_llm_review,
 )
@@ -364,6 +365,43 @@ def analyze_project_materials(root: Path, meta: dict, progress: AnalysisProgress
             "success",
             f"识别到 {len(analysis.get('problems', []))} 个候选题；当前推荐 {recommended.get('id', '-')} 题：{recommended.get('title', '')}",
         )
+
+    llm_configured = bool(get_llm_settings().get("configured"))
+    if llm_configured:
+        if progress:
+            progress.start_step(
+                "llm_structure_analysis",
+                "LLM 读取题面与附件",
+                "正在让大模型读取题面文本、附件路径、数据表字段和样例，补全子问题与附件映射。",
+            )
+        try:
+            with bind_llm_stream(root, "upload_analysis", "上传后赛题结构识别大模型直播", "正在读取题面和附件结构，修正选题分析。"):
+                analysis, structure_artifacts, structure_payload = run_problem_structure_enhancement(root, analysis, docs, inventory)
+            analysis["project"] = {k: v for k, v in meta.items() if k != "root"}
+            analysis["inventory"] = inventory
+            attach_artifacts_safely(meta, structure_artifacts)
+            meta["llm_structure_status"] = "success" if structure_payload.get("success") else "warning"
+            if progress:
+                recommended = analysis.get("recommended_problem", {}) or {}
+                detail = (
+                    f"LLM 已增强赛题结构：识别 {len(analysis.get('problems', []))} 个候选题，"
+                    f"推荐 {recommended.get('id', '-')} 题；子问题与附件映射已写回 analysis.json。"
+                    if structure_payload.get("success")
+                    else f"LLM 结构增强未完成，已保留规则解析：{structure_payload.get('error', '')}"
+                )
+                progress.finish_step("success" if structure_payload.get("success") else "warning", detail)
+        except Exception as exc:
+            meta["llm_structure_status"] = "failed"
+            meta["llm_structure_error"] = f"{type(exc).__name__}: {exc}"
+            if progress:
+                progress.finish_step("warning", f"LLM 结构增强失败，已保留规则解析：{meta['llm_structure_error']}")
+    else:
+        meta["llm_structure_status"] = "requires_api_key"
+        if progress:
+            progress.start_step("llm_structure_analysis", "LLM 读取题面与附件", "未配置 API Key，跳过 LLM 结构增强。")
+            progress.finish_step("warning", "未配置 API Key，子问题与附件映射暂使用本地规则解析。")
+
+    if progress:
         progress.start_step("write_artifacts", "生成分析报告与论文骨架", "正在写入 analysis.json、分析报告、论文提纲、模型方案和 LaTeX 骨架。")
 
     artifacts = write_artifacts(root, analysis)
@@ -371,7 +409,7 @@ def analyze_project_materials(root: Path, meta: dict, progress: AnalysisProgress
     if progress:
         progress.finish_step("success", "分析报告、论文提纲、模型方案和 LaTeX 骨架已生成。")
 
-    if get_llm_settings().get("configured"):
+    if llm_configured:
         if progress:
             progress.start_step("llm_problem_analysis", "LLM 补充赛题分析", "正在调用大模型复盘选题、建模路线和风险点。")
         try:

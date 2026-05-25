@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from app.services.analyzer import build_workflow, choose_problem, clean_question, normalize_problem_id, score_problem
 from app.services.llm_settings import get_llm_settings, get_private_llm_config
 from app.services.llm_stream import active_llm_stream, bind_llm_stream
 from app.services.model_research import search_model_references
@@ -36,6 +37,59 @@ def run_problem_llm_analysis(root: Path, analysis: dict[str, Any]) -> dict[str, 
         json_relative="artifacts/llm_problem_analysis.json",
         title="LLM 赛题分析与题解工作流建议",
     )
+
+
+def run_problem_structure_enhancement(
+    root: Path,
+    analysis: dict[str, Any],
+    docs: list[dict[str, str]],
+    inventory: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, str], dict[str, Any]]:
+    """Ask the LLM to repair problem/task/data mapping before selection.
+
+    This stage is intentionally non-fatal: upload analysis should still succeed
+    with the rule-based parser if the LLM is unavailable, malformed, or too
+    conservative.
+    """
+    settings = get_llm_settings()
+    payload: dict[str, Any] = {
+        "stage": "problem_structure",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "settings": {k: settings.get(k) for k in ["provider", "configured", "source", "masked_api_key", "base_url", "model"]},
+        "success": False,
+        "content": "",
+        "parsed": {},
+        "error": "",
+    }
+    md_relative = "artifacts/llm_problem_structure.md"
+    json_relative = "artifacts/llm_problem_structure.json"
+    enhanced = analysis
+    try:
+        prompt = build_problem_structure_prompt(analysis, docs, inventory)
+        content = call_chat_completion(prompt, stream_label="LLM 读取题面和附件结构")
+        parsed = extract_json_object(content)
+        enhanced = merge_problem_structure(analysis, parsed, inventory, docs)
+        payload.update(
+            {
+                "success": True,
+                "content": content,
+                "parsed": parsed,
+                "enhancement_summary": {
+                    "problem_count": len(enhanced.get("problems", []) or []),
+                    "recommended_problem_id": (enhanced.get("recommended_problem") or {}).get("id"),
+                    "source": "rules+llm",
+                },
+            }
+        )
+    except Exception as exc:
+        payload["error"] = f"{type(exc).__name__}: {exc}"
+
+    md_path = root / md_relative
+    json_path = root / json_relative
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text(render_problem_structure_markdown(payload), encoding="utf-8")
+    save_json(json_path, payload)
+    return enhanced, {"llm_problem_structure": md_relative, "llm_problem_structure_json": json_relative}, payload
 
 
 def run_baseline_llm_review(root: Path, analysis: dict[str, Any], modeling_result: dict[str, Any]) -> dict[str, str]:
@@ -528,6 +582,396 @@ def build_problem_prompt(analysis: dict[str, Any]) -> str:
 {json.dumps(compact, ensure_ascii=False, indent=2)}
 ```
 """
+
+
+def build_problem_structure_prompt(
+    analysis: dict[str, Any],
+    docs: list[dict[str, str]],
+    inventory: list[dict[str, Any]],
+) -> str:
+    context = {
+        "rule_analysis": compact_analysis(analysis),
+        "documents": compact_documents_for_structure(docs),
+        "materials": compact_inventory_for_structure(inventory),
+    }
+    return f"""请读取下面的数学建模赛题材料上下文，修正软件自动识别出的候选题、子问题和附件数据映射。
+
+你必须只根据输入中的题面文本、文件路径、数据表 schema 和样例判断，不要编造不存在的附件、题号、字段或数值。
+如果某个题目的子问题在题面中没有明确写出，请不要硬凑；可以写出最接近的任务概括，并在 evidence 中说明依据。
+
+请只输出一个 JSON 对象，不要输出 Markdown，不要使用代码围栏。JSON 结构如下：
+
+{{
+  "problems": [
+    {{
+      "id": "A",
+      "title": "题目标题",
+      "document": "题面文件相对路径",
+      "tasks": ["问题1原文或准确改写", "问题2原文或准确改写"],
+      "data_files": [
+        {{"path": "附件相对路径", "reason": "为什么属于该题或该子问题"}}
+      ],
+      "model_types": ["预测", "优化"],
+      "suggested_methods": ["时间序列预测", "整数规划"],
+      "risk_items": ["需要外部数据源确认"],
+      "evidence": "引用题面中的关键信号，简短说明"
+    }}
+  ],
+  "recommended_problem_id": "B",
+  "selection_reason": "推荐该题的依据，必须同时考虑数据条件、子问题清晰度、代码求解可行性和论文可写性",
+  "notes": "对规则识别结果的修正说明"
+}}
+
+要求：
+1. problems 必须覆盖输入材料中能识别到的 A/B/C/D/E 等候选题。
+2. tasks 要尽量还原题面中的“问题1/问题2/...”或英文 Problem/Question 子问题，不要只写泛泛的“建模分析”。
+3. data_files 只能使用 materials 中真实存在的 path；如果附件通用于全部题目，可以映射给相关题并说明。
+4. recommended_problem_id 必须来自 problems 中的 id；如果无法判断，选择数据最清楚、子问题最完整的一题。
+5. 不要给出未计算的具体结果数值。
+
+输入上下文 JSON：
+{json.dumps(context, ensure_ascii=False, indent=2)}
+"""
+
+
+def compact_documents_for_structure(docs: list[dict[str, str]], total_limit: int = 70000) -> list[dict[str, Any]]:
+    ranked = sorted(docs, key=document_structure_rank, reverse=True)
+    result: list[dict[str, Any]] = []
+    remaining = total_limit
+    for doc in ranked[:10]:
+        if remaining <= 800:
+            break
+        text = re.sub(r"\s+", "\n", doc.get("text", "")).strip()
+        per_doc_limit = min(18000, max(1200, remaining // max(1, min(4, len(ranked)))))
+        snippet = text[:per_doc_limit]
+        remaining -= len(snippet)
+        result.append(
+            {
+                "path": doc.get("path", ""),
+                "name": doc.get("name", ""),
+                "char_count": len(doc.get("text", "")),
+                "text": snippet,
+            }
+        )
+    return result
+
+
+def document_structure_rank(doc: dict[str, str]) -> int:
+    name = doc.get("name", "")
+    text = doc.get("text", "")
+    score = min(len(text), 20000)
+    if normalize_problem_id(name + "\n" + text[:800]):
+        score += 30000
+    if re.search(r"问题\s*[一二三四五六七八九十\d]+|Problem\s*\d+|Question\s*\d+", text, flags=re.IGNORECASE):
+        score += 20000
+    if any(word in name for word in ["格式", "承诺", "提交", "说明"]):
+        score -= 15000
+    if re.search(r"[\u4e00-\u9fff]", text[:3000]):
+        score += 5000
+    return score
+
+
+def compact_inventory_for_structure(inventory: list[dict[str, Any]], limit: int = 160) -> list[dict[str, Any]]:
+    result = []
+    for item in inventory[:limit]:
+        record = {
+            "path": item.get("path"),
+            "name": item.get("name"),
+            "kind": item.get("kind"),
+            "suffix": item.get("suffix"),
+            "size": item.get("size"),
+        }
+        if item.get("kind") == "data":
+            record["schema"] = compact_schema_for_structure(item.get("schema") or {})
+        elif item.get("kind") == "document":
+            record["text_preview"] = item.get("text_preview", "")
+            record["char_count"] = item.get("char_count", 0)
+        result.append(record)
+    return result
+
+
+def compact_schema_for_structure(schema: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return {}
+    if schema.get("type") == "csv":
+        return {
+            "type": "csv",
+            "rows": schema.get("rows"),
+            "cols": schema.get("cols"),
+            "columns": (schema.get("columns") or [])[:30],
+            "sample": (schema.get("sample") or [])[:2],
+            "error": schema.get("error", ""),
+        }
+    if schema.get("type") == "excel":
+        sheets = []
+        for sheet in (schema.get("sheets") or [])[:12]:
+            sheets.append(
+                {
+                    "name": sheet.get("name"),
+                    "rows": sheet.get("rows"),
+                    "cols": sheet.get("cols"),
+                    "columns": (sheet.get("columns") or [])[:30],
+                }
+            )
+        return {"type": "excel", "sheets": sheets, "error": schema.get("error", "")}
+    return {key: schema.get(key) for key in ["type", "error"] if key in schema}
+
+
+def extract_json_object(content: str) -> dict[str, Any]:
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        payload = json.loads(text[start : end + 1])
+    if not isinstance(payload, dict):
+        raise ValueError("LLM 结构化结果不是 JSON 对象")
+    return payload
+
+
+def merge_problem_structure(
+    analysis: dict[str, Any],
+    parsed: dict[str, Any],
+    inventory: list[dict[str, Any]],
+    docs: list[dict[str, str]],
+) -> dict[str, Any]:
+    llm_problems = parsed.get("problems")
+    if not isinstance(llm_problems, list) or not llm_problems:
+        raise ValueError("LLM 未返回 problems 列表")
+
+    old_problems = {str(item.get("id", "")).upper(): item for item in analysis.get("problems", []) or []}
+    path_index = {normalize_path_key(item.get("path", "")): item for item in inventory}
+    format_notes = (analysis.get("contest_summary") or {}).get("format_notes", {})
+    enhanced_problems: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for item in llm_problems:
+        if not isinstance(item, dict):
+            continue
+        pid = normalize_llm_problem_id(item.get("id") or item.get("problem_id") or item.get("label"))
+        if not pid:
+            continue
+        seen.add(pid)
+        previous = dict(old_problems.get(pid) or {})
+        tasks = normalize_llm_tasks(item.get("tasks") or item.get("subproblems") or item.get("questions"))
+        data_files = match_llm_data_files(item.get("data_files") or item.get("attachments") or [], inventory, path_index)
+        if not data_files and previous.get("data_files"):
+            data_files = previous.get("data_files") or []
+        problem = {
+            **previous,
+            "id": pid,
+            "title": clean_inline_text(item.get("title") or previous.get("title") or f"{pid} 题", 260),
+            "document": clean_inline_text(item.get("document") or previous.get("document") or infer_document_for_problem(pid, docs), 260),
+            "tasks": tasks or previous.get("tasks", []),
+            "data_files": data_files,
+            "llm_enhanced": True,
+            "llm_evidence": clean_inline_text(item.get("evidence") or item.get("selection_evidence") or "", 500),
+            "llm_data_evidence": collect_llm_data_evidence(item.get("data_files") or item.get("attachments") or []),
+        }
+        problem["task_count"] = len(problem.get("tasks") or [])
+        problem["data_file_count"] = len(problem.get("data_files") or [])
+        scored = score_problem(problem, format_notes, source_text=problem_scoring_text(problem, item))
+        problem.update(scored)
+        problem["model_types"] = merge_unique(problem.get("model_types"), item.get("model_types"))
+        problem["suggested_methods"] = merge_unique(problem.get("suggested_methods"), item.get("suggested_methods"))
+        problem["risk_items"] = merge_unique(problem.get("risk_items"), item.get("risk_items"))
+        enhanced_problems.append(problem)
+
+    for pid, problem in old_problems.items():
+        if pid and pid not in seen:
+            enhanced_problems.append(problem)
+
+    if not enhanced_problems:
+        raise ValueError("LLM 返回的问题均无法匹配题号")
+
+    recommended_id = normalize_llm_problem_id(parsed.get("recommended_problem_id") or parsed.get("recommended_id"))
+    recommended = next((item for item in enhanced_problems if item.get("id") == recommended_id), None)
+    if not recommended:
+        recommended = choose_problem(enhanced_problems)
+
+    enhanced = dict(analysis)
+    enhanced["problems"] = enhanced_problems
+    enhanced["rule_recommended_problem"] = analysis.get("recommended_problem", {})
+    enhanced["llm_recommended_problem"] = {
+        "id": recommended.get("id", ""),
+        "title": recommended.get("title", ""),
+        "selection_reason": clean_inline_text(parsed.get("selection_reason") or "", 800),
+    }
+    enhanced["recommended_problem"] = dict(recommended)
+    enhanced["workflow"] = build_workflow(recommended, enhanced_problems)
+    contest_summary = dict(enhanced.get("contest_summary") or {})
+    contest_summary["analysis_source"] = "rules+llm"
+    contest_summary["llm_structure_status"] = "success"
+    contest_summary["llm_structure_notes"] = clean_inline_text(parsed.get("notes") or parsed.get("selection_reason") or "", 800)
+    enhanced["contest_summary"] = contest_summary
+    return enhanced
+
+
+def normalize_llm_problem_id(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    pid = normalize_problem_id(text)
+    if pid:
+        return pid
+    match = re.search(r"[A-EＡ-Ｅ]", text, flags=re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(0).upper().translate(str.maketrans({"Ａ": "A", "Ｂ": "B", "Ｃ": "C", "Ｄ": "D", "Ｅ": "E"}))
+
+
+def normalize_llm_tasks(value: Any) -> list[str]:
+    if isinstance(value, str):
+        raw_items = re.split(r"\n+|(?=问题\s*[一二三四五六七八九十\d]+[：:])|(?=(?:Problem|Question)\s*\d+[:.])", value)
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raw_items = []
+    tasks: list[str] = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("task") or item.get("question") or item.get("content") or item.get("description") or ""
+            prefix = item.get("id") or item.get("index") or item.get("label")
+            if prefix and not str(text).strip().startswith(("问题", "Problem", "Question")):
+                text = f"问题{prefix}：{text}"
+        else:
+            text = str(item or "")
+        text = clean_question(text)
+        if len(text) >= 8 and text not in tasks:
+            tasks.append(text)
+    return tasks[:10]
+
+
+def match_llm_data_files(value: Any, inventory: list[dict[str, Any]], path_index: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    raw_items = value if isinstance(value, list) else [value] if value else []
+    matched: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        path = ""
+        reason = ""
+        if isinstance(item, dict):
+            path = str(item.get("path") or item.get("file") or item.get("name") or "")
+            reason = str(item.get("reason") or item.get("evidence") or "")
+        else:
+            path = str(item or "")
+        record = find_inventory_record(path, inventory, path_index)
+        if not record or record.get("kind") != "data":
+            continue
+        key = normalize_path_key(record.get("path", ""))
+        if key in seen:
+            continue
+        copied = dict(record)
+        if reason:
+            copied["llm_mapping_reason"] = clean_inline_text(reason, 300)
+        matched.append(copied)
+        seen.add(key)
+    return matched
+
+
+def find_inventory_record(path: str, inventory: list[dict[str, Any]], path_index: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    key = normalize_path_key(path)
+    if key in path_index:
+        return path_index[key]
+    name = Path(str(path)).name.lower()
+    candidates = []
+    for record in inventory:
+        record_path = str(record.get("path", ""))
+        record_name = str(record.get("name", ""))
+        if name and name == record_name.lower():
+            candidates.append(record)
+        elif key and (key in normalize_path_key(record_path) or normalize_path_key(record_path) in key):
+            candidates.append(record)
+    return candidates[0] if candidates else None
+
+
+def normalize_path_key(path: str) -> str:
+    return str(path or "").replace("\\", "/").strip().lower()
+
+
+def infer_document_for_problem(pid: str, docs: list[dict[str, str]]) -> str:
+    for doc in docs:
+        if normalize_problem_id((doc.get("name") or "") + "\n" + (doc.get("text") or "")[:600]) == pid:
+            return doc.get("path", "")
+    return docs[0].get("path", "") if docs else ""
+
+
+def collect_llm_data_evidence(value: Any) -> list[dict[str, str]]:
+    raw_items = value if isinstance(value, list) else [value] if value else []
+    evidence = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            path = str(item.get("path") or item.get("file") or item.get("name") or "")
+            reason = str(item.get("reason") or item.get("evidence") or "")
+            if path or reason:
+                evidence.append({"path": path, "reason": clean_inline_text(reason, 300)})
+    return evidence[:20]
+
+
+def problem_scoring_text(problem: dict[str, Any], llm_item: dict[str, Any]) -> str:
+    parts = [
+        str(problem.get("title", "")),
+        " ".join(str(task) for task in problem.get("tasks", []) or []),
+        " ".join(str(value) for value in llm_item.get("model_types", []) or []),
+        " ".join(str(value) for value in llm_item.get("suggested_methods", []) or []),
+        str(llm_item.get("evidence", "")),
+    ]
+    return "\n".join(parts)[:12000]
+
+
+def merge_unique(primary: Any, secondary: Any) -> list[str]:
+    values: list[str] = []
+    for source in [primary, secondary]:
+        if isinstance(source, str):
+            candidates = re.split(r"[,，、/]\s*|\n+", source)
+        elif isinstance(source, list):
+            candidates = source
+        else:
+            candidates = []
+        for item in candidates:
+            text = clean_inline_text(item, 80)
+            if text and text not in values:
+                values.append(text)
+    return values[:16]
+
+
+def clean_inline_text(value: Any, limit: int = 300) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text[:limit]
+
+
+def render_problem_structure_markdown(payload: dict[str, Any]) -> str:
+    lines = [
+        "# LLM 赛题结构增强",
+        "",
+        f"- 生成时间：{payload.get('generated_at', '-')}",
+        f"- 模型：{(payload.get('settings') or {}).get('model', '-')}",
+        f"- 状态：{'成功' if payload.get('success') else '未完成'}",
+        "",
+    ]
+    if payload.get("success"):
+        summary = payload.get("enhancement_summary") or {}
+        lines.extend(
+            [
+                "## 增强结果",
+                f"- 候选题数量：{summary.get('problem_count', '-')}",
+                f"- 推荐题：{summary.get('recommended_problem_id', '-')}",
+                "",
+                "## LLM 原始结构化输出",
+                "```json",
+                json.dumps(payload.get("parsed") or {}, ensure_ascii=False, indent=2),
+                "```",
+            ]
+        )
+    else:
+        lines.extend(["## 说明", payload.get("error") or "LLM 未生成可合并的结构化结果。"])
+    lines.append("")
+    return "\n".join(lines)
 
 
 def build_baseline_prompt(analysis: dict[str, Any], modeling_result: dict[str, Any]) -> str:
