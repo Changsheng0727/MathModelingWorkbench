@@ -1,0 +1,33 @@
+# Local user data and secrets
+data/
+.env
+.env.*
+
+# Generated workflow output
+artifacts/
+*.log
+artifacts-dev-server*.log
+
+# Build and release output
+build/
+dist/
+release/
+*.spec
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Rust build output
+rust-backend/target/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

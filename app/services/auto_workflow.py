@@ -1,0 +1,419 @@
+from __future__ import annotations
+
+import json
+import time
+import traceback
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable
+
+from app.services.analyzer import apply_problem_selection
+from app.services.backend_skills import write_backend_skill_report
+from app.services.code_graph import write_code_graph_report
+from app.services.code_solution import run_code_result_pipeline
+from app.services.llm_stream import bind_llm_stream
+from app.services.llm_solution import require_llm_configured, run_llm_only_solution
+from app.services.reviewer import review_paper
+from app.services.runner import compile_latex
+from app.services.store import load_json, make_support_zip, save_json
+
+
+StepFn = Callable[[], dict[str, Any]]
+
+LEGACY_MODELING_ARTIFACT_KEYS = {
+    "modeling_script",
+    "modeling_log",
+    "modeling_manifest",
+    "baseline_summary",
+    "specialized_script",
+    "specialized_log",
+    "specialized_manifest",
+    "specialized_summary",
+    "llm_baseline_review",
+    "llm_baseline_review_json",
+    "llm_specialized_review",
+    "llm_specialized_review_json",
+    "paper_autofilled",
+    "paper_fill_summary",
+    "latex_skeleton",
+}
+
+
+def run_auto_workflow(root: Path, meta: dict[str, Any]) -> dict[str, Any]:
+    with bind_llm_stream(root, "auto_workflow", "一键自动流程大模型直播", "正在执行 LLM 当场分析、代码生成、修复和结果回填。") as live_stream:
+        report = _run_auto_workflow(root, meta)
+        status = report.get("overall_status") or "success"
+        live_status = "success" if status == "success" else "failed" if status == "failed" else "warning"
+        live_stream.finish(live_status, f"自动流程结束：{status}。")
+        return report
+
+
+def _run_auto_workflow(root: Path, meta: dict[str, Any]) -> dict[str, Any]:
+    analysis_path = root / "artifacts" / "analysis.json"
+    if not analysis_path.exists():
+        raise FileNotFoundError("artifacts/analysis.json 不存在，请先上传并完成赛题分析。")
+
+    require_llm_configured()
+    analysis = load_json(analysis_path)
+    user_final_problem = meta.get("final_problem") if isinstance(meta.get("final_problem"), dict) else {}
+    if user_final_problem.get("id") and user_final_problem.get("source") == "user":
+        selected = apply_problem_selection(analysis, user_final_problem["id"], source="user")
+        analysis["selected_problem"] = {
+            "id": selected.get("id", ""),
+            "title": selected.get("title", ""),
+            "source": "user",
+        }
+        save_json(analysis_path, analysis)
+    clear_legacy_modeling_artifacts(meta)
+    report: dict[str, Any] = {
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "project_id": meta.get("id"),
+        "project_name": meta.get("name"),
+        "recommended_problem": analysis.get("recommended_problem", {}),
+        "mode": "llm_code_results",
+        "steps": [],
+        "artifacts": {},
+    }
+
+    meta["auto_workflow_status"] = "running"
+    meta["auto_workflow_mode"] = "llm_code_results"
+    meta.pop("auto_workflow_error", None)
+    save_json(root / "metadata.json", meta)
+
+    def llm_solution_step() -> dict[str, Any]:
+        metadata_path = root / "metadata.json"
+        metadata = load_json(metadata_path) if metadata_path.exists() else {}
+        paper_options = metadata.get("paper_options", {}) if isinstance(metadata, dict) else {}
+        artifacts = run_llm_only_solution(root, analysis, paper_options)
+        selection = load_llm_final_selection(root, artifacts)
+        user_selected = meta.get("final_problem") if isinstance(meta.get("final_problem"), dict) else {}
+        if user_selected.get("id") and user_selected.get("source") == "user":
+            final_problem = {
+                "id": user_selected.get("id", ""),
+                "title": user_selected.get("title", ""),
+                "reason": user_selected.get("reason", "用户手动确认选题，LLM 输出不得覆盖。"),
+                "source": "user",
+            }
+            if selection:
+                report["llm_suggested_problem"] = {
+                    "id": selection.get("final_problem_id", ""),
+                    "title": selection.get("final_problem_title", ""),
+                    "reason": selection.get("reason", ""),
+                    "source": "llm_only",
+                }
+            report["final_problem"] = final_problem
+            report["recommended_problem"] = final_problem
+            meta["final_problem"] = final_problem
+        elif selection:
+            final_problem = {
+                "id": selection.get("final_problem_id", ""),
+                "title": selection.get("final_problem_title", ""),
+                "reason": normalize_auto_selection_reason(selection.get("reason", "")),
+                "source": "llm_only",
+            }
+            report["final_problem"] = final_problem
+            report["recommended_problem"] = final_problem
+            meta["final_problem"] = final_problem
+        update_artifacts(meta, artifacts)
+        meta["llm_solution_status"] = "success"
+        meta["paper_fill_status"] = "success"
+        return {"success": True, "detail": "大模型已完成当场选题、题解分析和 LaTeX 论文生成。", "artifacts": artifacts}
+
+    def computed_solution_step() -> dict[str, Any]:
+        metadata_path = root / "metadata.json"
+        metadata = load_json(metadata_path) if metadata_path.exists() else {}
+        paper_options = metadata.get("paper_options", {}) if isinstance(metadata, dict) else {}
+        analysis_for_code = load_json(analysis_path) if analysis_path.exists() else dict(analysis)
+        final_problem = metadata.get("final_problem") if isinstance(metadata.get("final_problem"), dict) else {}
+        if final_problem.get("id"):
+            selected = apply_problem_selection(
+                analysis_for_code,
+                str(final_problem.get("id")),
+                source=str(final_problem.get("source") or "workflow"),
+            )
+            analysis_for_code["selected_problem"] = {
+                "id": selected.get("id", ""),
+                "title": selected.get("title", ""),
+                "source": final_problem.get("source") or "workflow",
+            }
+            save_json(analysis_path, analysis_for_code)
+        artifacts = run_code_result_pipeline(root, analysis_for_code, paper_options)
+        update_artifacts(meta, artifacts)
+        meta["computed_solution_status"] = "success"
+        meta["paper_fill_status"] = "success"
+        return {
+            "success": True,
+            "detail": "已根据 LLM 求解规范生成并运行代码，计算结果已写入 manifest 并回填论文。",
+            "artifacts": artifacts,
+        }
+
+    def compile_step() -> dict[str, Any]:
+        result = compile_latex(root)
+        artifacts = {"latex_log": result.get("log", "")}
+        if result.get("pdf"):
+            artifacts["paper_pdf"] = result["pdf"]
+        if result.get("docx"):
+            artifacts["paper_docx"] = result["docx"]
+        if result.get("word_log"):
+            artifacts["word_export_log"] = result["word_log"]
+        update_artifacts(meta, artifacts)
+        meta["compile_status"] = "success" if result.get("success") else "failed"
+        return {
+            "success": bool(result.get("success")),
+            "detail": "PDF 与 Word 导出完成。" if result.get("success") else "PDF 编译未通过，已保留编译日志和 Word 导出日志。",
+            "result": result,
+        }
+
+    def code_graph_step() -> dict[str, Any]:
+        artifacts = write_code_graph_report(root)
+        update_artifacts(meta, artifacts)
+        return {"success": True, "detail": "已生成本地代码图谱，包含求解脚本入口、符号、导入和调用关系。", "artifacts": artifacts}
+
+    def review_step() -> dict[str, Any]:
+        artifacts = review_paper(root)
+        update_artifacts(meta, artifacts)
+        meta["paper_review_status"] = "success"
+        review_json = load_json(root / "artifacts" / "paper_review.json")
+        return {
+            "success": review_json.get("overall", {}).get("status") != "fail",
+            "detail": "论文质量审查完成。",
+            "overall": review_json.get("overall", {}),
+            "artifacts": artifacts,
+        }
+
+    def support_step() -> dict[str, Any]:
+        archive = make_support_zip(root)
+        relative = archive.relative_to(root).as_posix()
+        update_artifacts(meta, {"support_package": relative})
+        return {"success": archive.exists(), "detail": "支撑材料包已准备。", "path": relative}
+
+    def skill_context_step() -> dict[str, Any]:
+        artifacts = write_backend_skill_report(root)
+        update_artifacts(meta, artifacts)
+        return {"success": True, "detail": "GitHub 数学建模、科研写作与学术诚信技能库已注入后端上下文。", "artifacts": artifacts}
+
+    run_step(root, meta, report, "backend_skills", "GitHub 技能库与诚信门禁上下文注入", skill_context_step, required=False)
+    save_json(root / "metadata.json", meta)
+    run_step(root, meta, report, "llm_solution", "大模型当场分析、选题、求解与论文生成", llm_solution_step, required=True)
+    save_json(root / "metadata.json", meta)
+    if report["steps"][-1].get("status") == "failed":
+        return finalize_report(root, meta, report)
+    run_step(root, meta, report, "computed_solution", "LLM 规划代码求解、运行结果并回填论文", computed_solution_step, required=True)
+    save_json(root / "metadata.json", meta)
+    if report["steps"][-1].get("status") == "failed":
+        return finalize_report(root, meta, report)
+    run_step(root, meta, report, "code_graph", "本地代码图谱与影响关系分析", code_graph_step, required=False)
+    save_json(root / "metadata.json", meta)
+    run_step(root, meta, report, "latex_compile", "LaTeX 双轮编译与 Word 导出", compile_step, required=False)
+    save_json(root / "metadata.json", meta)
+    run_step(root, meta, report, "paper_review", "论文质量审查", review_step, required=False)
+    save_json(root / "metadata.json", meta)
+    run_step(root, meta, report, "support_package", "支撑材料打包", support_step, required=False)
+
+    return finalize_report(root, meta, report)
+
+
+def run_step(
+    root: Path,
+    meta: dict[str, Any],
+    report: dict[str, Any],
+    step_id: str,
+    title: str,
+    fn: StepFn,
+    required: bool,
+) -> None:
+    started = time.time()
+    item: dict[str, Any] = {
+        "id": step_id,
+        "title": title,
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "required": required,
+        "status": "running",
+        "detail": "正在执行该阶段。",
+    }
+    write_progress(root, meta, report, current_step=item)
+    try:
+        result = fn()
+        success = bool(result.get("success", True))
+        item.update(result)
+        item["status"] = "success" if success else "warning"
+    except Exception as exc:
+        item["status"] = "failed" if required else "warning"
+        item["success"] = False
+        item["detail"] = f"{type(exc).__name__}: {exc}"
+        error_log = root / "artifacts" / f"auto_workflow_error_{step_id}.log"
+        error_log.parent.mkdir(parents=True, exist_ok=True)
+        error_log.write_text(
+            "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+            encoding="utf-8",
+        )
+        error_relative = error_log.relative_to(root).as_posix()
+        item["error_log"] = error_relative
+        item.setdefault("artifacts", {})[f"{step_id}_error_log"] = error_relative
+        update_artifacts(meta, {f"{step_id}_error_log": error_relative})
+        meta["auto_workflow_error"] = item["detail"]
+    item["duration_seconds"] = round(time.time() - started, 2)
+    item["finished_at"] = datetime.now().isoformat(timespec="seconds")
+    report["steps"].append(item)
+    write_progress(root, meta, report, current_step=None)
+
+
+def write_progress(
+    root: Path,
+    meta: dict[str, Any],
+    report: dict[str, Any],
+    current_step: dict[str, Any] | None,
+) -> None:
+    total = 6
+    completed = len(report.get("steps", []))
+    progress = {
+        "status": "running" if current_step else "between_steps",
+        "started_at": report.get("started_at"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "current_step": compact_step(current_step) if current_step else None,
+        "steps": [compact_step(step) for step in report.get("steps", [])],
+        "completed_steps": completed,
+        "total_steps": total,
+        "percent": min(100, round((completed + (0.35 if current_step else 0)) / total * 100)),
+    }
+    meta["auto_workflow_progress"] = progress
+    save_json(root / "artifacts" / "auto_workflow_progress.json", progress)
+    save_json(root / "metadata.json", meta)
+
+
+def compact_step(step: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not step:
+        return None
+    return {
+        "id": step.get("id"),
+        "title": step.get("title"),
+        "status": step.get("status"),
+        "detail": step.get("detail", ""),
+        "required": step.get("required", False),
+        "started_at": step.get("started_at"),
+        "finished_at": step.get("finished_at"),
+        "duration_seconds": step.get("duration_seconds"),
+        "error_log": step.get("error_log", ""),
+    }
+
+
+def update_artifacts(meta: dict[str, Any], artifacts: dict[str, str]) -> None:
+    clean = {key: value for key, value in artifacts.items() if value}
+    if clean:
+        meta.setdefault("artifacts", {}).update(clean)
+
+
+def clear_legacy_modeling_artifacts(meta: dict[str, Any]) -> None:
+    artifacts = meta.get("artifacts")
+    if isinstance(artifacts, dict):
+        for key in LEGACY_MODELING_ARTIFACT_KEYS:
+            artifacts.pop(key, None)
+    for key in ["modeling_status", "specialized_status"]:
+        meta.pop(key, None)
+
+
+def load_llm_final_selection(root: Path, artifacts: dict[str, str]) -> dict[str, Any]:
+    relative = artifacts.get("llm_full_solution_json")
+    if not relative:
+        return {}
+    path = root / relative
+    if not path.exists():
+        return {}
+    payload = load_json(path)
+    sections = payload.get("sections") if isinstance(payload, dict) else {}
+    selection = sections.get("selection") if isinstance(sections, dict) else {}
+    return selection if isinstance(selection, dict) else {}
+
+
+def normalize_auto_selection_reason(reason: Any) -> str:
+    text = str(reason or "").strip()
+    replacements = {
+        "用户已确认选择": "大模型自动推荐选择",
+        "用户确认选择": "大模型自动推荐选择",
+        "用户已确认": "大模型自动推荐",
+        "用户确认": "大模型自动推荐",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
+def finalize_report(root: Path, meta: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+    report["finished_at"] = datetime.now().isoformat(timespec="seconds")
+    report["overall_status"] = overall_status(report["steps"])
+    report["artifacts"] = meta.get("artifacts", {})
+
+    json_path = root / "artifacts" / "auto_workflow_report.json"
+    md_path = root / "artifacts" / "auto_workflow_report.md"
+    save_json(json_path, report)
+    md_path.write_text(render_auto_report(report), encoding="utf-8")
+    update_artifacts(
+        meta,
+        {
+            "auto_workflow_report": "artifacts/auto_workflow_report.md",
+            "auto_workflow_report_json": "artifacts/auto_workflow_report.json",
+        },
+    )
+    make_support_zip(root)
+    meta["auto_workflow_status"] = report["overall_status"]
+    meta["auto_workflow_progress"] = {
+        "status": report["overall_status"],
+        "started_at": report.get("started_at"),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "current_step": None,
+        "steps": [compact_step(step) for step in report.get("steps", [])],
+        "completed_steps": len(report.get("steps", [])),
+        "total_steps": len(report.get("steps", [])) or 6,
+        "percent": 100,
+    }
+    save_json(root / "artifacts" / "auto_workflow_progress.json", meta["auto_workflow_progress"])
+    save_json(root / "metadata.json", meta)
+    return report
+
+
+def overall_status(steps: list[dict[str, Any]]) -> str:
+    required_failed = any(item.get("required") and item.get("status") == "failed" for item in steps)
+    if required_failed:
+        return "failed"
+    if any(item.get("status") in {"failed", "warning"} for item in steps):
+        return "completed_with_warnings"
+    return "success"
+
+
+def render_auto_report(report: dict[str, Any]) -> str:
+    rec = report.get("recommended_problem") or {}
+    lines = [
+        "# 自动解题与论文生成报告",
+        "",
+        f"- 项目：{report.get('project_name') or report.get('project_id')}",
+        f"- 最终选题：{rec.get('id', '-')} 题 {rec.get('title', '')}",
+        f"- 开始时间：{report.get('started_at')}",
+        f"- 完成时间：{report.get('finished_at')}",
+        f"- 总体状态：{report.get('overall_status')}",
+        f"- 执行模式：{report.get('mode', 'llm_only')}",
+        "",
+        "## 自动流程",
+    ]
+    for step in report.get("steps", []):
+        status = {
+            "success": "成功",
+            "warning": "需注意",
+            "failed": "失败",
+        }.get(step.get("status"), step.get("status"))
+        lines.append(f"- **{step.get('title')}**：{status}，耗时 {step.get('duration_seconds')} 秒。{step.get('detail', '')}")
+    lines.extend(["", "## 关键输出"])
+    artifacts = report.get("artifacts") or {}
+    for key, value in artifacts.items():
+        lines.append(f"- {key}: `{value}`")
+    if not artifacts:
+        lines.append("- 暂无输出文件。")
+    lines.extend(
+        [
+            "",
+            "## 使用说明",
+            "- 若编译或审查出现警告，优先查看 `论文审查报告` 和 `编译日志`。",
+            "- 当前自动流程为 LLM 当场分析 + 代码求解执行 + 计算结果整合进论文，不使用旧的本地基线/专项建模路径。",
+            "- 论文中的新增精确数值应优先追溯到 `results/computed_manifest.json`、结果表、图片和运行日志。",
+        ]
+    )
+    return "\n".join(lines)
