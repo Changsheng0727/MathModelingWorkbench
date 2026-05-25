@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 from docx import Document
@@ -17,13 +17,18 @@ DOC_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt", ".md"}
 DATA_EXTENSIONS = {".xlsx", ".xls", ".csv"}
 
 
-def inventory_files(raw_dir: Path) -> list[dict[str, Any]]:
+ProgressCallback = Callable[[dict[str, Any]], None]
+
+
+def inventory_files(raw_dir: Path, on_file: ProgressCallback | None = None) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for path in sorted(raw_dir.rglob("*")):
-        if not path.is_file():
-            continue
+    files = [path for path in sorted(raw_dir.rglob("*")) if path.is_file()]
+    total = len(files)
+    for index, path in enumerate(files, 1):
         suffix = path.suffix.lower()
         rel = path.relative_to(raw_dir).as_posix()
+        if on_file:
+            on_file({"phase": "start", "index": index, "total": total, "path": rel, "suffix": suffix})
         record: dict[str, Any] = {
             "path": rel,
             "name": path.name,
@@ -38,20 +43,39 @@ def inventory_files(raw_dir: Path) -> list[dict[str, Any]]:
             record["text_preview"] = compact_text(text, 700)
             record["char_count"] = len(text)
         records.append(record)
+        if on_file:
+            on_file(
+                {
+                    "phase": "finish",
+                    "index": index,
+                    "total": total,
+                    "path": rel,
+                    "suffix": suffix,
+                    "kind": record["kind"],
+                    "size": record["size"],
+                }
+            )
     return records
 
 
-def extract_all_document_text(raw_dir: Path) -> list[dict[str, str]]:
+def extract_all_document_text(raw_dir: Path, on_document: ProgressCallback | None = None) -> list[dict[str, str]]:
     docs = []
-    for path in sorted(raw_dir.rglob("*")):
-        if path.is_file() and path.suffix.lower() in DOC_EXTENSIONS:
-            docs.append(
-                {
-                    "path": path.relative_to(raw_dir).as_posix(),
-                    "name": path.name,
-                    "text": extract_document_text(path),
-                }
-            )
+    paths = [path for path in sorted(raw_dir.rglob("*")) if path.is_file() and path.suffix.lower() in DOC_EXTENSIONS]
+    total = len(paths)
+    for index, path in enumerate(paths, 1):
+        rel = path.relative_to(raw_dir).as_posix()
+        if on_document:
+            on_document({"phase": "start", "index": index, "total": total, "path": rel, "suffix": path.suffix.lower()})
+        text = extract_document_text(path)
+        docs.append(
+            {
+                "path": rel,
+                "name": path.name,
+                "text": text,
+            }
+        )
+        if on_document:
+            on_document({"phase": "finish", "index": index, "total": total, "path": rel, "chars": len(text)})
     return docs
 
 

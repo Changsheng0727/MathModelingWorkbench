@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import platform
 import subprocess
 from pathlib import Path
@@ -10,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.services.analyzer import apply_problem_selection, build_analysis
+from app.services.analysis_progress import AnalysisProgress, load_analysis_progress
 from app.services.auto_workflow import run_auto_workflow
 from app.services.backend_skills import (
     list_backend_skills,
@@ -93,6 +95,21 @@ def health() -> dict[str, str]:
 @app.get("/api/environments")
 def environments() -> dict:
     return detect_environments()
+
+
+@app.get("/api/upload-analysis-progress/{progress_id}")
+def upload_analysis_progress(progress_id: str) -> dict:
+    progress = load_analysis_progress(progress_id)
+    if isinstance(progress, dict) and progress.get("project_id"):
+        try:
+            root = project_root(str(progress["project_id"]))
+            live_stream = load_llm_live_stream(root)
+            if live_stream.get("channel") == "upload_analysis":
+                progress = dict(progress)
+                progress["live_stream"] = live_stream
+        except Exception:
+            pass
+    return {"progress": progress or {}}
 
 
 @app.get("/api/skills/backend")
@@ -182,13 +199,29 @@ def attach_artifacts_safely(meta: dict, artifacts: dict[str, str]) -> None:
         meta.setdefault("artifacts", {}).update(artifacts)
 
 
+def count_files(path: Path) -> int:
+    if not path.exists():
+        return 0
+    return sum(1 for item in path.rglob("*") if item.is_file())
+
+
+def format_bytes(value: int) -> str:
+    size = float(max(value, 0))
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size < 1024 or unit == "GB":
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+
+
 @app.get("/api/projects")
 def projects() -> list[dict]:
     return list_projects()
 
 
 @app.post("/api/projects")
-async def create(file: UploadFile = File(...)) -> dict:
+async def create(file: UploadFile = File(...), progress_id: str | None = Form(None)) -> dict:
     if not file.filename:
         raise HTTPException(status_code=400, detail="缺少文件名")
     try:
@@ -198,25 +231,38 @@ async def create(file: UploadFile = File(...)) -> dict:
 
     meta = create_project(file.filename)
     root = Path(meta["root"])
+    progress = AnalysisProgress(root, meta, progress_id)
+    progress.start_step("upload", "上传赛题材料", f"正在保存上传文件：{file.filename}")
     upload_path = root / "uploads" / Path(file.filename).name
-    with upload_path.open("wb") as fh:
-        while chunk := await file.read(1024 * 1024):
-            fh.write(chunk)
-
+    uploaded_bytes = 0
     try:
-        unpack_upload(upload_path, root / "raw")
-        analyze_project_materials(root, meta)
+        with upload_path.open("wb") as fh:
+            while chunk := await file.read(1024 * 1024):
+                uploaded_bytes += len(chunk)
+                fh.write(chunk)
+                progress.update(f"已接收 {format_bytes(uploaded_bytes)}：{file.filename}")
+        progress.finish_step("success", f"上传文件已保存：{upload_path.name}，{format_bytes(uploaded_bytes)}")
+        progress.start_step("unpack", "解包并整理原始材料", "正在展开压缩包或复制单个赛题文件。")
+        await asyncio.to_thread(unpack_upload, upload_path, root / "raw")
+        raw_count = count_files(root / "raw")
+        progress.finish_step("success", f"原始材料已整理完成，共 {raw_count} 个文件。")
+        await asyncio.to_thread(analyze_project_materials, root, meta, progress)
     except Exception as exc:
         meta["status"] = "failed"
         meta["error"] = f"{type(exc).__name__}: {exc}"
         save_json(root / "metadata.json", meta)
+        progress.fail(meta["error"])
         raise HTTPException(status_code=500, detail=meta["error"]) from exc
 
     return project_detail(meta["id"])
 
 
 @app.post("/api/projects/folder")
-async def create_from_folder(folder_name: str = Form("赛题文件夹"), files: list[UploadFile] = File(...)) -> dict:
+async def create_from_folder(
+    folder_name: str = Form("赛题文件夹"),
+    progress_id: str | None = Form(None),
+    files: list[UploadFile] = File(...),
+) -> dict:
     if not files:
         raise HTTPException(status_code=400, detail="请选择一个包含赛题材料的文件夹。")
     if len(files) > MAX_FOLDER_UPLOAD_FILES:
@@ -224,12 +270,14 @@ async def create_from_folder(folder_name: str = Form("赛题文件夹"), files: 
 
     meta = create_project(folder_name or "赛题文件夹")
     root = Path(meta["root"])
+    progress = AnalysisProgress(root, meta, progress_id)
+    progress.start_step("upload", "上传赛题文件夹", f"正在接收文件夹中的 {len(files)} 个文件。")
     raw_dir = root / "raw"
     upload_manifest = []
     total_bytes = 0
 
     try:
-        for upload in files:
+        for file_index, upload in enumerate(files, 1):
             if not upload.filename:
                 continue
             target = safe_folder_target(raw_dir, upload.filename)
@@ -242,6 +290,9 @@ async def create_from_folder(folder_name: str = Form("赛题文件夹"), files: 
                     if total_bytes > MAX_FOLDER_UPLOAD_BYTES:
                         raise ValueError("文件夹总大小过大，请控制在 500 MB 以内。")
                     fh.write(chunk)
+                    progress.update(
+                        f"正在接收 {file_index}/{len(files)}：{target.relative_to(raw_dir).as_posix()}，累计 {format_bytes(total_bytes)}"
+                    )
             upload_manifest.append(
                 {
                     "path": target.relative_to(raw_dir).as_posix(),
@@ -256,32 +307,94 @@ async def create_from_folder(folder_name: str = Form("赛题文件夹"), files: 
             "file_count": len(upload_manifest),
             "total_bytes": total_bytes,
         }
-        analyze_project_materials(root, meta)
+        progress.finish_step("success", f"文件夹上传完成：{len(upload_manifest)} 个文件，{format_bytes(total_bytes)}。")
+        await asyncio.to_thread(analyze_project_materials, root, meta, progress)
     except Exception as exc:
         meta["status"] = "failed"
         meta["error"] = f"{type(exc).__name__}: {exc}"
         save_json(root / "metadata.json", meta)
+        progress.fail(meta["error"])
         raise HTTPException(status_code=500, detail=meta["error"]) from exc
 
     return project_detail(meta["id"])
 
 
-def analyze_project_materials(root: Path, meta: dict) -> None:
-    inventory = inventory_files(root / "raw")
-    docs = extract_all_document_text(root / "raw")
+def analyze_project_materials(root: Path, meta: dict, progress: AnalysisProgress | None = None) -> None:
+    raw_dir = root / "raw"
+
+    if progress:
+        progress.start_step("inventory", "盘点赛题材料", "正在识别文档、数据表、压缩包展开后的目录结构。")
+
+    def on_inventory_file(event: dict) -> None:
+        if not progress:
+            return
+        progress.update(
+            f"正在读取 {event.get('index')}/{event.get('total')}：{event.get('path')}",
+            kind=event.get("kind"),
+            suffix=event.get("suffix"),
+        )
+
+    inventory = inventory_files(raw_dir, on_file=on_inventory_file)
+    document_count = len([item for item in inventory if item.get("kind") == "document"])
+    data_count = len([item for item in inventory if item.get("kind") == "data"])
+    if progress:
+        progress.finish_step("success", f"材料盘点完成：{document_count} 个文档，{data_count} 个数据附件，共 {len(inventory)} 个文件。")
+        progress.start_step("extract_documents", "抽取题面与规则文本", "正在从 PDF、Word、Markdown、文本文件中提取可供分析的内容。")
+
+    def on_document(event: dict) -> None:
+        if not progress:
+            return
+        if event.get("phase") == "finish":
+            progress.update(f"已抽取 {event.get('index')}/{event.get('total')}：{event.get('path')}，约 {event.get('chars', 0)} 字。")
+        else:
+            progress.update(f"正在抽取 {event.get('index')}/{event.get('total')}：{event.get('path')}")
+
+    docs = extract_all_document_text(raw_dir, on_document=on_document)
+    if progress:
+        total_chars = sum(len(doc.get("text", "")) for doc in docs)
+        progress.finish_step("success", f"文本抽取完成：{len(docs)} 个文档，约 {total_chars} 字。")
+        progress.start_step("build_analysis", "识别赛题并评估选题", "正在识别 A/B/C 等候选题、匹配附件、评估建模难度与论文可写性。")
+
     analysis = build_analysis(inventory, docs)
     analysis["project"] = {k: v for k, v in meta.items() if k != "root"}
     analysis["inventory"] = inventory
+    if progress:
+        recommended = analysis.get("recommended_problem", {}) or {}
+        progress.finish_step(
+            "success",
+            f"识别到 {len(analysis.get('problems', []))} 个候选题；当前推荐 {recommended.get('id', '-')} 题：{recommended.get('title', '')}",
+        )
+        progress.start_step("write_artifacts", "生成分析报告与论文骨架", "正在写入 analysis.json、分析报告、论文提纲、模型方案和 LaTeX 骨架。")
+
     artifacts = write_artifacts(root, analysis)
     save_json(root / "artifacts" / "analysis.json", analysis)
+    if progress:
+        progress.finish_step("success", "分析报告、论文提纲、模型方案和 LaTeX 骨架已生成。")
+
     if get_llm_settings().get("configured"):
-        attach_artifacts_safely(meta, run_problem_llm_analysis(root, analysis))
-        meta["llm_analysis_status"] = "success"
+        if progress:
+            progress.start_step("llm_problem_analysis", "LLM 补充赛题分析", "正在调用大模型复盘选题、建模路线和风险点。")
+        try:
+            with bind_llm_stream(root, "upload_analysis", "上传后赛题分析大模型直播", "正在补充生成赛题理解、选题理由和建模建议。"):
+                attach_artifacts_safely(meta, run_problem_llm_analysis(root, analysis))
+            meta["llm_analysis_status"] = "success"
+            if progress:
+                progress.finish_step("success", "LLM 赛题分析报告已生成。")
+        except Exception as exc:
+            meta["llm_analysis_status"] = "failed"
+            meta["llm_analysis_error"] = f"{type(exc).__name__}: {exc}"
+            if progress:
+                progress.finish_step("warning", f"LLM 补充分析失败，但本地赛题分析已完成：{meta['llm_analysis_error']}")
     else:
         meta["llm_analysis_status"] = "requires_api_key"
+        if progress:
+            progress.start_step("llm_problem_analysis", "LLM 补充赛题分析", "未配置 API Key，跳过大模型补充分析。")
+            progress.finish_step("warning", "未配置 API Key，已跳过 LLM 补充分析；本地赛题分析可正常使用。")
     meta["status"] = "analyzed"
     attach_artifacts_safely(meta, artifacts)
     save_json(root / "metadata.json", meta)
+    if progress:
+        progress.finish("success", "赛题分析完成。")
 
 
 @app.get("/api/projects/{project_id}")

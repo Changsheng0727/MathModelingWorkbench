@@ -2,6 +2,7 @@ const state = {
   currentProject: null,
   templates: [],
   llmSettings: null,
+  uploadProgressStop: null,
 };
 
 const els = {
@@ -12,6 +13,7 @@ const els = {
   folderLabel: document.querySelector("#folder-label"),
   autoRunAfterUpload: document.querySelector("#auto-run-after-upload"),
   status: document.querySelector("#upload-status"),
+  uploadProgress: document.querySelector("#upload-analysis-progress"),
   refresh: document.querySelector("#refresh-projects"),
   projectList: document.querySelector("#project-list"),
   health: document.querySelector("#health"),
@@ -236,6 +238,7 @@ function renderProject(detail) {
   if (!analysis) {
     els.empty.classList.remove("hidden");
     els.analysisView.classList.add("hidden");
+    renderProgressPanel(els.uploadProgress, metadata.analysis_progress, 7);
     return;
   }
   els.empty.classList.add("hidden");
@@ -256,6 +259,7 @@ function renderProject(detail) {
   renderArtifacts(metadata, analysis.project?.id || metadata.id);
   renderAutoWorkflowProgress(metadata.auto_workflow_progress);
   renderModelAssistantProgress(metadata.model_assistant_progress);
+  renderProgressPanel(els.uploadProgress, metadata.analysis_progress, 7);
 }
 
 function selectedProblemSource(metadata) {
@@ -809,6 +813,8 @@ els.form.addEventListener("submit", async (event) => {
   }
   const button = els.form.querySelector("button");
   const formData = new FormData();
+  const progressId = createProgressId();
+  formData.append("progress_id", progressId);
   let endpoint = "/api/projects";
   if (folderFiles.length) {
     endpoint = "/api/projects/folder";
@@ -821,11 +827,33 @@ els.form.addEventListener("submit", async (event) => {
     formData.append("file", file);
   }
   button.disabled = true;
+  if (state.uploadProgressStop) {
+    state.uploadProgressStop();
+  }
+  renderProgressPanel(
+    els.uploadProgress,
+    {
+      status: "running",
+      current_step: {
+        id: "upload",
+        title: folderFiles.length ? "上传赛题文件夹" : "上传赛题材料",
+        status: "running",
+        detail: folderFiles.length ? `正在上传 ${folderFiles.length} 个文件。` : `正在上传 ${file.name}。`,
+      },
+      steps: [],
+      completed_steps: 0,
+      total_steps: 7,
+      percent: 3,
+    },
+    7,
+  );
+  state.uploadProgressStop = startUploadProgressPolling(progressId);
   els.status.textContent = folderFiles.length
     ? `正在上传文件夹中的 ${folderFiles.length} 个文件并解析，请稍候。`
     : "正在上传并解析，请稍候。";
   try {
     const detail = await api(endpoint, { method: "POST", body: formData });
+    await refreshUploadProgress(progressId);
     els.status.textContent = "分析完成。";
     renderProject(detail);
     await loadProjects();
@@ -842,11 +870,60 @@ els.form.addEventListener("submit", async (event) => {
       }
     }
   } catch (error) {
+    await refreshUploadProgress(progressId);
     els.status.textContent = `分析失败：${error.message}`;
   } finally {
+    if (state.uploadProgressStop) {
+      state.uploadProgressStop();
+      state.uploadProgressStop = null;
+      await refreshUploadProgress(progressId);
+    }
     button.disabled = false;
   }
 });
+
+function createProgressId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return `upload-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function startUploadProgressPolling(progressId) {
+  let stopped = false;
+  refreshUploadProgress(progressId);
+  const timer = window.setInterval(async () => {
+    if (stopped) {
+      return;
+    }
+    const done = await refreshUploadProgress(progressId);
+    if (done) {
+      stopped = true;
+      window.clearInterval(timer);
+    }
+  }, 500);
+  return () => {
+    stopped = true;
+    window.clearInterval(timer);
+  };
+}
+
+async function refreshUploadProgress(progressId) {
+  if (!progressId || !els.uploadProgress) {
+    return false;
+  }
+  try {
+    const payload = await api(`/api/upload-analysis-progress/${encodeURIComponent(progressId)}`);
+    const progress = payload.progress || {};
+    if (!Object.keys(progress).length) {
+      return false;
+    }
+    renderProgressPanel(els.uploadProgress, progress, 7);
+    return ["success", "failed", "completed_with_warnings"].includes(progress.status);
+  } catch {
+    return false;
+  }
+}
 
 function folderNameFromFiles(files) {
   const first = files[0];
