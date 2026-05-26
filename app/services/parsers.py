@@ -211,18 +211,36 @@ def parse_excel_schema(path: Path) -> dict[str, Any]:
         for sheet_name in workbook.sheetnames[:12]:
             ws = workbook[sheet_name]
             header = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
+            columns = [str(x) if x is not None else "" for x in header]
+            sample = []
+            for row in ws.iter_rows(min_row=2, max_row=min(ws.max_row, 4), values_only=True):
+                values = [cell_to_preview(value) for value in row[: len(columns)]]
+                record = {
+                    columns[index] or f"列{index + 1}": values[index] if index < len(values) else ""
+                    for index in range(min(len(columns), 30))
+                }
+                if any(str(value).strip() for value in record.values()):
+                    sample.append(record)
             sheets.append(
                 {
                     "name": sheet_name,
                     "rows": ws.max_row,
                     "cols": ws.max_column,
-                    "columns": [str(x) if x is not None else "" for x in header],
+                    "columns": columns,
+                    "sample": sample[:3],
                 }
             )
         workbook.close()
         return {"type": "excel", "sheets": sheets}
     except Exception as exc:
         return {"type": "excel", "error": f"{type(exc).__name__}: {exc}"}
+
+
+def cell_to_preview(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value)
+    return text if len(text) <= 80 else text[:77] + "..."
 
 
 def compact_text(text: str, limit: int) -> str:

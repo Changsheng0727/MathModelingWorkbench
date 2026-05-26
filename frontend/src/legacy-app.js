@@ -622,6 +622,7 @@ function renderArtifacts(metadata, projectId) {
     ["specialized_log", "专项日志"],
     ["specialized_manifest", "专项结果清单"],
     ["specialized_summary", "专项结果摘要"],
+    ["material_passport", "材料护照"],
     ["llm_problem_structure", "LLM 赛题结构增强"],
     ["llm_problem_analysis", "LLM 赛题分析"],
     ["llm_baseline_review", "LLM 基线复盘"],
@@ -655,6 +656,7 @@ function renderArtifacts(metadata, projectId) {
     ["word_export_log", "Word 导出日志"],
     ["paper_review", "论文审查报告"],
     ["paper_review_json", "论文审查 JSON"],
+    ["material_passport_json", "材料护照 JSON"],
     ["llm_problem_structure_json", "LLM 赛题结构增强 JSON"],
     ["llm_problem_analysis_json", "LLM 赛题分析 JSON"],
     ["llm_baseline_review_json", "LLM 基线复盘 JSON"],
@@ -748,6 +750,9 @@ function artifactGroup(key, path) {
     return "论文文件";
   }
   if (value.includes("report") || value.includes("analysis") || value.includes("review") || value.includes("skill")) {
+    return "分析报告";
+  }
+  if (value.includes("passport")) {
     return "分析报告";
   }
   if (value.includes("script") || value.includes("solver") || value.endsWith(".py")) {

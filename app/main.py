@@ -34,6 +34,7 @@ from app.services.llm_assistant import (
     run_problem_structure_enhancement,
     run_problem_llm_analysis,
     run_specialized_llm_review,
+    write_material_passport,
 )
 from app.services.llm_stream import bind_llm_stream, load_llm_live_stream
 from app.services.llm_settings import clear_llm_settings, get_llm_settings, save_llm_settings
@@ -359,6 +360,7 @@ def analyze_project_materials(root: Path, meta: dict, progress: AnalysisProgress
     analysis = build_analysis(inventory, docs)
     analysis["project"] = {k: v for k, v in meta.items() if k != "root"}
     analysis["inventory"] = inventory
+    attach_artifacts_safely(meta, write_material_passport(root, analysis, docs, inventory))
     if progress:
         recommended = analysis.get("recommended_problem", {}) or {}
         progress.finish_step(
@@ -379,6 +381,7 @@ def analyze_project_materials(root: Path, meta: dict, progress: AnalysisProgress
                 analysis, structure_artifacts, structure_payload = run_problem_structure_enhancement(root, analysis, docs, inventory)
             analysis["project"] = {k: v for k, v in meta.items() if k != "root"}
             analysis["inventory"] = inventory
+            attach_artifacts_safely(meta, write_material_passport(root, analysis, docs, inventory))
             attach_artifacts_safely(meta, structure_artifacts)
             meta["llm_structure_status"] = "success" if structure_payload.get("success") else "warning"
             if progress:
