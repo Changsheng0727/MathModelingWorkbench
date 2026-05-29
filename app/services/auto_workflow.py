@@ -19,6 +19,8 @@ from app.services.store import load_json, make_support_zip, save_json
 
 
 StepFn = Callable[[], dict[str, Any]]
+CONTROL_RELATIVE = "artifacts/auto_workflow_control.json"
+AUTO_WORKFLOW_TOTAL_STEPS = 7
 
 LEGACY_MODELING_ARTIFACT_KEYS = {
     "modeling_script",
@@ -39,20 +41,27 @@ LEGACY_MODELING_ARTIFACT_KEYS = {
 }
 
 
-def run_auto_workflow(root: Path, meta: dict[str, Any]) -> dict[str, Any]:
-    with bind_llm_stream(root, "auto_workflow", "一键自动流程大模型直播", "正在执行 LLM 当场分析、代码生成、修复和结果回填。") as live_stream:
-        report = _run_auto_workflow(root, meta)
+class AutoWorkflowCancelled(RuntimeError):
+    pass
+
+
+def run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -> dict[str, Any]:
+    stream_title = "继续自动流程大模型直播" if resume else "一键自动流程大模型直播"
+    stream_detail = "正在从最后成功阶段继续执行。" if resume else "正在执行 LLM 当场分析、代码生成、修复和结果回填。"
+    with bind_llm_stream(root, "auto_workflow", stream_title, stream_detail) as live_stream:
+        report = _run_auto_workflow(root, meta, resume=resume)
         status = report.get("overall_status") or "success"
         live_status = "success" if status == "success" else "failed" if status == "failed" else "warning"
         live_stream.finish(live_status, f"自动流程结束：{status}。")
         return report
 
 
-def _run_auto_workflow(root: Path, meta: dict[str, Any]) -> dict[str, Any]:
+def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -> dict[str, Any]:
     analysis_path = root / "artifacts" / "analysis.json"
     if not analysis_path.exists():
         raise FileNotFoundError("artifacts/analysis.json 不存在，请先上传并完成赛题分析。")
 
+    clear_auto_workflow_control(root)
     require_llm_configured()
     analysis = load_json(analysis_path)
     user_final_problem = meta.get("final_problem") if isinstance(meta.get("final_problem"), dict) else {}
@@ -73,7 +82,13 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any]) -> dict[str, Any]:
         "mode": "llm_code_results",
         "steps": [],
         "artifacts": {},
+        "resume": bool(resume),
     }
+    if resume:
+        previous_steps = load_resumable_steps(root)
+        if previous_steps:
+            report["steps"] = previous_steps
+            report["resumed_completed_steps"] = len(previous_steps)
 
     meta["auto_workflow_status"] = "running"
     meta["auto_workflow_mode"] = "llm_code_results"
@@ -192,23 +207,33 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any]) -> dict[str, Any]:
         update_artifacts(meta, artifacts)
         return {"success": True, "detail": "GitHub 数学建模、科研写作与学术诚信技能库已注入后端上下文。", "artifacts": artifacts}
 
-    run_step(root, meta, report, "backend_skills", "GitHub 技能库与诚信门禁上下文注入", skill_context_step, required=False)
-    save_json(root / "metadata.json", meta)
-    run_step(root, meta, report, "llm_solution", "大模型当场分析、选题、求解与论文生成", llm_solution_step, required=True)
-    save_json(root / "metadata.json", meta)
-    if report["steps"][-1].get("status") == "failed":
-        return finalize_report(root, meta, report)
-    run_step(root, meta, report, "computed_solution", "LLM 规划代码求解、运行结果并回填论文", computed_solution_step, required=True)
-    save_json(root / "metadata.json", meta)
-    if report["steps"][-1].get("status") == "failed":
-        return finalize_report(root, meta, report)
-    run_step(root, meta, report, "code_graph", "本地代码图谱与影响关系分析", code_graph_step, required=False)
-    save_json(root / "metadata.json", meta)
-    run_step(root, meta, report, "latex_compile", "LaTeX 双轮编译与 Word 导出", compile_step, required=False)
-    save_json(root / "metadata.json", meta)
-    run_step(root, meta, report, "paper_review", "论文质量审查", review_step, required=False)
-    save_json(root / "metadata.json", meta)
-    run_step(root, meta, report, "support_package", "支撑材料打包", support_step, required=False)
+    steps: list[tuple[str, str, StepFn, bool]] = [
+        ("backend_skills", "GitHub 技能库与诚信门禁上下文注入", skill_context_step, False),
+        ("llm_solution", "大模型当场分析、选题、求解与论文生成", llm_solution_step, True),
+        ("computed_solution", "LLM 规划代码求解、运行结果、最终摘要与论文回填", computed_solution_step, True),
+        ("code_graph", "本地代码图谱与影响关系分析", code_graph_step, False),
+        ("latex_compile", "LaTeX 双轮编译与 Word 导出", compile_step, False),
+        ("paper_review", "论文质量审查", review_step, False),
+        ("support_package", "支撑材料打包", support_step, False),
+    ]
+    completed_for_resume = {
+        str(step.get("id"))
+        for step in report.get("steps", [])
+        if step.get("status") in {"success", "warning"}
+    }
+    for step_id, title, fn, required in steps:
+        if resume and step_id in completed_for_resume:
+            continue
+        try:
+            ensure_not_cancelled(root)
+            run_step(root, meta, report, step_id, title, fn, required=required)
+            save_json(root / "metadata.json", meta)
+            ensure_not_cancelled(root)
+        except AutoWorkflowCancelled as exc:
+            append_cancelled_step(root, meta, report, str(exc))
+            return finalize_report(root, meta, report)
+        if report["steps"][-1].get("status") == "failed" and required:
+            return finalize_report(root, meta, report)
 
     return finalize_report(root, meta, report)
 
@@ -233,10 +258,13 @@ def run_step(
     }
     write_progress(root, meta, report, current_step=item)
     try:
+        ensure_not_cancelled(root)
         result = fn()
         success = bool(result.get("success", True))
         item.update(result)
         item["status"] = "success" if success else "warning"
+    except AutoWorkflowCancelled:
+        raise
     except Exception as exc:
         item["status"] = "failed" if required else "warning"
         item["success"] = False
@@ -264,7 +292,7 @@ def write_progress(
     report: dict[str, Any],
     current_step: dict[str, Any] | None,
 ) -> None:
-    total = 6
+    total = AUTO_WORKFLOW_TOTAL_STEPS
     completed = len(report.get("steps", []))
     progress = {
         "status": "running" if current_step else "between_steps",
@@ -275,6 +303,8 @@ def write_progress(
         "completed_steps": completed,
         "total_steps": total,
         "percent": min(100, round((completed + (0.35 if current_step else 0)) / total * 100)),
+        "cancel_requested": is_cancel_requested(root),
+        "can_resume": False,
     }
     meta["auto_workflow_progress"] = progress
     save_json(root / "artifacts" / "auto_workflow_progress.json", progress)
@@ -295,6 +325,88 @@ def compact_step(step: dict[str, Any] | None) -> dict[str, Any] | None:
         "duration_seconds": step.get("duration_seconds"),
         "error_log": step.get("error_log", ""),
     }
+
+
+def request_auto_workflow_cancel(root: Path, meta: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        "cancel_requested": True,
+        "requested_at": datetime.now().isoformat(timespec="seconds"),
+        "reason": "user_requested",
+    }
+    save_json(root / CONTROL_RELATIVE, payload)
+    meta["auto_workflow_status"] = "cancel_requested"
+    meta["auto_workflow_cancel_requested_at"] = payload["requested_at"]
+    save_json(root / "metadata.json", meta)
+    return payload
+
+
+def clear_auto_workflow_control(root: Path) -> None:
+    path = root / CONTROL_RELATIVE
+    if path.exists():
+        try:
+            path.unlink()
+        except OSError:
+            save_json(path, {"cancel_requested": False, "cleared_at": datetime.now().isoformat(timespec="seconds")})
+
+
+def is_cancel_requested(root: Path) -> bool:
+    path = root / CONTROL_RELATIVE
+    if not path.exists():
+        return False
+    try:
+        payload = load_json(path)
+    except Exception:
+        return False
+    return bool(isinstance(payload, dict) and payload.get("cancel_requested"))
+
+
+def ensure_not_cancelled(root: Path) -> None:
+    if is_cancel_requested(root):
+        raise AutoWorkflowCancelled("用户已请求中断自动流程；当前阶段结束后已停止，可点击继续生成从断点恢复。")
+
+
+def append_cancelled_step(root: Path, meta: dict[str, Any], report: dict[str, Any], detail: str) -> None:
+    item = {
+        "id": "cancelled",
+        "title": "用户中断流程",
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "finished_at": datetime.now().isoformat(timespec="seconds"),
+        "required": False,
+        "status": "cancelled",
+        "success": False,
+        "detail": detail,
+        "duration_seconds": 0,
+    }
+    report.setdefault("steps", []).append(item)
+    write_progress(root, meta, report, current_step=None)
+
+
+def load_resumable_steps(root: Path) -> list[dict[str, Any]]:
+    candidates = [
+        root / "artifacts" / "auto_workflow_report.json",
+        root / "artifacts" / "auto_workflow_progress.json",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            payload = load_json(path)
+        except Exception:
+            continue
+        steps = payload.get("steps") if isinstance(payload, dict) else []
+        if not isinstance(steps, list):
+            continue
+        reusable = []
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            if step.get("status") in {"success", "warning"} and step.get("id") != "cancelled":
+                reusable.append(step)
+            else:
+                break
+        if reusable:
+            return reusable
+    return []
 
 
 def update_artifacts(meta: dict[str, Any], artifacts: dict[str, str]) -> None:
@@ -363,8 +475,10 @@ def finalize_report(root: Path, meta: dict[str, Any], report: dict[str, Any]) ->
         "current_step": None,
         "steps": [compact_step(step) for step in report.get("steps", [])],
         "completed_steps": len(report.get("steps", [])),
-        "total_steps": len(report.get("steps", [])) or 6,
+        "total_steps": AUTO_WORKFLOW_TOTAL_STEPS,
         "percent": 100,
+        "cancel_requested": is_cancel_requested(root),
+        "can_resume": report["overall_status"] in {"failed", "cancelled", "completed_with_warnings"},
     }
     save_json(root / "artifacts" / "auto_workflow_progress.json", meta["auto_workflow_progress"])
     save_json(root / "metadata.json", meta)
@@ -372,6 +486,8 @@ def finalize_report(root: Path, meta: dict[str, Any], report: dict[str, Any]) ->
 
 
 def overall_status(steps: list[dict[str, Any]]) -> str:
+    if any(item.get("status") == "cancelled" for item in steps):
+        return "cancelled"
     required_failed = any(item.get("required") and item.get("status") == "failed" for item in steps)
     if required_failed:
         return "failed"

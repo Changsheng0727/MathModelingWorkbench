@@ -6,6 +6,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.services.llm_solution import (
+    STANDALONE_FORMULA_SKIP_ENVIRONMENTS,
+    is_standalone_inline_formula_line,
+)
 from app.services.process_utils import find_external_command, run_external_command
 from app.services.templates import DEFAULT_TEMPLATE_ID, get_template
 
@@ -62,6 +66,11 @@ FIGURE_TABLE_ANALYSIS_TERMS = [
 FIGURE_TABLE_CONTEXT_TERMS = ["展示", "列出", "包含", "给出", "汇总", "横轴", "纵轴", "指标", "变量", "样本"]
 FIGURE_TABLE_REASONING_TERMS = ["比较", "趋势", "差异", "异常", "误差", "变化", "影响", "集中", "偏离", "阈值"]
 FIGURE_TABLE_DECISION_TERMS = ["表明", "说明", "可知", "回答", "最终", "支持", "依据", "因此", "由此", "用于"]
+
+FIGURE_TABLE_ANALYSIS_TERMS.extend(["展示", "列出", "包含", "给出", "由表", "由图", "可知", "说明", "表明", "趋势", "差异", "异常", "误差", "变化", "影响", "支持", "依据"])
+FIGURE_TABLE_CONTEXT_TERMS.extend(["展示", "列出", "包含", "给出", "汇总", "横轴", "纵轴", "指标", "变量", "样本"])
+FIGURE_TABLE_REASONING_TERMS.extend(["比较", "趋势", "差异", "异常", "误差", "变化", "影响", "集中", "偏离", "阈值", "高值", "复核", "追踪", "来源", "确认"])
+FIGURE_TABLE_DECISION_TERMS.extend(["表明", "说明", "可知", "回答", "最终", "支持", "依据", "因此", "由此", "用于", "支撑", "给出", "记录", "追踪", "确认", "避免"])
 
 IDENTITY_RISK_TERMS = [
     "队员",
@@ -310,7 +319,7 @@ def check_abstract(tex: str, analysis: dict[str, Any] | None = None) -> list[Che
     missing_chain = [term for term in ["首先", "随后", "再", "最后"] if term not in plain]
     missing_problem_sentences = []
     for index in range(1, expected_count + 1):
-        pattern = rf"针对问题\s*{index}\s*[，,]\s*考虑[\s\S]*?建立[\s\S]*?采用[\s\S]*?得到"
+        pattern = rf"针对问题\s*{index}\s*[，,:：]\s*(?:考虑|围绕|建立)?[\s\S]*?建立[\s\S]*?采用[\s\S]*?得到"
         if not re.search(pattern, plain):
             missing_problem_sentences.append(str(index))
     reliability_terms = ["可靠性", "模型检验", "敏感性", "稳定性", "交叉验证", "残差诊断", "对照"]
@@ -376,7 +385,45 @@ def check_model_building(tex: str) -> list[Check]:
     return checks
 
 
+def count_standalone_inline_formula_lines(tex: str) -> int:
+    count = 0
+    env_stack: list[str] = []
+    in_display_math = False
+    for raw_line in tex.splitlines():
+        stripped = raw_line.strip()
+        begin_env = re.match(r"\\begin\{([A-Za-z*]+)\}", stripped)
+        end_env = re.match(r"\\end\{([A-Za-z*]+)\}", stripped)
+        if begin_env:
+            env_stack.append(begin_env.group(1))
+            continue
+        if end_env:
+            if env_stack and env_stack[-1] == end_env.group(1):
+                env_stack.pop()
+            continue
+        if "$$" in stripped:
+            if stripped.count("$$") % 2 == 1:
+                in_display_math = not in_display_math
+            continue
+        if in_display_math or any(env in STANDALONE_FORMULA_SKIP_ENVIRONMENTS for env in env_stack):
+            continue
+        if is_standalone_inline_formula_line(stripped):
+            count += 1
+    return count
+
+
 def check_formula_numbering(tex: str) -> list[Check]:
+    standalone_inline = count_standalone_inline_formula_lines(tex)
+    if standalone_inline:
+        return [
+            make_check(
+                "formula_numbering",
+                "warning",
+                "公式类型与编号",
+                f"检测到 {standalone_inline} 处独占一行但仍写成段内公式的表达式，应改为居中显示并统一编号。",
+                "medium",
+            )
+        ]
+
     display_blocks = re.findall(r"\$\$([\s\S]*?)\$\$", tex)
     equation_blocks = re.findall(r"\\begin\{equation\}([\s\S]*?)\\end\{equation\}", tex)
     align_blocks = re.findall(r"\\begin\{(?:align|gather|multline)\}([\s\S]*?)\\end\{(?:align|gather|multline)\}", tex)
@@ -384,16 +431,18 @@ def check_formula_numbering(tex: str) -> list[Check]:
     if total == 0:
         return [make_check("formula_numbering", "warning", "公式编号", "未检测到展示公式，无法检查公式编号。", "medium")]
 
-    unnumbered = []
-    for index, body in enumerate(display_blocks, 1):
-        if not any(marker in body for marker in [r"\eqnum", r"\eqno", r"\tag{", r"\notag", r"\nonumber"]):
-            unnumbered.append(f"$$ #{index}")
-    for index, body in enumerate(equation_blocks, 1):
+    numbered = 0
+    unnumbered = 0
+    for body in display_blocks:
+        if any(marker in body for marker in [r"\eqnum", r"\eqno", r"\tag{"]):
+            numbered += 1
+        else:
+            unnumbered += 1
+    for body in [*equation_blocks, *align_blocks]:
         if any(marker in body for marker in [r"\notag", r"\nonumber"]):
-            unnumbered.append(f"equation #{index}")
-    for index, body in enumerate(align_blocks, 1):
-        if r"\tag{" not in body and r"\notag" in body:
-            unnumbered.append(f"align #{index}")
+            unnumbered += 1
+        else:
+            numbered += 1
 
     if unnumbered:
         return [
@@ -401,11 +450,18 @@ def check_formula_numbering(tex: str) -> list[Check]:
                 "formula_numbering",
                 "warning",
                 "公式编号",
-                f"检测到 {total} 处展示公式，其中以下公式可能缺少编号：" + "、".join(unnumbered[:8]),
+                f"检测到 {total} 处展示公式，其中 {unnumbered} 处未编号；独占一行的显式公式应统一编号。",
                 "medium",
             )
         ]
-    return [make_check("formula_numbering", "pass", "公式编号", f"检测到 {total} 处展示公式，均包含编号标记。")]
+    return [
+        make_check(
+            "formula_numbering",
+            "pass",
+            "公式编号",
+            f"检测到 {total} 处展示公式，均已编号；段内公式仍保持内联形式。",
+        )
+    ]
 
 
 def check_figures_and_tables(root: Path, tex: str) -> list[Check]:
@@ -842,7 +898,8 @@ def check_traceability(
             )
         )
         return checks
-    if isinstance(metadata, dict) and metadata.get("auto_workflow_mode") == "llm_code_results":
+    workflow_mode = str(metadata.get("auto_workflow_mode") or "") if isinstance(metadata, dict) else ""
+    if workflow_mode.startswith("llm_code_results"):
         if not computed:
             checks.append(
                 make_check(
@@ -1108,7 +1165,7 @@ def section_body(tex: str, title: str) -> str:
     matches = list(pattern.finditer(tex))
     for index, match in enumerate(matches):
         section_title = strip_latex(match.group(1))
-        if title in section_title:
+        if title in section_title or any(alias in section_title for alias in section_title_aliases(title)):
             start = match.end()
             end = matches[index + 1].start() if index + 1 < len(matches) else len(tex)
             appendix_match = re.search(r"\\appendix", tex[start:end])
@@ -1118,26 +1175,87 @@ def section_body(tex: str, title: str) -> str:
     return ""
 
 
+def section_title_aliases(title: str) -> set[str]:
+    aliases = {title}
+    if "重述" in title or "閲嶈堪" in title:
+        aliases.update({"问题重述", "闂閲嶈堪"})
+    if "分析" in title or "鍒嗘瀽" in title:
+        aliases.update({"问题分析", "闂鍒嗘瀽"})
+    if "建立" in title or "寤虹珛" in title:
+        aliases.update({"模型建立", "妯″瀷寤虹珛"})
+    if "求解" in title or "姹傝В" in title:
+        aliases.update({"模型求解", "妯″瀷姹傝В"})
+    return aliases
+
+
 def expected_problem_count(analysis: dict[str, Any], tex: str) -> int:
     tasks = analysis.get("recommended_problem", {}).get("tasks", []) if analysis else []
     if tasks:
+        grouped = grouped_problem_count_from_tasks(tasks)
+        if grouped:
+            return grouped
+        if len(tasks) <= 5:
+            return len(tasks)
+        tex_count = expected_problem_count_from_tex(tex)
+        if tex_count:
+            return tex_count
         return len(tasks)
-    hits = re.findall(r"\\subsection\{[^{}]*问题\s*(\d+)", tex)
+    return expected_problem_count_from_tex(tex)
+
+
+def expected_problem_count_from_tex(tex: str) -> int:
+    hits = re.findall(r"\\subsection\{[^{}]*(?:问题|闂)\s*(\d+)", tex)
     numbers = [safe_int(item) for item in hits]
     numbers = [item for item in numbers if item]
     return max(numbers) if numbers else 0
 
 
+def grouped_problem_count_from_tasks(tasks: list[Any]) -> int:
+    numbers: set[int] = set()
+    for task in tasks:
+        text = str(task or "")
+        match = re.search(r"(?:问题|闂)\s*([一二三四五六七八九十\d]+)", text)
+        if match:
+            number = chinese_problem_number(match.group(1))
+            if number:
+                numbers.add(number)
+    return max(numbers) if len(numbers) >= 2 else 0
+
+
+def chinese_problem_number(value: str) -> int:
+    value = str(value or "").strip()
+    if value.isdigit():
+        return safe_int(value)
+    mapping = {
+        "一": 1,
+        "二": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+        "十": 10,
+    }
+    return mapping.get(value, 0)
+
+
 def problem_subsection_check(check_id: str, title: str, body: str, expected_count: int, suffix: str) -> Check:
     missing = []
     for index in range(1, expected_count + 1):
+        chinese_index = index_to_chinese_problem_number(index)
         if suffix:
-            pattern = rf"\\subsection\{{[^}}]*问题\s*{index}[^}}]*{suffix}[^}}]*\}}"
+            pattern = rf"\\subsection\{{[^}}]*(?:问题|闂)\s*{index}[^}}]*{subsection_suffix_pattern(suffix)}[^}}]*\}}"
         else:
-            pattern = rf"\\subsection\{{[^}}]*问题\s*{index}[^}}]*\}}"
+            pattern = rf"\\subsection\{{[^}}]*(?:问题|闂)\s*{index}[^}}]*\}}"
         paragraph_labels = [
+            rf"问题\s*{index}\s*{subsection_suffix_pattern(suffix)}\s*[：:]",
+            rf"问题\s*{chinese_index}\s*{subsection_suffix_pattern(suffix)}\s*[：:]",
             rf"问题\s*{index}\s*{suffix}\s*[：:]",
+            rf"问题\s*{chinese_index}\s*{suffix}\s*[：:]",
             rf"问题\s*{index}\s*[：:]",
+            rf"问题\s*{chinese_index}\s*[：:]",
         ]
         has_paragraph_label = any(re.search(label, body) for label in paragraph_labels)
         if not re.search(pattern, body) and not has_paragraph_label:
@@ -1145,6 +1263,35 @@ def problem_subsection_check(check_id: str, title: str, body: str, expected_coun
     if missing:
         return make_check(check_id, "warning", title, "缺少子问题：" + "、".join(missing), "medium")
     return make_check(check_id, "pass", title, f"已按 {expected_count} 个子问题分别组织。")
+
+
+def index_to_chinese_problem_number(index: int) -> str:
+    mapping = {
+        1: "一",
+        2: "二",
+        3: "三",
+        4: "四",
+        5: "五",
+        6: "六",
+        7: "七",
+        8: "八",
+        9: "九",
+        10: "十",
+    }
+    return mapping.get(index, str(index))
+
+
+def subsection_suffix_pattern(suffix: str) -> str:
+    if not suffix:
+        return ""
+    aliases = [re.escape(suffix)]
+    if "重述" in suffix or "閲嶈堪" in suffix:
+        aliases.append("重述")
+    if "分析" in suffix or "鍒嗘瀽" in suffix:
+        aliases.append("分析")
+    if "建立" in suffix or "寤虹珛" in suffix:
+        aliases.append("模型建立")
+    return "(?:" + "|".join(dict.fromkeys(aliases)) + ")"
 
 
 def extract_abstract(tex: str) -> str:

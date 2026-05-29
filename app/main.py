@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import platform
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -12,7 +13,7 @@ from pydantic import BaseModel
 
 from app.services.analyzer import apply_problem_selection, build_analysis
 from app.services.analysis_progress import AnalysisProgress, load_analysis_progress
-from app.services.auto_workflow import run_auto_workflow
+from app.services.auto_workflow import request_auto_workflow_cancel, run_auto_workflow
 from app.services.backend_skills import (
     list_backend_skills,
     list_model_method_routes,
@@ -718,6 +719,39 @@ def run_project_auto_workflow(project_id: str) -> dict:
     return {"auto_workflow": report, "project": project_detail(project_id)}
 
 
+@app.post("/api/projects/{project_id}/auto/resume")
+def resume_project_auto_workflow(project_id: str) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    meta = load_json(root / "metadata.json")
+    try:
+        report = run_auto_workflow(root, meta, resume=True)
+    except ValueError as exc:
+        meta["auto_workflow_status"] = "requires_api_key"
+        meta["auto_workflow_error"] = str(exc)
+        save_json(root / "metadata.json", meta)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        meta["auto_workflow_status"] = "failed"
+        meta["auto_workflow_error"] = f"{type(exc).__name__}: {exc}"
+        save_json(root / "metadata.json", meta)
+        raise HTTPException(status_code=500, detail=meta["auto_workflow_error"]) from exc
+    return {"auto_workflow": report, "project": project_detail(project_id)}
+
+
+@app.post("/api/projects/{project_id}/auto/cancel")
+def cancel_project_auto_workflow(project_id: str) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    meta = load_json(root / "metadata.json")
+    control = request_auto_workflow_cancel(root, meta)
+    return {"cancel": control, "project": project_detail(project_id)}
+
+
 @app.get("/api/projects/{project_id}/progress")
 def project_progress(project_id: str) -> dict:
     try:
@@ -727,18 +761,45 @@ def project_progress(project_id: str) -> dict:
     meta = load_json(root / "metadata.json")
     progress_path = root / "artifacts" / "auto_workflow_progress.json"
     progress = load_json(progress_path) if progress_path.exists() else meta.get("auto_workflow_progress", {})
+    response_status = meta.get("auto_workflow_status") or "idle"
     if isinstance(progress, dict):
         progress = dict(progress)
+        status = response_status or progress.get("status") or "idle"
+        stale_running = status == "running" and auto_progress_is_stale(progress)
+        progress["can_resume"] = bool(
+            progress.get("can_resume")
+            or status in {"failed", "cancelled", "completed_with_warnings", "cancel_requested"}
+            or stale_running
+        )
+        progress["can_cancel"] = (
+            not stale_running
+            and (status in {"running", "cancel_requested"} or progress.get("status") in {"running", "between_steps"})
+        )
+        if stale_running:
+            progress["status"] = "interrupted"
+            progress["detail"] = "检测到上次自动流程长时间无进度更新，可点击继续生成。"
+            response_status = "interrupted"
         live_stream = load_llm_live_stream(root)
         if live_stream.get("channel") == "auto_workflow":
             progress["live_stream"] = live_stream
     return {
         "project_id": project_id,
-        "status": meta.get("auto_workflow_status") or "idle",
+        "status": response_status,
         "progress": progress or {},
         "artifacts": meta.get("artifacts", {}),
         "error": meta.get("auto_workflow_error", ""),
     }
+
+
+def auto_progress_is_stale(progress: dict, seconds: int = 180) -> bool:
+    updated_at = str(progress.get("updated_at") or "")
+    if not updated_at:
+        return False
+    try:
+        updated = datetime.fromisoformat(updated_at)
+    except ValueError:
+        return False
+    return (datetime.now() - updated).total_seconds() > seconds
 
 
 @app.get("/api/projects/{project_id}/llm/model-assistant/progress")

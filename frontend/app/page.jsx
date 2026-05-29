@@ -211,6 +211,8 @@ export default function WorkbenchPage() {
                     <button id="run-modeling" className="ghost hidden" type="button">运行基线建模</button>
                     <button id="run-specialized" className="ghost hidden" type="button">运行专项建模</button>
                     <button id="run-auto-workflow" className="primary compact" type="button">LLM+代码一键完成</button>
+                    <button id="resume-auto-workflow" className="ghost" type="button">继续生成</button>
+                    <button id="cancel-auto-workflow" className="ghost" type="button">中断流程</button>
                     <button id="generate-skill-report" className="ghost" type="button">生成技能库/诚信门禁</button>
                     <button id="generate-code-graph" className="ghost" type="button">生成代码图谱</button>
                     <button id="fill-paper" className="ghost hidden" type="button">回填论文</button>

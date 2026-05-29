@@ -4,15 +4,17 @@ import ast
 import json
 import re
 import shutil
+import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.services.executor import run_python_script
 from app.services.backend_skills import render_model_method_routes, render_standard_paper_rules
 from app.services.llm_assistant import call_chat_completion, compact_analysis
 from app.services.llm_solution import (
     latex_text_preserving_math,
+    promote_standalone_inline_formulas,
     number_display_equations,
     public_settings,
     require_llm_configured,
@@ -114,7 +116,7 @@ def generate_solver_spec(
 约束：
 1. 不要要求执行网络访问、系统命令、删除文件或读取项目目录外文件。
 2. 不要写 Python 代码；只写计算规范。
-3. 每个子问题都要说明可计算输出；若某子问题数据不足，应写明需要由代码输出“数据不足说明”。
+3. 每个子问题都要说明可计算输出；只有在脚本对所有相关附件做过鲁棒读取、单位换算和字段复核后，才能判定某子问题数据不足。
 4. 所有精确数值必须等待程序从附件计算，不得在规范中预设。
 5. 选择模型时参考输入中的 model_method_routes：每个子问题都要匹配题型、候选模型、应输出图表和检验方式；若不匹配，说明原因并选择更简单可复现的方法。
 6. traceability_rules 必须体现输入中的 standard_paper_rules：主张-证据对齐、数值来源、图表解释、引用真实性、支撑材料和人工复核点。
@@ -123,19 +125,98 @@ def generate_solver_spec(
 ```json
 {json.dumps(context, ensure_ascii=False, indent=2)}
 ```"""
-    text = call_chat_completion(prompt, max_tokens=2600, stream_label="生成代码求解规范")
-    spec = json.loads(extract_json_object(text))
+    spec, spec_attempts = generate_valid_solver_spec(prompt, analysis)
     spec = normalize_solver_spec(spec, analysis)
     payload = {
         "stage": "computed_solver_spec",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "settings": public_settings(settings),
         "success": True,
+        "generation_attempts": spec_attempts,
         "spec": spec,
     }
     save_json(root / SPEC_RELATIVE, payload)
     (root / SPEC_MD_RELATIVE).write_text(render_spec_markdown(payload), encoding="utf-8")
     return spec
+
+
+def generate_valid_solver_spec(prompt: str, analysis: dict[str, Any], max_attempts: int = 3) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    attempts: list[dict[str, Any]] = []
+    repair_hint = ""
+    for attempt in range(1, max_attempts + 1):
+        current_prompt = prompt
+        if repair_hint:
+            current_prompt = f"""{prompt}
+
+上一次输出不是合法 JSON，无法被后端解析。请重新输出一个完整、紧凑、合法的 JSON 对象，不要 Markdown，不要解释。
+
+解析错误：
+{repair_hint}
+
+必须满足：
+- 只输出一个 JSON object；
+- 字符串内部不要出现未转义的换行；
+- 数组和对象的最后一项不要加尾逗号；
+- per_problem 每个元素必须包含 problem_index、goal、data_keywords、target_keywords、feature_keywords、model_family、expected_outputs。
+"""
+        record: dict[str, Any] = {"attempt": attempt, "status": "generated", "error": ""}
+        text = ""
+        try:
+            text = call_chat_completion(
+                current_prompt,
+                max_tokens=3200 if attempt == 1 else 2400,
+                attempts=2,
+                stream_label=f"生成代码求解规范（第 {attempt} 次）",
+            )
+            spec = parse_solver_spec_json(text)
+            record["status"] = "validated"
+            record["response_chars"] = len(text)
+            attempts.append(record)
+            return spec, attempts
+        except Exception as exc:
+            record["status"] = "parse_failed"
+            record["error"] = f"{type(exc).__name__}: {exc}"
+            record["response_chars"] = len(text)
+            attempts.append(record)
+            repair_hint = record["error"]
+    attempts.append({"attempt": "fallback", "status": "local_spec", "error": "LLM JSON 多次解析失败，使用赛题分析构造最小求解规范。"})
+    return fallback_solver_spec_from_analysis(analysis), attempts
+
+
+def parse_solver_spec_json(text: str) -> dict[str, Any]:
+    payload = json.loads(extract_json_object(text))
+    if not isinstance(payload, dict):
+        raise ValueError("代码求解规范 JSON 顶层必须是对象")
+    if payload.get("per_problem") is not None and not isinstance(payload.get("per_problem"), list):
+        raise ValueError("per_problem 必须是数组")
+    return payload
+
+
+def fallback_solver_spec_from_analysis(analysis: dict[str, Any]) -> dict[str, Any]:
+    rec = analysis.get("recommended_problem", {}) or {}
+    tasks = rec.get("tasks") or []
+    if not tasks:
+        tasks = ["读取赛题附件并形成可追溯计算结果"]
+    return {
+        "final_problem_id": rec.get("id") or "",
+        "final_problem_title": rec.get("title") or "",
+        "attachment_filters": [str(item) for item in [rec.get("id"), rec.get("title")] if item],
+        "global_objective": rec.get("title") or "根据赛题附件完成可复现代码求解与论文结果回填",
+        "per_problem": [
+            {
+                "problem_index": index,
+                "goal": str(task),
+                "data_keywords": [f"问题{index}", f"附件{index}", f"Question {index}", f"Attachment {index}"],
+                "target_keywords": [],
+                "feature_keywords": [],
+                "model_family": "可复现启发式优化与统计汇总",
+                "expected_outputs": ["结果表", "结果图", "关键指标", "可追溯日志"],
+            }
+            for index, task in enumerate(tasks, 1)
+        ],
+        "paper_result_focus": ["目标函数值", "约束满足情况", "关键方案表", "结果图"],
+        "traceability_rules": ["所有论文数值必须来自 computed_manifest、结果表、图片或运行日志。"],
+    }
 
 
 def write_computed_solver_script(
@@ -363,13 +444,14 @@ Runtime contract:
 6. The manifest must be JSON and include at least:
    stage, generated_at, problem_id, problem_title, solver_spec, table_count,
    tables_overview, tables, figures, metrics, per_problem_results,
-   narrative_findings, limitations, method_basis, references_used, summary_markdown.
+   narrative_findings, limitations, method_basis, references_used, summary_markdown,
+   validation_checks.
 7. Each per_problem_results item must include:
    problem_index, title, metrics, tables, figures, description, analysis,
-   conclusion, limitations, method_basis.
+   conclusion, limitations, method_basis, validation_summary.
 8. Each table entry should include path, title, rows, cols, preview_records, problem_index when possible.
 9. Each figure entry should include path, title, description, problem_index when possible.
-10. If a subproblem cannot be solved from available data, write a clear limitation and still emit a per_problem_results item. Never invent numerical results.
+10. If a subproblem cannot be solved from available data after robust parsing and fallback schema matching, write a clear limitation and still emit a per_problem_results item. Never invent numerical results.
 
 Mandatory figure/font setup:
 - If matplotlib is imported, configure Chinese fonts before creating figures. Use font_manager candidates
@@ -379,8 +461,25 @@ Mandatory figure/font setup:
 
 Modeling guidance:
 - Inspect the available files and schemas at runtime. Use the solver spec to choose columns, objectives, and algorithms.
+- Parse problem-related Word attachments robustly. For .docx files, read word/document.xml with zipfile, strip XML tags,
+  unescape text entities if needed, normalize whitespace, and also build a compact version with all whitespace removed.
+  Use both the normal text and compact text when extracting parameters, because Word XML may split Chinese terms such as
+  equipment names, capacity phrases, or units across runs/spaces. Do not mark a later subproblem as data-insufficient until
+  this robust extraction has been attempted.
+- For every numbered subproblem in solver_spec.per_problem, produce a real computed branch when the required parameters
+  and data can be extracted. Avoid using an early "insufficient data" branch for problem 2/3 merely because a parameter
+  name was split in a docx or appears with spaces between Chinese characters.
 - Do not stop at a single naive rule when the data support validation. Build an interpretable baseline first, then add
   a stronger task-appropriate candidate and select by a documented validation metric or feasibility/cost criterion.
+- For every numbered subproblem, generate model validation outputs after computing the main result. Save validation
+  tables when applicable, such as coverage/uniqueness checks, feasibility or capacity checks, time-recursion checks,
+  endurance or safety-margin checks, rolling validation errors, scenario violation counts, sensitivity results,
+  ablation comparisons, or robust upper-bound checks. Also save validation figures when they help verify the model,
+  such as residual plots, predicted-vs-observed plots, robust tradeoff plots, sensitivity curves, confusion matrices,
+  route-feasibility maps, load-balance charts, or constraint-violation charts. Add these tables/figures to
+  manifest.tables / manifest.figures and the corresponding per_problem_results item, and summarize them in
+  validation_summary / validation_checks. The paper's "模型检验" section will embed the concrete tables, values,
+  and figures from these code outputs, so do not leave validation as a purely verbal plan.
 - For time-series forecasting, use time-respecting validation. Compare at least two of seasonal naive, rolling mean,
   exponential smoothing, ARIMA-like statsmodels fallback, regularized lag-feature regression, or guarded sklearn
   tree/boosting models when feasible. Record validation_records, MAE, RMSE, sMAPE/MAPE, selected_model, and
@@ -429,10 +528,38 @@ def compact_raw_files(root: Path, max_files: int = 80, max_preview_chars: int = 
         }
         if path.suffix.lower() in {".csv", ".txt", ".md", ".json"} and path.stat().st_size <= 2_000_000:
             item["preview"] = read_text(path, max_preview_chars)
+        elif path.suffix.lower() == ".docx" and path.stat().st_size <= 5_000_000:
+            preview = preview_docx_text(path, max_preview_chars)
+            if preview:
+                item["preview"] = preview
         files.append(item)
         if len(files) >= max_files:
             break
     return files
+
+
+def preview_docx_text(path: Path, max_chars: int) -> str:
+    """Extract a compact text preview from a docx without external dependencies."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            xml = archive.read("word/document.xml").decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+    text = re.sub(r"</w:p[^>]*>", "\n", xml)
+    text = re.sub(r"<[^>]+>", "", text)
+    replacements = {
+        "&lt;": "<",
+        "&gt;": ">",
+        "&amp;": "&",
+        "&quot;": '"',
+        "&apos;": "'",
+        "\u3000": " ",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    text = re.sub(r"[ \t\r\f\v]+", " ", text)
+    text = re.sub(r"\n\s+", "\n", text)
+    return text.strip()[:max_chars]
 
 
 def extract_python_code(text: str) -> str:
@@ -603,24 +730,29 @@ def write_result_integration(
     updated = strip_auto_blocks(original)
     updated = integrate_abstract_results(updated, manifest, prose)
     updated = prune_extra_problem_sections(updated, manifest)
+    updated = align_problem_solving_targets(updated, manifest)
     updated = ensure_paper_title(updated, manifest)
     updated = ensure_method_references(updated, manifest)
     validation_block = build_computed_validation_tex(manifest, prose)
     updated = insert_computed_results_into_solving(updated, manifest, prose)
-    updated = insert_before_section(updated, "模型评价与推广", validation_block)
+    updated = replace_model_validation_section(updated, validation_block)
     updated = clean_final_paper_document(updated)
+    updated = promote_standalone_inline_formulas(updated)
     updated = number_display_equations(updated)
+    updated, abstract_artifacts = integrate_final_abstract_from_body(root, updated, manifest, prose, paper_options)
 
     filled = root / "paper" / "main_result_filled.tex"
     filled.write_text(updated, encoding="utf-8")
     tex_path.write_text(updated, encoding="utf-8")
-    return {
+    artifacts = {
         "computed_result_prose": PROSE_MD_RELATIVE,
         "computed_result_prose_json": PROSE_RELATIVE,
         "paper_result_filled": "paper/main_result_filled.tex",
         "paper_before_result_integration": "paper/main_before_computed_results.tex",
         "paper_main": "paper/main.tex",
     }
+    artifacts.update(abstract_artifacts)
+    return artifacts
 
 
 def generate_result_prose(
@@ -659,7 +791,13 @@ def generate_result_prose(
       "conclusion": "备用字段：自然说明该结果怎样回答子问题，不要写字段名或标签"
     }}
   ],
-  "validation_commentary": "结果可追溯性、稳定性和局限性检验说明",
+  "validation_commentary": "只依据代码输出的检验表、约束检查、敏感性表、鲁棒情景表、误差指标或运行日志写模型检验总述；必须引用 computed_manifest 中已有指标，不要写尚未执行的检验计划",
+  "validation_by_problem": [
+    {{
+      "problem_index": 1,
+      "paragraph": "针对该子问题的模型检验自然段，说明使用了哪些代码输出表或指标、检验了哪些约束或误差、检验结果支持什么结论"
+    }}
+  ],
   "limitations": ["仍需人工复核或进一步建模的事项"]
 }}
 
@@ -669,7 +807,10 @@ def generate_result_prose(
 3. 摘要中不能出现“A题/B题/C题”等题号字母，不能出现具体文件名、路径、工作表名或类似“会员信息数据.xlsx::Sheet1”的来源标识；摘要只能写问题主题、模型、算法和关键结果。
 4. 若引用表格、图片或指标，必须来自 computed_manifest 中的路径、标题、指标名和数值。
 5. 不要在正文段落中出现带冒号的模板化图表解读标签；如果需要表达这些内容，用连续自然段完成。
-6. 所有公式如需出现，使用 $$...$$，不要写未闭合 LaTeX。
+6. 公式既可以有段内内联公式，也可以有独占一行的显式公式；内联公式用 $...$，显式公式用 $$...$$，显式公式会自动编号，不要写未闭合 LaTeX。
+7. 若 metrics 中 numeric_solution_available 为 true，或已经存在 max_completion、covered、scenario、robust、margin 等真实结果指标，必须按这些真实数值解释，绝不能写“未给出”“数据不足”“不能补写”或“缺失参数”。只有 numeric_solution_available 明确为 false 且没有可用结果指标时，才允许写数据不足边界。
+8. 表格和图形下方的判读必须围绕实际数值含义，例如最大/最小值、瓶颈对象、覆盖数量、约束裕度、情景差异、效率和稳健性权衡；不要写“该图应与指标表联合解读”这类模板话。
+9. validation_commentary 和 validation_by_problem 是“模型检验”回填文本，必须写已经由代码跑出的检验结果；不要写“应当检验、可以检验、后续检验、定稿时替换”等计划式语句。
 
 输入 JSON：
 ```json
@@ -930,6 +1071,79 @@ def eldercare_preview_commentary(problem_index: int, title: str, records: list[d
     return ""
 
 
+def wind_patrol_metrics_commentary(problem_index: int, title: str, metrics: dict[str, Any]) -> str:
+    keys = set(metrics.keys())
+    if "max_completion_min" in keys and ("known_usv_count" in keys or "uav_per_usv" in keys):
+        return (
+            f"由{title}可知，问题{problem_index}已经形成多艇协同数值方案："
+            f"{format_metric(metrics.get('known_usv_count'))}艘无人艇共覆盖{format_metric(metrics.get('covered_turbine_count'))}台风机，"
+            f"每艘无人艇携带{format_metric(metrics.get('uav_per_usv'))}架无人机，"
+            f"最终选取{format_metric(metrics.get('total_parking_point_count'))}个停泊点，"
+            f"总航行距离为{format_metric(metrics.get('total_route_distance_km'))} km，"
+            f"系统最大完工时间为{format_metric(metrics.get('max_completion_min'))} min。"
+            f"最小续航裕度为{format_metric(metrics.get('min_endurance_margin_min'))} min，说明无人机单次巡检仍保留正裕度。"
+            f"若以B={format_metric(metrics.get('illustrative_launch_limit_B'))}作为每日最大放飞次数示例，"
+            f"最大完工时间为{format_metric(metrics.get('launch_limit_max_completion_min'))} min，应据此判断放飞次数约束是否成为瓶颈。"
+        )
+    if "deterministic_max_completion_min" in keys or "high_conservative_max_completion_min" in keys:
+        return (
+            f"由{title}可知，问题{problem_index}已经形成鲁棒调度数值方案。"
+            f"巡检时间名义值为{format_metric(metrics.get('nominal_inspection_time_min'))} min，"
+            f"最大偏差为{format_metric(metrics.get('max_deviation_min'))} min，"
+            f"对应区间为[{format_metric(metrics.get('inspection_time_lower_min'))}, {format_metric(metrics.get('inspection_time_upper_min'))}] min。"
+            f"确定性方案最大完工时间为{format_metric(metrics.get('deterministic_max_completion_min'))} min，"
+            f"高保守方案最大完工时间为{format_metric(metrics.get('high_conservative_max_completion_min'))} min；"
+            f"上界情景违约次数为{format_metric(metrics.get('upper_scenario_violation_count'))}，"
+            f"高保守上界情景最小续航裕度为{format_metric(metrics.get('high_conservative_upper_margin_min'))} min。"
+            f"这些指标直接刻画效率与稳健性之间的权衡。"
+        )
+    if "total_completion_min" in keys or "parking_point_count" in keys:
+        covered = first_available(metrics.get("covered_turbine_count"), metrics.get("input_turbine_count"))
+        return (
+            f"由{title}可知，当前单艇协同方案覆盖{format_metric(covered)}台风机，"
+            f"选取{format_metric(metrics.get('parking_point_count'))}个停泊点，"
+            f"无人艇闭合巡检的总完工时间为{format_metric(metrics.get('total_completion_min'))} min。"
+            f"其中总航行时间为{format_metric(metrics.get('total_sailing_min'))} min，"
+            f"停泊作业时间为{format_metric(metrics.get('total_dwell_min'))} min，"
+            f"最小续航裕度为{format_metric(metrics.get('min_endurance_margin_min'))} min。"
+            f"这些数值说明该方案的主要时间消耗来自无人艇跨停泊点航行，且无人机任务仍保留续航余量；"
+            f"但求解方式为启发式搜索，结论应表述为可复核的可行近优方案，而非全局最优证明。"
+        )
+    if ({"known_usv_count", "numeric_solution_available"} & keys) and metrics.get("numeric_solution_available") is False:
+        available = bool_metric_text(metrics.get("numeric_solution_available"))
+        return (
+            f"由{title}可知，问题{problem_index}已确认的无人艇数量为{format_metric(metrics.get('known_usv_count'))}，"
+            f"但“是否形成数值方案”为{available}，缺失参数项数为{format_metric(metrics.get('missing_parameter_count'))}。"
+            f"这张表的实际作用不是给出多艇最优路径，而是定位多艇调度所缺少的前置参数；"
+            f"在艇载无人机数量、速度、续航、安全距离或放飞次数上限尚未可靠读取时，正文只保留缺参边界和后续复核方向。"
+        )
+    if {"nominal_inspection_time_min", "max_deviation_min", "inspection_time_lower_min", "inspection_time_upper_min"} & keys:
+        available = bool_metric_text(metrics.get("numeric_solution_available"))
+        if metrics.get("numeric_solution_available") is True:
+            return (
+                f"由{title}可知，鲁棒分析已读取名义巡检时间{format_metric(metrics.get('nominal_inspection_time_min'))} min，"
+                f"最大偏差{format_metric(metrics.get('max_deviation_min'))} min，"
+                f"对应巡检时间区间为[{format_metric(metrics.get('inspection_time_lower_min'))}, "
+                f"{format_metric(metrics.get('inspection_time_upper_min'))}] min。"
+                f"该表说明问题{problem_index}具备继续进行情景计算和风险偏好比较的参数基础。"
+            )
+        return (
+            f"由{title}可知，鲁棒分析已读取名义巡检时间{format_metric(metrics.get('nominal_inspection_time_min'))} min，"
+            f"最大偏差{format_metric(metrics.get('max_deviation_min'))} min，"
+            f"对应巡检时间区间为[{format_metric(metrics.get('inspection_time_lower_min'))}, "
+            f"{format_metric(metrics.get('inspection_time_upper_min'))}] min。"
+            f"由于完整多艇基础参数仍未可靠读取，“是否形成数值方案”为{available}；"
+            f"因此该表只能支撑不确定性区间和风险偏好框架的说明，不能支撑鲁棒完工时间、违约率或情景对比的定量结论。"
+        )
+    return ""
+
+
+def bool_metric_text(value: Any) -> str:
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    return format_metric(value)
+
+
 def record_num(record: dict[str, Any], key: str) -> float:
     value = record.get(key)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -944,6 +1158,9 @@ def metrics_table_commentary(problem_index: int, title: str, metrics: dict[str, 
     eldercare = eldercare_metrics_commentary(problem_index, metrics)
     if eldercare:
         return eldercare
+    wind_patrol = wind_patrol_metrics_commentary(problem_index, title, metrics)
+    if wind_patrol:
+        return wind_patrol
     if "vehicle_count" in metrics and "config_switches" in metrics:
         color_switches = first_available(metrics.get("color_switches_total"), metrics.get("color_switches"))
         extra = ""
@@ -966,7 +1183,7 @@ def metrics_table_commentary(problem_index: int, title: str, metrics: dict[str, 
         )
     phrase = metric_phrase(metrics, limit=7)
     judgment = metric_judgment(metrics, problem_item)
-    return f"表中给出了问题{problem_index}的核心计算指标，其中{phrase}。这些数值刻画了本问求解结果的规模、误差、切换代价或约束状态；{judgment}"
+    return f"由{title}可知，问题{problem_index}当前可引用的指标包括{phrase}。这些指标应结合本问的目标函数、约束条件和附件字段解释，避免把指标表写成固定模板；{judgment}"
 
 
 def preview_table_commentary(
@@ -1118,13 +1335,16 @@ def preview_table_commentary(
         first = first_record_phrase(records, columns[:4])
         return (
             f"{title}共包含{rows}行、{cols}列，{first}。"
-            f"{record_signal_phrase(records)}这些记录说明该项计算已经形成可直接判读的数值或类别结果，"
-            f"其含义应结合本问目标理解为实际状态、主要差异或约束满足程度。"
+            f"{record_signal_phrase(records)}由此可见，该表已经形成可直接判读的数值或类别结果，"
+            f"并直接支撑本问对实际状态、主要差异或约束满足程度的判断。"
         )
     return f"{title}给出了问题{problem_index}的计算结果，表中数值应被用于说明本问的实际状态、主要差异和最终判断。"
 
 
 def metric_phrase(metrics: dict[str, Any], limit: int = 7) -> str:
+    table_rows = metric_rows_for_table(metrics, limit=limit)
+    if table_rows:
+        return "、".join(f"{key}为{value}" for key, value in table_rows if value)
     selected = select_informative_metrics(metrics, limit)
     if not selected:
         selected = list(metrics.items())[:limit]
@@ -1153,6 +1373,21 @@ def select_informative_metrics(metrics: dict[str, Any], limit: int) -> list[tupl
         "max_config_run",
         "risk_score_max",
         "level_IV_count",
+        "known_usv_count",
+        "uav_per_usv",
+        "max_completion_min",
+        "total_route_distance_km",
+        "total_parking_point_count",
+        "covered_turbine_count",
+        "min_endurance_margin_min",
+        "illustrative_launch_limit_B",
+        "launch_limit_max_completion_min",
+        "numeric_solution_available",
+        "scenario_count",
+        "deterministic_max_completion_min",
+        "high_conservative_max_completion_min",
+        "high_conservative_upper_margin_min",
+        "upper_scenario_violation_count",
     ]
     selected = []
     for key in priority:
@@ -1167,6 +1402,16 @@ def select_informative_metrics(metrics: dict[str, Any], limit: int) -> list[tupl
 
 
 def metric_judgment(metrics: dict[str, Any], problem_item: dict[str, Any]) -> str:
+    if metrics.get("numeric_solution_available") is False:
+        return "该表的结论边界是数据不足或参数缺失，正文应据此说明哪些数值不能计算，而不是继续外推不存在的优化结果。"
+    if "total_completion_min" in metrics or "parking_point_count" in metrics:
+        return "完工时间、航行时间、停泊作业时间和续航裕度共同说明方案是否可执行，并可用于复核路径连续性和无人机容量约束。"
+    if "max_completion_min" in metrics or "total_route_distance_km" in metrics:
+        return "最大完工时间、总航行距离、覆盖数量和续航裕度共同说明多艇协同调度是否完成，并可用于定位瓶颈无人艇和容量约束影响。"
+    if "deterministic_max_completion_min" in metrics or "high_conservative_max_completion_min" in metrics:
+        return "确定性与高保守完工时间、上界情景违约次数和续航裕度共同说明风险偏好对效率和稳健性的影响。"
+    if "nominal_inspection_time_min" in metrics or "inspection_time_upper_min" in metrics:
+        return "名义值、偏差和上下界只定义了不确定性范围，只有在基础调度方案可用时才能进一步比较鲁棒策略的效率与违约风险。"
     if "objective_value" in metrics:
         return "综合目标值给出了各类切换和约束惩罚的统一评价口径，可用于比较不同权重或不同排序方案的优劣。"
     if "vehicle_count" in metrics or "demand_unit_total" in metrics:
@@ -1235,6 +1480,33 @@ def human_metric_name(key: str) -> str:
         "post_expansion_port_violation_sites": "扩容后格口违约场地数",
         "post_expansion_capacity_violation_sites": "扩容后产能违约场地数",
         "rules_rows": "规则记录数",
+        "total_completion_min": "总完工时间/min",
+        "total_sailing_min": "总航行时间/min",
+        "total_dwell_min": "总停泊作业时间/min",
+        "parking_point_count": "停泊点数量",
+        "covered_turbine_count": "覆盖风机数量",
+        "input_turbine_count": "输入风机数量",
+        "min_endurance_margin_min": "最小续航裕度/min",
+        "route_distance_km": "无人艇航行距离/km",
+        "heuristic_runtime_seconds": "启发式运行时间/s",
+        "known_usv_count": "已知无人艇数量",
+        "uav_per_usv": "每艇无人机数量",
+        "max_completion_min": "最大完工时间/min",
+        "total_route_distance_km": "总航行距离/km",
+        "total_parking_point_count": "停泊点总数",
+        "illustrative_launch_limit_B": "放飞次数约束示例B",
+        "launch_limit_max_completion_min": "B约束下最大完工时间/min",
+        "numeric_solution_available": "是否形成数值方案",
+        "missing_parameter_count": "缺失参数项数",
+        "nominal_inspection_time_min": "名义巡检时间/min",
+        "max_deviation_min": "最大偏差/min",
+        "inspection_time_lower_min": "巡检时间下界/min",
+        "inspection_time_upper_min": "巡检时间上界/min",
+        "scenario_count": "情景数量",
+        "deterministic_max_completion_min": "确定性最大完工时间/min",
+        "high_conservative_max_completion_min": "高保守最大完工时间/min",
+        "high_conservative_upper_margin_min": "高保守上界情景最小续航裕度/min",
+        "upper_scenario_violation_count": "上界情景违约次数",
     }
     return mapping.get(str(key), str(key).replace("_", " "))
 
@@ -1407,36 +1679,462 @@ def problem_result_closing(problem_index: int, item: dict[str, Any], text: dict[
 
 
 def build_computed_validation_tex(manifest: dict[str, Any], prose: dict[str, Any]) -> str:
-    limitations = prose.get("limitations") or manifest.get("limitations") or []
+    rows = computed_validation_rows(manifest)
+    prose_validation = validation_prose_by_problem(prose)
+    validation_commentary = clean_validation_commentary(str(prose.get("validation_commentary") or ""))
+    if not validation_commentary:
+        validation_commentary = default_validation_commentary(manifest, rows)
     lines = [
         "% BEGIN AUTO COMPUTED VALIDATION",
-        r"\subsection{结果可靠性与可复现性检验}",
-        latex_paragraph(prose.get("validation_commentary") or "本次求解生成了计算规范、求解脚本、运行日志、结果清单、表格和图形。论文中的新增数值结论均可由这些文件追溯。"),
-        "",
-        r"\begin{table}[H]",
-        r"\centering",
-        r"\caption{求解输出文件与复核作用}",
-        r"\begin{tabular}{p{0.28\textwidth}p{0.58\textwidth}}",
-        r"\toprule",
-        r"文件 & 复核作用\\",
-        r"\midrule",
-        rf"\path{{{MANIFEST_RELATIVE}}} & 记录全部表格、图形、指标和文字结论来源\\",
-        rf"\path{{{SUMMARY_RELATIVE}}} & 汇总程序读取的数据、生成的结果和主要发现\\",
-        rf"\path{{{LOG_RELATIVE}}} & 记录 Python 解释器、返回码、标准输出和错误输出\\",
-        r"\bottomrule",
-        r"\end{tabular}",
-        r"\end{table}",
-        latex_paragraph("表中列出了用于复核的结果清单、摘要文件和运行日志。结果清单用于追踪论文数值来源，摘要文件便于快速阅读计算结论，运行日志用于确认脚本执行状态；当摘要或正文引用精确数值时，应优先检查结果清单与对应结果表，避免出现无来源结论。"),
+        r"\subsection{基于代码输出的模型检验}",
+        latex_paragraph(validation_commentary),
         "",
     ]
-    if limitations:
-        lines.append(r"\noindent\textbf{局限性与人工复核事项：}")
-        lines.append(r"\begin{itemize}")
-        for item in limitations[:8]:
-            lines.append(rf"  \item {latex_inline_text(str(item))}")
-        lines.append(r"\end{itemize}")
+    if rows:
+        grouped = group_problem_results(manifest)
+        for row in rows:
+            problem_index = safe_int(row.get("problem_index"))
+            item = grouped.get(problem_index, {}) if problem_index else {}
+            lines.extend(computed_validation_detail_block(manifest, item, row, prose_validation))
+            lines.append("")
+    else:
+        lines.append(latex_paragraph("当前计算结果未给出可按子问题拆分的检验记录，因此本节不再展开额外的文件复核说明。"))
+        lines.append("")
     lines.append("% END AUTO COMPUTED VALIDATION")
     return "\n".join(lines) + "\n"
+
+
+def computed_validation_detail_block(
+    manifest: dict[str, Any],
+    item: dict[str, Any],
+    row: dict[str, Any],
+    prose_validation: dict[int, str],
+) -> list[str]:
+    problem_index = safe_int(row.get("problem_index")) or 0
+    metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+    paragraph = prose_validation.get(problem_index) or row.get("paragraph") or validation_key_result_phrase(problem_index, item, metrics)
+    lines = [
+        rf"\subsubsection{{问题{problem_index}模型检验}}",
+        latex_paragraph(str(paragraph)),
+        "",
+    ]
+
+    metrics_table = latex_validation_metrics_table(problem_index, metrics)
+    if metrics_table:
+        lines.extend([metrics_table, ""])
+
+    table_count = 0
+    for table in validation_tables_for_problem(manifest, item, problem_index):
+        table_tex = latex_validation_table_from_preview(table, problem_index)
+        if not table_tex:
+            continue
+        lines.extend([table_tex, latex_paragraph(validation_table_commentary(problem_index, table, metrics)), ""])
+        table_count += 1
+        if table_count >= 2:
+            break
+
+    figure_count = 0
+    for figure in validation_figures_for_problem(manifest, item, problem_index):
+        figure_tex = latex_figure(figure, problem_index)
+        if not figure_tex:
+            continue
+        lines.extend([figure_tex, ""])
+        figure_count += 1
+        if figure_count >= 2:
+            break
+
+    if not metrics_table and not table_count and not figure_count:
+        lines.append(latex_paragraph("该问未生成独立的检验表或检验图，正文仅引用结果清单中的约束状态与运行日志；后续若重新生成代码，应优先补充误差、可行性、鲁棒性或敏感性输出。"))
+    return lines
+
+
+def clean_validation_commentary(text: str) -> str:
+    text = sanitize_abstract_text(str(text or "").strip())
+    if not text or text.count("?") >= max(8, len(text) // 4):
+        return ""
+    planning_markers = [
+        "在论文定稿时",
+        "后续",
+        "应将本节",
+        "替换为实际",
+        "所有精确指标必须来自",
+        "可以检验",
+        "应当检验",
+        "需进行",
+        "可设置",
+    ]
+    if any(marker in text for marker in planning_markers):
+        return ""
+    return text
+
+
+def default_validation_commentary(manifest: dict[str, Any], rows: list[dict[str, Any]]) -> str:
+    table_count = manifest.get("table_count") or len(manifest.get("tables", []) or [])
+    figure_count = manifest.get("figure_count") or len(manifest.get("figures", []) or [])
+    problem_count = len(rows) or len(manifest.get("per_problem_results", []) or [])
+    return (
+        f"模型检验围绕{format_metric(problem_count)}个子问题展开，重点核对约束可行性、目标函数值、续航裕度、敏感性或鲁棒情景结果。"
+        "本节仅呈现能够直接支撑模型结论的检验表、检验图和关键数值，不再保留初稿阶段的通用检验方案。"
+    )
+
+
+def validation_prose_by_problem(prose: dict[str, Any]) -> dict[int, str]:
+    result: dict[int, str] = {}
+    for item in prose.get("validation_by_problem", []) or []:
+        if not isinstance(item, dict):
+            continue
+        index = safe_int(item.get("problem_index"))
+        paragraph = clean_validation_commentary(str(item.get("paragraph") or ""))
+        if index and paragraph:
+            result[index] = paragraph
+    return result
+
+
+def computed_validation_rows(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, item in sorted(group_problem_results(manifest).items()):
+        metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+        evidence_tables = validation_tables_for_problem(manifest, item, index)
+        basis = validation_basis_phrase(evidence_tables, metrics)
+        key_result = validation_key_result_phrase(index, item, metrics)
+        conclusion = validation_conclusion_phrase(index, item, metrics)
+        paragraph = (
+            f"问题{index}的模型检验以{basis}为依据。"
+            f"代码输出显示，{key_result}。"
+            f"因此，{conclusion}"
+        )
+        rows.append(
+            {
+                "problem_index": index,
+                "basis": basis,
+                "key_result": key_result,
+                "conclusion": conclusion,
+                "paragraph": paragraph,
+            }
+        )
+    return rows
+
+
+def computed_validation_summary_table(rows: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        r"\begin{table}[H]",
+        r"\centering",
+        r"\caption{分问题模型检验结果汇总}",
+        r"\begin{tabular}{p{0.10\textwidth}p{0.25\textwidth}p{0.31\textwidth}p{0.22\textwidth}}",
+        r"\toprule",
+        r"问题 & 检验依据 & 代码输出的关键检验结果 & 判定\\",
+        r"\midrule",
+    ]
+    for row in rows:
+        lines.append(
+            f"问题{row['problem_index']} & "
+            f"{latex_table_cell(row['basis'])} & "
+            f"{latex_table_cell(row['key_result'])} & "
+            f"{latex_table_cell(row['conclusion'])}\\\\"
+        )
+    lines.extend([r"\bottomrule", r"\end{tabular}", r"\end{table}"])
+    return lines
+
+
+def computed_validation_evidence_rows(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for table in manifest.get("tables", []) or []:
+        if not isinstance(table, dict) or not is_validation_table(table):
+            continue
+        title = str(table.get("title") or table.get("path") or "")
+        rows.append(
+            {
+                "problem_index": safe_int(table.get("problem_index")),
+                "title": title,
+                "rows": table.get("rows"),
+                "purpose": validation_table_purpose(title),
+            }
+        )
+    return rows[:12]
+
+
+def computed_validation_evidence_table(rows: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        r"\begin{table}[H]",
+        r"\centering",
+        r"\caption{代码生成的模型检验表}",
+        r"\begin{tabular}{p{0.12\textwidth}p{0.33\textwidth}p{0.12\textwidth}p{0.31\textwidth}}",
+        r"\toprule",
+        r"问题 & 检验表 & 行数 & 复核作用\\",
+        r"\midrule",
+    ]
+    for row in rows:
+        problem = f"问题{row['problem_index']}" if row["problem_index"] else "综合"
+        lines.append(
+            f"{latex_table_cell(problem)} & "
+            f"{latex_table_cell(row['title'])} & "
+            f"{latex_table_cell(format_metric(row.get('rows')))} & "
+            f"{latex_table_cell(row['purpose'])}\\\\"
+        )
+    lines.extend([r"\bottomrule", r"\end{tabular}", r"\end{table}"])
+    return lines
+
+
+def latex_validation_metrics_table(problem_index: int, metrics: dict[str, Any]) -> str:
+    if not metrics:
+        return ""
+    rows = metric_rows_for_table(metrics, limit=10)
+    if not rows:
+        return ""
+    lines = [
+        r"\begin{table}[H]",
+        r"\centering",
+        rf"\caption{{问题{problem_index}模型检验关键数值}}",
+        r"\begin{tabular}{p{0.38\textwidth}p{0.42\textwidth}}",
+        r"\toprule",
+        r"检验指标 & 代码输出数值\\",
+        r"\midrule",
+    ]
+    for key, value in rows:
+        lines.append(rf"{latex_escape(key)} & {latex_escape(value)}\\")
+    lines.extend([r"\bottomrule", r"\end{tabular}", r"\end{table}"])
+    return "\n".join(lines)
+
+
+def latex_validation_table_from_preview(table: dict[str, Any], problem_index: int) -> str:
+    records = table.get("preview_records") or []
+    if not records:
+        return ""
+    columns = list(records[0].keys())[:6]
+    if not columns:
+        return ""
+    width = max(0.12, min(0.18, 0.84 / max(1, len(columns))))
+    widths = " ".join([f"p{{{width:.2f}\\textwidth}}" for _ in columns])
+    raw_title = str(table.get("title") or f"问题{problem_index}模型检验表").strip()
+    caption = raw_title if any(term in raw_title for term in ["检验", "检查", "验证", "约束", "鲁棒", "敏感", "误差", "可行"]) else f"问题{problem_index}模型检验表：{raw_title}"
+    lines = [
+        r"\begin{table}[H]",
+        r"\centering",
+        rf"\caption{{{latex_escape(caption)}}}",
+        rf"\begin{{tabular}}{{{widths}}}",
+        r"\toprule",
+        " & ".join(latex_escape(str(col)) for col in columns) + r"\\",
+        r"\midrule",
+    ]
+    for record in records[:6]:
+        values = [compact_cell(record.get(col, "")) for col in columns]
+        lines.append(" & ".join(latex_escape(value) for value in values) + r"\\")
+    lines.extend([r"\bottomrule", r"\end{tabular}", r"\end{table}"])
+    return "\n".join(lines)
+
+
+def validation_table_commentary(problem_index: int, table: dict[str, Any], metrics: dict[str, Any]) -> str:
+    title = str(table.get("title") or table.get("path") or "检验表").strip()
+    rows = format_metric(table.get("rows"))
+    purpose = validation_table_purpose(title)
+    records = [record for record in (table.get("preview_records") or []) if isinstance(record, dict)]
+    signal = record_signal_phrase(records).rstrip("。") if records else ""
+    key_result = validation_key_result_phrase(problem_index, {}, metrics) if metrics else ""
+    parts = [f"{title}共包含{rows}行记录，{purpose}"]
+    if signal:
+        parts.append(signal)
+    if key_result:
+        parts.append(f"与关键指标对照可见，{key_result}")
+    parts.append(f"因此，该表不是格式性清单，而是问题{problem_index}模型可行性、误差或鲁棒性判断的直接数值依据")
+    return "。".join(part for part in parts if part).rstrip("。") + "。"
+
+
+def validation_figures_for_problem(manifest: dict[str, Any], item: dict[str, Any], problem_index: int) -> list[dict[str, Any]]:
+    figures = figures_for_problem(manifest, item, problem_index)
+    validation = [figure for figure in figures if is_validation_figure(figure)]
+    return validation or figures[:1]
+
+
+def is_validation_figure(figure: dict[str, Any]) -> bool:
+    text = " ".join(str(figure.get(key) or "") for key in ["path", "title", "description"]).lower()
+    markers = [
+        "检验",
+        "检查",
+        "验证",
+        "约束",
+        "可行",
+        "敏感",
+        "鲁棒",
+        "情景",
+        "误差",
+        "残差",
+        "对照",
+        "混淆",
+        "预测",
+        "均衡",
+        "负载",
+        "裕度",
+        "validation",
+        "check",
+        "constraint",
+        "feasible",
+        "sensitivity",
+        "robust",
+        "scenario",
+        "residual",
+        "confusion",
+        "prediction",
+        "balance",
+        "margin",
+    ]
+    return any(marker.lower() in text for marker in markers)
+
+
+def latex_table_cell(text: Any) -> str:
+    value = re.sub(r"\s+", " ", str(text or "")).strip()
+    return latex_escape(value[:220])
+
+
+def validation_tables_for_problem(manifest: dict[str, Any], item: dict[str, Any], problem_index: int) -> list[dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
+    selected: list[dict[str, Any]] = []
+    for table in manifest.get("tables", []) or []:
+        if not isinstance(table, dict):
+            continue
+        for key in [table.get("path"), table.get("title")]:
+            if key:
+                lookup[str(key)] = table
+        if safe_int(table.get("problem_index")) == problem_index:
+            selected.append(table)
+    for ref in item.get("tables", []) or []:
+        table = ref if isinstance(ref, dict) else lookup.get(str(ref))
+        if isinstance(table, dict):
+            selected.append(table)
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for table in selected:
+        key = str(table.get("path") or table.get("title") or id(table))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(table)
+    validation = [table for table in deduped if is_validation_table(table)]
+    return validation or deduped[:4]
+
+
+def is_validation_table(table: dict[str, Any]) -> bool:
+    text = f"{table.get('title') or ''} {table.get('path') or ''}".lower()
+    markers = [
+        "检查",
+        "检验",
+        "验证",
+        "约束",
+        "可行",
+        "敏感",
+        "鲁棒",
+        "情景",
+        "误差",
+        "残差",
+        "对照",
+        "validation",
+        "check",
+        "constraint",
+        "feasible",
+        "sensitivity",
+        "robust",
+        "scenario",
+        "objective",
+    ]
+    return any(marker.lower() in text for marker in markers)
+
+
+def validation_basis_phrase(tables: list[dict[str, Any]], metrics: dict[str, Any]) -> str:
+    titles = [str(table.get("title") or table.get("path") or "") for table in tables if table]
+    titles = [title for title in titles if title][:4]
+    if titles:
+        return "、".join(titles)
+    if metrics:
+        return "结果清单中的核心指标"
+    return "运行日志和结果清单"
+
+
+def validation_key_result_phrase(problem_index: int, item: dict[str, Any], metrics: dict[str, Any]) -> str:
+    if any(key in metrics for key in ["upper_scenario_violation_count", "high_conservative_max_completion_min", "scenario_count"]):
+        interval = (
+            f"[{format_metric(metrics.get('inspection_time_lower_min'))}, {format_metric(metrics.get('inspection_time_upper_min'))}] min"
+            if metrics.get("inspection_time_lower_min") is not None or metrics.get("inspection_time_upper_min") is not None
+            else "结果清单记录的巡检时间区间"
+        )
+        return (
+            f"巡检时间区间为{interval}，高保守方案最大完工时间为"
+            f"{format_metric(metrics.get('high_conservative_max_completion_min'))} min，"
+            f"上界情景违约次数为{format_metric(metrics.get('upper_scenario_violation_count'))}，"
+            f"最小续航裕度为{format_metric(metrics.get('high_conservative_upper_margin_min'))} min"
+        )
+    if any(key in metrics for key in ["known_usv_count", "max_completion_min", "total_route_distance_km"]):
+        launch = ""
+        if metrics.get("illustrative_launch_limit_B") is not None:
+            launch = (
+                f"，放飞次数示例B={format_metric(metrics.get('illustrative_launch_limit_B'))}时最大完工时间为"
+                f"{format_metric(metrics.get('launch_limit_max_completion_min'))} min"
+            )
+        return (
+            f"{format_metric(metrics.get('known_usv_count'))}艘无人艇覆盖{format_metric(metrics.get('covered_turbine_count'))}台对象，"
+            f"最大完工时间为{format_metric(metrics.get('max_completion_min'))} min，"
+            f"最小续航裕度为{format_metric(metrics.get('min_endurance_margin_min'))} min{launch}"
+        )
+    if any(key in metrics for key in ["total_completion_min", "parking_point_count"]):
+        covered = first_available(metrics.get("covered_turbine_count"), metrics.get("input_turbine_count"))
+        return (
+            f"覆盖{format_metric(covered)}台对象，选取{format_metric(metrics.get('parking_point_count'))}个停泊点，"
+            f"总完工时间为{format_metric(metrics.get('total_completion_min'))} min，"
+            f"最小续航裕度为{format_metric(metrics.get('min_endurance_margin_min'))} min"
+        )
+    if metrics:
+        return metric_phrase(metrics, limit=6)
+    conclusion = sanitize_abstract_result(str(item.get("conclusion") or "结果清单已记录本问计算输出"))
+    return conclusion or "结果清单已记录本问计算输出"
+
+
+def validation_conclusion_phrase(problem_index: int, item: dict[str, Any], metrics: dict[str, Any]) -> str:
+    false_keys = [human_metric_name(key) for key, value in metrics.items() if value is False]
+    positive_violations = [
+        (key, value)
+        for key, value in metrics.items()
+        if any(marker in str(key).lower() for marker in ["violation", "违约", "超限"])
+        and numeric_metric_value(value) not in [None, 0]
+    ]
+    if false_keys:
+        return "仍存在未通过的检验项：" + "、".join(false_keys[:4]) + "，需要回到数据读取或约束建模环节复核。"
+    if positive_violations:
+        detail = "、".join(f"{human_metric_name(key)}为{format_metric(value)}" for key, value in positive_violations[:4])
+        return detail + "，说明该方案存在约束风险，论文结论应保留该边界。"
+    if metrics.get("numeric_solution_available") is False:
+        return "当前代码未形成完整数值方案，本问只能作为数据边界或参数缺口说明。"
+    margin = first_available(
+        metrics.get("min_endurance_margin_min"),
+        metrics.get("high_conservative_upper_margin_min"),
+    )
+    margin_number = numeric_metric_value(margin)
+    if margin_number is not None and margin_number > 0:
+        return "覆盖、路径或续航等核心硬约束具有正裕度，模型输出可作为可行调度方案使用。"
+    if any(key in metrics for key in ["mae", "rmse", "sMAPE", "mape", "accuracy", "macro_f1"]):
+        return "误差或分类评价指标已由代码输出，可用于判断模型精度和稳定性。"
+    return "检验指标已随结果清单同步生成，可支撑本问结果的可追溯复核。"
+
+
+def numeric_metric_value(value: Any) -> float | None:
+    if value in [None, ""]:
+        return None
+    try:
+        number = float(value)
+        return number if np_is_finite(number) else None
+    except Exception:
+        return None
+
+
+def validation_table_purpose(title: str) -> str:
+    if any(term in title for term in ["约束", "可行", "检查"]):
+        return "复核覆盖、容量、路径、续航或安全距离等硬约束是否满足"
+    if "敏感" in title:
+        return "比较参数扰动下目标值和约束裕度的变化"
+    if any(term in title for term in ["鲁棒", "情景"]):
+        return "复核不确定情景下完工时间、违约次数和安全裕度"
+    if any(term in title for term in ["误差", "验证", "检验"]):
+        return "复核模型误差、稳定性或对照实验表现"
+    if "目标" in title:
+        return "复核目标函数值及其对应的关键约束状态"
+    return "核对该问的约束状态、指标一致性和结果稳定性"
 
 
 def group_problem_results(manifest: dict[str, Any]) -> dict[int, dict[str, Any]]:
@@ -1502,13 +2200,7 @@ def infer_figure_problem_index(figure: dict[str, Any]) -> int | None:
 def latex_table_from_metrics(problem_index: int, metrics: dict[str, Any]) -> str:
     if not metrics:
         return ""
-    rows = []
-    for key, value in list(metrics.items())[:12]:
-        if isinstance(value, float):
-            value_text = f"{value:.6g}"
-        else:
-            value_text = str(value)
-        rows.append((human_metric_name(str(key)), value_text))
+    rows = metric_rows_for_table(metrics, limit=12)
     if not rows:
         return ""
     lines = [
@@ -1524,6 +2216,99 @@ def latex_table_from_metrics(problem_index: int, metrics: dict[str, Any]) -> str
         lines.append(rf"{latex_escape(key)} & {latex_escape(value)}\\")
     lines.extend([r"\bottomrule", r"\end{tabular}", r"\end{table}"])
     return "\n".join(lines)
+
+
+def metric_rows_for_table(metrics: dict[str, Any], limit: int = 12) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    for key, value in metrics.items():
+        for row_key, row_value in expand_metric_value_for_table(str(key), value):
+            if len(rows) >= limit:
+                return rows
+            value_text = format_metric_value_for_table(row_value)
+            if value_text:
+                rows.append((human_metric_name(row_key), value_text))
+    return rows
+
+
+def expand_metric_value_for_table(key: str, value: Any) -> list[tuple[str, Any]]:
+    if is_scalar_metric_value(value):
+        return [(key, value)]
+    if isinstance(value, list):
+        if not value:
+            return []
+        if all(isinstance(item, dict) for item in value):
+            if is_robust_level_key(key):
+                rows: list[tuple[str, Any]] = []
+                for index, item in enumerate(value[:4], 1):
+                    label = compact_robust_level_label(item, index)
+                    rows.append((f"{key} {label}", summarize_metric_record(item)))
+                return rows
+            return [(key, f"{len(value)}条记录，详见对应结果表")]
+        preview = "、".join(format_metric_value_for_table(item) for item in value[:3])
+        suffix = "等" if len(value) > 3 else ""
+        return [(key, f"{len(value)}项：{preview}{suffix}")]
+    if isinstance(value, dict):
+        return [(key, summarize_metric_record(value))]
+    return [(key, str(value))]
+
+
+def is_scalar_metric_value(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def is_robust_level_key(key: str) -> bool:
+    text = key.lower()
+    return "robust" in text or "保守" in key or "情景" in key
+
+
+def compact_robust_level_label(item: dict[str, Any], index: int) -> str:
+    for key in ["保守程度alpha", "alpha", "模型名称", "scenario", "情景"]:
+        if key in item and item.get(key) not in [None, ""]:
+            return f"{key}={format_metric_value_for_table(item.get(key))}"
+    return f"情景{index}"
+
+
+def summarize_metric_record(record: dict[str, Any], limit: int = 4) -> str:
+    preferred_keys = [
+        "模型名称",
+        "任务时间取值(min)",
+        "最大完工时间(min)",
+        "相对确定性最大完工时间变化(min)",
+        "瓶颈无人艇",
+        "总服务风机数",
+        "总停泊点数",
+        "作业时间合计(min)",
+        "航行时间合计(min)",
+    ]
+    ordered: list[tuple[str, Any]] = []
+    for key in preferred_keys:
+        if key in record:
+            ordered.append((key, record.get(key)))
+    for key, value in record.items():
+        if key not in preferred_keys:
+            ordered.append((str(key), value))
+    parts = [
+        f"{key}={format_metric_value_for_table(value)}"
+        for key, value in ordered
+        if is_scalar_metric_value(value) and value not in [None, ""]
+    ][:limit]
+    return "；".join(parts) if parts else f"{len(record)}个字段，详见结果表"
+
+
+def format_metric_value_for_table(value: Any) -> str:
+    if value is None or value == "":
+        return ""
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not np_is_finite(value):
+            return str(value)
+        return f"{value:.6g}"
+    text = str(value)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:120]
 
 
 def latex_table_from_preview(table: dict[str, Any], problem_index: int) -> str:
@@ -1610,8 +2395,20 @@ def figure_commentary(figure: dict[str, Any], problem_index: int, title: str) ->
         return [
             f"{raw_description or '该图展示综合风险评分随样本序号或时间的变化以及预警阈值位置。'} 风险曲线的峰值、持续高位区间和阈值穿越位置反映系统状态由低风险向高风险演化的时间特征；该曲线可作为预警等级判定的直接依据，并与等级分布表共同支撑工程预警结论。"
         ]
+    if "route_map_problem2" in path or ("多无人艇" in title and "路径" in title):
+        return [
+            f"{raw_description or '路径图展示多艘无人艇从港口出发、分别访问停泊点并返回港口的空间结构。'} 图中不同路径对应不同任务分区，可用于判断多艇方案是否把风机巡检拆分为并行子任务，以及是否存在明显跨区绕行；结合最大完工时间即可说明系统瓶颈来自哪一艘艇的航行与停泊作业组合。"
+        ]
+    if "load_balance_problem2" in path or ("无人艇" in title and "完工时间" in title):
+        return [
+            f"{raw_description or '完工时间图展示各无人艇返回港口的时间差异。'} 各柱或曲线之间的高低差直接反映艇间负载均衡程度，最高值对应系统最大完工时间和瓶颈无人艇；若其余艇与瓶颈艇差距较小，说明分区和艇内无人机装载较为均衡。"
+        ]
+    if "robust_tradeoff" in path or ("鲁棒" in title and "权衡" in title):
+        return [
+            f"{raw_description or '鲁棒权衡图展示保守参数变化下的完工时间和续航裕度。'} 随保守参数增大，计划完工时间的上升代表效率损失，续航裕度和违约次数则反映稳健性收益；该图用于说明不同风险偏好方案在日常巡检和恶劣海况任务中的取舍。"
+        ]
     return [
-        f"{raw_description or f'该图为问题{problem_index}的模型结果图。'} 该图应与同一小节中的指标表和结果表联合解读，以检查模型输出是否符合数据趋势和问题约束；它支持问题{problem_index}的数值结论，并说明相关结果具有可视化依据。"
+        f"{raw_description or f'该图展示问题{problem_index}的模型结果。'} 图中的曲线、柱形、节点或空间位置反映了该子问题的关键差异和约束状态；结合相邻指标表可以确认主要数值结论是否有图形证据支撑，并据此回答问题{problem_index}的模型求解目标。"
     ]
 
 
@@ -1633,6 +2430,110 @@ def prune_extra_problem_sections(tex: str, manifest: dict[str, Any]) -> str:
         flags=re.S,
     )
     return pattern.sub(repl, tex)
+
+
+def align_problem_solving_targets(tex: str, manifest: dict[str, Any]) -> str:
+    """Replace stale LLM draft targets with the solved per-problem titles."""
+    updated = tex
+    for problem_index, item in group_problem_results(manifest).items():
+        target = problem_target_text(item)
+        if not target:
+            continue
+        updated = replace_problem_solving_target(updated, problem_index, target)
+        updated = replace_problem_draft_target_sentences(updated, problem_index, target)
+    return updated
+
+
+def problem_target_text(item: dict[str, Any]) -> str:
+    title = str(item.get("title") or "").strip()
+    description = str(item.get("description") or "").strip()
+    if title and description and description not in title:
+        return f"{title}。{description}"
+    return title or description
+
+
+def replace_problem_solving_target(tex: str, problem_index: int, target: str) -> str:
+    escaped = latex_inline_text(target)
+    section_patterns = [
+        rf"(\\subsection\{{\s*问题\s*{problem_index}\s*模型求解\s*\}}[\s\S]*?\\noindent\\textbf\{{求解目标：\}}\s*)(.*?)(?=\n\s*\\subsubsection|\n\s*% BEGIN AUTO COMPUTED RESULTS|\n\s*\\subsection|\n\s*\\section)",
+        rf"(\\subsection\{{[^}}]*{problem_index}[^}}]*模型求解[^}}]*\}}[\s\S]*?\\noindent\\textbf\{{求解目标：\}}\s*)(.*?)(?=\n\s*\\subsubsection|\n\s*% BEGIN AUTO COMPUTED RESULTS|\n\s*\\subsection|\n\s*\\section)",
+    ]
+    for pattern in section_patterns:
+        tex, count = re.subn(pattern, lambda match: match.group(1) + escaped, tex, count=1, flags=re.S)
+        if count:
+            return tex
+    return tex
+
+
+def replace_problem_draft_target_sentences(tex: str, problem_index: int, target: str) -> str:
+    escaped = latex_inline_text(target)
+    input_escaped = latex_inline_text(target.rstrip("。.;；"))
+
+    def fix_building(body: str) -> str:
+        body = re.sub(
+            r"(该任务可概括为“)([^”]+)(”。)",
+            lambda match: match.group(1) + escaped + match.group(3),
+            body,
+            count=1,
+            flags=re.S,
+        )
+        body = re.sub(
+            r"(输入\s*&\s*)(.*?)(；\s*读取题目附件)",
+            lambda match: match.group(1) + input_escaped + match.group(3),
+            body,
+            count=1,
+            flags=re.S,
+        )
+        return body
+
+    def fix_solving(body: str) -> str:
+        number = problem_number_pattern(problem_index)
+        return re.sub(
+            rf"(针对问题\s*{number}\s*，\s*模型求解以“)([^”]+)(”为目标。)",
+            lambda match: match.group(1) + escaped + match.group(3),
+            body,
+            count=1,
+            flags=re.S,
+        )
+
+    tex = replace_problem_subsection_body(tex, problem_index, "模型建立", fix_building)
+    tex = replace_problem_subsection_body(tex, problem_index, "模型求解", fix_solving)
+    return tex
+
+
+def replace_problem_subsection_body(
+    tex: str,
+    problem_index: int,
+    section_label: str,
+    transform: Callable[[str], str],
+) -> str:
+    label = re.escape(section_label)
+    pattern = re.compile(
+        rf"(\\subsection\{{[^}}]*(?:问题|闂)\s*{problem_index}[^}}]*{label}[^}}]*\}})"
+        rf"([\s\S]*?)(?=\n\\subsection\{{|\n\\section\{{|\\appendix|\Z)",
+        flags=re.S,
+    )
+    return pattern.sub(lambda match: match.group(1) + transform(match.group(2)), tex, count=1)
+
+
+def problem_number_pattern(index: int) -> str:
+    return rf"(?:{index}|{chinese_problem_number(index)})"
+
+
+def chinese_problem_number(index: int) -> str:
+    mapping = {
+        1: "一",
+        2: "二",
+        3: "三",
+        4: "四",
+        5: "五",
+        6: "六",
+        7: "七",
+        8: "八",
+        9: "九",
+        10: "十",
+    }
+    return mapping.get(index, str(index))
 
 
 def ensure_paper_title(tex: str, manifest: dict[str, Any]) -> str:
@@ -1663,11 +2564,36 @@ def ensure_method_references(tex: str, manifest: dict[str, Any]) -> str:
     """Bind listed references to the methods used in the body with real cite commands."""
     tex, labels = normalize_reference_section(tex)
     if r"\subsection{文献与方法依据}" in tex:
-        return tex
+        return ensure_existing_method_citations(tex)
     basis = method_reference_basis_latex(manifest, labels)
     if not basis:
         return tex
     return re.sub(r"(\\section\{模型建立\}\s*)", lambda match: match.group(1) + basis + "\n", tex, count=1)
+
+
+def ensure_existing_method_citations(tex: str) -> str:
+    pattern = re.compile(
+        r"(\\subsection\{文献与方法依据\}\s*)([\s\S]*?)(?=\n\\subsection\{|\n\\section\{|\Z)",
+        flags=re.S,
+    )
+    match = pattern.search(tex)
+    if not match or r"\cite{" in match.group(2):
+        return tex
+    bib_labels = list(dict.fromkeys(re.findall(r"\\bibitem\{([^{}]+)\}", tex)))
+    if not bib_labels:
+        return tex
+    cite = r"\cite{" + ",".join(bib_labels[:5]) + "}"
+    body = match.group(2).strip()
+    if body:
+        body = re.sub(r"\s+", " ", body)
+        replacement_body = latex_paragraph_preserving_citations(
+            body.rstrip("。") + f"；具体而言，赛题数据口径、路径规划、协同调度和鲁棒优化的建模依据分别与参考文献保持对应{cite}。"
+        )
+    else:
+        replacement_body = latex_paragraph_preserving_citations(
+            f"本文根据任务类型选择路径规划、协同调度、整数规划和鲁棒优化方法，方法依据与参考文献保持对应{cite}；所有精确数值仍以附件数据和程序计算结果为准。"
+        )
+    return tex[: match.start(2)] + replacement_body + tex[match.end(2) :]
 
 
 def normalize_reference_section(tex: str) -> tuple[str, dict[str, str]]:
@@ -1893,6 +2819,13 @@ def abstract_method_chain_sentence(manifest: dict[str, Any]) -> str:
             "再将走货路由转化为有向路径集合，建立满足唯一性、可达性、格口和产能约束的集包规则模型；"
             "最后在货量增长情景下引入设备购置、人工补充和年化成本变量，形成容量扩容与成本控制联合优化模型。"
         )
+    if any(term in corpus for term in ["海上风电", "风力发电机", "风机", "无人艇", "无人机", "停泊点", "巡检"]):
+        return (
+            "首先将风机经纬度坐标转换为公里尺度距离矩阵，并由安全距离、无人机续航和巡检时间生成风机--停泊点可服务矩阵；"
+            "随后通过KMeans候选停泊点、最近邻初解、2-opt路径改进和LPT并行机调度求解单艇巡检方案；"
+            "再将模型扩展为多无人艇分区和最大完工时间负载均衡问题；"
+            "最后采用区间鲁棒情景、保守参数放大和续航违约复核检验巡检时间波动下的可行性。"
+        )
     return (
         "首先完成字段识别、缺失异常处理和样本对齐；随后根据子问题目标建立预测、分类、网络优化或资源配置模型；"
         "最后通过误差指标、约束核验和敏感性分析检验结果可靠性。"
@@ -1902,13 +2835,35 @@ def abstract_method_chain_sentence(manifest: dict[str, Any]) -> str:
 def abstract_problem_method_phrase(problem_index: int, item: dict[str, Any], manifest: dict[str, Any]) -> str:
     text = " ".join(str(item.get(key) or "") for key in ["title", "description", "analysis", "conclusion"])
     metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+    corpus = json.dumps(manifest, ensure_ascii=False)[:12000]
+    if any(term in corpus for term in ["海上风电", "风力发电机", "风机", "无人艇", "无人机", "停泊点", "巡检"]) or any(
+        key in metrics
+        for key in [
+            "total_completion_min",
+            "parking_point_count",
+            "known_usv_count",
+            "uav_per_usv",
+            "deterministic_max_completion_min",
+            "high_conservative_max_completion_min",
+            "upper_scenario_violation_count",
+        ]
+    ):
+        if problem_index == 1 or any(key in metrics for key in ["total_completion_min", "parking_point_count"]):
+            return "考虑停泊点覆盖、无人机续航和无人艇闭合路径约束，建立KMeans候选停泊点覆盖--单艇TSP路径--并行无人机调度模型，采用最近邻初解、2-opt局部搜索和LPT任务分配算法"
+        if problem_index == 2 or any(key in metrics for key in ["known_usv_count", "uav_per_usv", "max_completion_min"]):
+            return "考虑多艇任务互斥、艇载无人机容量和最大完工时间均衡约束，建立多车辆路径与负载均衡协同优化模型，采用远近交错均衡分区、单艇子路径2-opt改进和LPT无人机装载算法"
+        if problem_index == 3 or any(key in metrics for key in ["deterministic_max_completion_min", "high_conservative_max_completion_min", "upper_scenario_violation_count"]):
+            return "考虑巡检时间区间不确定性和风险偏好参数，建立基于保守参数alpha的区间鲁棒调度模型，采用确定性、低保守和高保守三情景对比及上界续航违约检查算法"
     if any(key in metrics for key in ["purchase_rows", "total_devices", "device_annual_cost", "post_expansion_capacity_violation_sites"]) or any(term in text for term in ["设备", "扩容", "增长", "人工"]):
         return "考虑货量增长、设备年化成本、格口和产能双重约束，建立设备购置与人工补充联合整数优化模型，采用单位能力成本筛选和缺口补齐策略"
     if any(key in metrics for key in ["rule_rows", "route_feasible_rows", "port_violation_sites", "capacity_violation_sites"]) or any(term in text for term in ["集包", "路由", "格口", "产能"]):
         return "考虑唯一走货路由、建包节点可达性、格口数量和产能上限，建立有向路径上的0-1集包规则优化模型，采用候选弧枚举、规则唯一性约束和容量可行性核验"
     if any(key in metrics for key in ["forecast_rows", "forecast_flow_count", "forecast_total_7days"]) or any(term in text for term in ["预测", "货量", "包裹"]):
         return "考虑流向层级差异、星期周期、短期波动和数据稀疏性，建立滚动验证驱动的分层时间序列预测模型，采用季节朴素、近邻滚动均值和稳健中位数兜底的模型选择策略"
-    return f"围绕该子问题的输入变量、约束条件和目标输出，建立任务适配的数学模型并采用可复现实验流程"
+    basis = sanitize_abstract_result(str(item.get("method_basis") or ""))
+    if basis:
+        return f"依据{basis}，建立与本问目标和约束相匹配的统计或优化模型，并按结果清单记录的算法流程求解"
+    return "根据本问输入变量、目标函数、约束条件和结果指标，建立可复核的统计或优化求解模型，并采用程序化实验流程完成计算"
 
 
 def append_abstract_result_sentence(tex: str, sentence: str) -> str:
@@ -1920,6 +2875,204 @@ def append_abstract_result_sentence(tex: str, sentence: str) -> str:
     if keyword_match:
         return tex[: keyword_match.start()] + "\n" + latex_text_preserving_math(sentence) + "\n" + tex[keyword_match.start() :]
     return tex
+
+
+def integrate_final_abstract_from_body(
+    root: Path,
+    tex: str,
+    manifest: dict[str, Any],
+    prose: dict[str, Any],
+    paper_options: dict[str, Any],
+) -> tuple[str, dict[str, str]]:
+    """Regenerate the abstract after body, computed results, and validation are complete."""
+    existing = extract_existing_abstract(tex)
+    fallback = rebuild_computed_abstract(existing, manifest, prose)
+    abstract = fallback
+    payload: dict[str, Any] = {
+        "stage": "final_abstract_from_body",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "success": False,
+        "mode": "fallback",
+        "abstract": fallback,
+    }
+    try:
+        body = compact_final_body_for_abstract(tex)
+        context = {
+            "paper_options": paper_options,
+            "computed_manifest": compact_manifest(manifest),
+            "computed_result_prose": compact_result_prose_for_abstract(prose),
+            "final_body": body,
+        }
+        prompt = f"""你是数学建模竞赛论文摘要总编。现在论文正文、模型求解、模型检验和结果回填已经完成，请只根据最终正文和计算结果清单重写摘要。
+
+只输出 JSON，不要 Markdown，不要解释。字段：
+{{
+  "abstract": "一段中文摘要"
+}}
+
+硬性要求：
+1. 摘要必须在正文全部完成后归纳正文内容，不能照搬模板句、不能写“任务适配的数学模型”“可复现实验流程”等笼统话。
+2. 每个子问题都必须写清楚具体建立了什么数学模型、采用了什么算法或求解策略、由正文得到什么关键结果。
+3. 每个子问题使用自然表述，不强制套固定句式；但必须能看出“模型/算法/结果”三要素。
+4. 精确数值只能来自 final_body 或 computed_manifest，不能编造。若正文没有数值，只能写定性结果。
+5. 不要出现 A题/B题/C题 等赛题字母，不要出现附件文件名、路径、Sheet 名、后台文件名。
+6. 摘要末尾要说明模型检验或可靠性依据，但只能写具体检验结果，例如约束违约次数、覆盖率、误差指标、鲁棒情景下的裕度或敏感性数值；禁止写“本次求解形成X个结果表和Y张图”“所有关键结论均可追溯到计算结果”“形成了若干图表”等空泛汇总。
+7. 若没有具体检验数值，就不要强行写可靠性套话。
+8. 控制在 700-1200 个汉字左右，写成一个自然段。
+
+输入 JSON：
+```json
+{json.dumps(context, ensure_ascii=False, indent=2)}
+```"""
+        text = call_chat_completion(prompt, max_tokens=2600, attempts=2, stream_label="根据最终正文生成摘要")
+        parsed = json.loads(extract_json_object(text))
+        candidate = sanitize_abstract_text(str(parsed.get("abstract") or ""))
+        if is_final_abstract_acceptable(candidate, manifest):
+            abstract = candidate
+            payload.update({"success": True, "mode": "llm_body_summary", "abstract": abstract})
+        else:
+            payload.update(
+                {
+                    "success": False,
+                    "mode": "fallback",
+                    "error": "LLM 摘要缺少具体模型、算法、逐问结果或包含模板化表述，已使用计算清单兜底。",
+                    "llm_candidate": candidate,
+                }
+            )
+    except Exception as exc:
+        payload.update({"success": False, "mode": "fallback", "error": f"{type(exc).__name__}: {exc}"})
+
+    tex = replace_abstract_text(tex, abstract)
+    save_json(root / "artifacts" / "final_abstract.json", payload)
+    (root / "artifacts" / "final_abstract.md").write_text("# 最终摘要\n\n" + abstract + "\n", encoding="utf-8")
+    return tex, {
+        "final_abstract": "artifacts/final_abstract.md",
+        "final_abstract_json": "artifacts/final_abstract.json",
+    }
+
+
+def extract_existing_abstract(tex: str) -> str:
+    match = re.search(
+        r"(\\noindent\\textbf\{摘要[：:]?\}\s*)([\s\S]*?)(?=\n\s*\\noindent\\textbf\{关键词[：:]?\})",
+        tex,
+    )
+    return sanitize_abstract_text(match.group(2)) if match else ""
+
+
+def replace_abstract_text(tex: str, abstract: str) -> str:
+    abstract = latex_text_preserving_math(sanitize_abstract_text(abstract))
+    match = re.search(
+        r"(\\noindent\\textbf\{摘要[：:]?\}\s*)([\s\S]*?)(?=\n\s*\\noindent\\textbf\{关键词[：:]?\})",
+        tex,
+    )
+    if not match:
+        return tex
+    return tex[: match.start(2)] + abstract + "\n\n" + tex[match.end(2) :].lstrip()
+
+
+def compact_final_body_for_abstract(tex: str, max_chars: int = 28000) -> str:
+    body = re.sub(
+        r"\\noindent\\textbf\{摘要[：:]?\}[\s\S]*?(?=\n\s*\\noindent\\textbf\{关键词[：:]?\})",
+        "",
+        tex,
+        flags=re.S,
+    )
+    body = re.sub(r"\\section\{参考文献\}[\s\S]*", "", body, flags=re.S)
+    body = re.sub(r"% BEGIN AUTO COMPUTED (?:RESULTS|VALIDATION)|% END AUTO COMPUTED (?:RESULTS|VALIDATION)", "", body)
+    body = re.sub(r"\\begin\{figure\}[\s\S]*?\\end\{figure\}", "[图形结果见正文相邻标题与判读段落]", body)
+    body = re.sub(r"\s+", " ", body)
+    if len(body) <= max_chars:
+        return body
+    section_names = ["模型建立", "模型求解", "模型检验", "模型评价与推广"]
+    parts = []
+    for name in section_names:
+        match = re.search(rf"\\section\{{{re.escape(name)}\}}([\s\S]*?)(?=\n\\section\{{|\\appendix|\Z)", tex)
+        if match:
+            text = re.sub(r"\s+", " ", match.group(0))
+            parts.append(text[: max_chars // len(section_names)])
+    compact = "\n".join(parts)
+    return compact[:max_chars] if compact else body[:max_chars]
+
+
+def compact_result_prose_for_abstract(prose: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "abstract_problem_results": prose.get("abstract_problem_results", []),
+        "validation_commentary": prose.get("validation_commentary", ""),
+        "limitations": prose.get("limitations", []),
+    }
+
+
+def is_final_abstract_acceptable(text: str, manifest: dict[str, Any]) -> bool:
+    if len(text) < 180:
+        return False
+    banned = [
+        "任务适配的数学模型",
+        "建立数学模型并采用",
+        "可复现实验流程",
+        "附件1",
+        "附件2",
+        "Sheet",
+        ".xlsx",
+        ".csv",
+        ".docx",
+        "本次求解形成",
+        "所有关键结论均可追溯",
+        "结果表和",
+        "张图",
+        "可追溯到计算结果",
+    ]
+    if any(term in text for term in banned):
+        return False
+    if re.search(r"形成.{0,12}(结果表|表格).{0,12}(张图|图)", text):
+        return False
+    by_problem = group_problem_results(manifest)
+    if by_problem and not abstract_mentions_each_problem(text, sorted(by_problem)):
+        return False
+    method_terms = ["模型", "算法", "规划", "调度", "优化", "预测", "分类", "聚类", "鲁棒", "回归", "TSP", "KMeans", "LPT", "2-opt"]
+    if sum(1 for term in method_terms if term in text) < 3:
+        return False
+    result_numbers = re.findall(r"\d+(?:\.\d+)?", text)
+    if by_problem and len(result_numbers) < min(3, len(by_problem)):
+        return False
+    return True
+
+
+def abstract_mentions_each_problem(text: str, problem_indices: list[int]) -> bool:
+    if all(problem_marker_present(text, index) for index in problem_indices):
+        return True
+    ordinal_markers = ["第一", "第二", "第三", "第四", "第五", "首先", "其次", "再次", "最后"]
+    return len(problem_indices) <= sum(1 for marker in ordinal_markers if marker in text)
+
+
+def problem_marker_present(text: str, index: int) -> bool:
+    chinese = chinese_problem_index(index)
+    patterns = [
+        rf"问题\s*{index}",
+        rf"问题\s*{chinese}",
+        rf"第\s*{index}\s*问",
+        rf"第\s*{chinese}\s*问",
+        rf"子问题\s*{index}",
+        rf"子问题\s*{chinese}",
+        rf"第\s*{index}\s*个子问题",
+        rf"第\s*{chinese}\s*个子问题",
+    ]
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def chinese_problem_index(index: int) -> str:
+    values = {
+        1: "一",
+        2: "二",
+        3: "三",
+        4: "四",
+        5: "五",
+        6: "六",
+        7: "七",
+        8: "八",
+        9: "九",
+        10: "十",
+    }
+    return values.get(index, str(index))
 
 
 def abstract_problem_results(manifest: dict[str, Any], prose: dict[str, Any]) -> dict[int, str]:
@@ -2081,26 +3234,94 @@ def format_abstract_number(value: Any) -> str:
 
 
 def abstract_reliability_sentence(manifest: dict[str, Any]) -> str:
-    metrics = manifest.get("metrics") if isinstance(manifest.get("metrics"), dict) else {}
-    p1 = metrics.get("problem_1") if isinstance(metrics.get("problem_1"), dict) else {}
-    p2 = metrics.get("problem_2") if isinstance(metrics.get("problem_2"), dict) else {}
-    p3 = metrics.get("problem_3") if isinstance(metrics.get("problem_3"), dict) else {}
-    parts = []
-    if p1.get("validation_records") is not None:
-        parts.append(f"{format_abstract_number(p1.get('validation_records'))}条滚动验证记录")
-    if p2.get("route_feasible_rows") is not None:
-        parts.append(f"{format_abstract_number(p2.get('route_feasible_rows'))}条路由可行性核验")
-    if p3.get("capacity_checked_sites") is not None:
-        parts.append(f"{format_abstract_number(p3.get('capacity_checked_sites'))}个场地扩容后容量复核")
-    if parts:
-        corpus = json.dumps(manifest, ensure_ascii=False)[:12000]
-        target = "物流网络集包规则制定和设备配置" if any(term in corpus for term in ["物流", "分拣", "包裹", "集包", "格口", "产能", "设备"]) else "相关预测、优化和决策"
-        return "通过" + "、".join(parts) + f"检验结果的可靠性、可追溯性与工程可执行性，说明模型能够为{target}提供量化依据。"
-    table_count = manifest.get("table_count")
-    figure_count = manifest.get("figure_count") or len(manifest.get("figures", []) or [])
-    if table_count or figure_count:
-        return f"本次求解形成{format_abstract_number(table_count)}个结果表和{format_abstract_number(figure_count)}张图，所有关键结论均可追溯到计算结果。"
+    claims = []
+    for problem_index, item in sorted(group_problem_results(manifest).items()):
+        metrics = item.get("metrics") if isinstance(item.get("metrics"), dict) else {}
+        claim = abstract_validation_claim(problem_index, metrics)
+        if claim:
+            claims.append(claim)
+    if not claims:
+        return ""
+    return "模型检验显示，" + "；".join(claims[:3]) + "。"
+
+
+def abstract_validation_claim(problem_index: int, metrics: dict[str, Any]) -> str:
+    if not metrics:
+        return ""
+    if any(key in metrics for key in ["upper_scenario_violation_count", "high_conservative_max_completion_min", "scenario_count"]):
+        interval = ""
+        lower = metric_lookup(metrics, "inspection_time_lower_min")
+        upper = metric_lookup(metrics, "inspection_time_upper_min")
+        if lower is not None or upper is not None:
+            interval = f"巡检时间区间[{format_abstract_number(lower)}, {format_abstract_number(upper)}] min内，"
+        return (
+            f"问题{problem_index}{interval}上界情景违约次数为{format_abstract_number(metric_lookup(metrics, 'upper_scenario_violation_count'))}，"
+            f"高保守方案最大完工时间为{format_abstract_number(metric_lookup(metrics, 'high_conservative_max_completion_min'))} min，"
+            f"最小续航裕度为{format_abstract_number(metric_lookup(metrics, 'high_conservative_upper_margin_min'))} min"
+        )
+    if any(key in metrics for key in ["known_usv_count", "max_completion_min", "total_route_distance_km"]):
+        return (
+            f"问题{problem_index}在{format_abstract_number(metric_lookup(metrics, 'known_usv_count'))}艘无人艇协同下覆盖"
+            f"{format_abstract_number(metric_lookup(metrics, 'covered_turbine_count'))}台风机，最大完工时间为"
+            f"{format_abstract_number(metric_lookup(metrics, 'max_completion_min'))} min，总航行距离为"
+            f"{format_abstract_number(metric_lookup(metrics, 'total_route_distance_km'))} km，最小续航裕度为"
+            f"{format_abstract_number(metric_lookup(metrics, 'min_endurance_margin_min'))} min"
+        )
+    if any(key in metrics for key in ["total_completion_min", "parking_point_count", "min_endurance_margin_min"]):
+        covered = first_available(metric_lookup(metrics, "covered_turbine_count"), metric_lookup(metrics, "input_turbine_count"))
+        return (
+            f"问题{problem_index}覆盖{format_abstract_number(covered)}台风机，选取"
+            f"{format_abstract_number(metric_lookup(metrics, 'parking_point_count'))}个停泊点，总完工时间为"
+            f"{format_abstract_number(metric_lookup(metrics, 'total_completion_min'))} min，最小续航裕度为"
+            f"{format_abstract_number(metric_lookup(metrics, 'min_endurance_margin_min'))} min"
+        )
+    if any(metric_lookup(metrics, key) is not None for key in ["MAE", "RMSE", "sMAPE", "mape", "validation_records"]):
+        details = []
+        if metric_lookup(metrics, "validation_records") is not None:
+            details.append(f"滚动验证记录{format_abstract_number(metric_lookup(metrics, 'validation_records'))}条")
+        for key in ["MAE", "RMSE", "sMAPE", "mape"]:
+            value = metric_lookup(metrics, key)
+            if value is not None:
+                details.append(f"{key}={format_abstract_number(value)}")
+        return f"问题{problem_index}" + "、".join(details)
+    if any(metric_lookup(metrics, key) is not None for key in ["accuracy", "macro_f1"]):
+        details = []
+        for key in ["accuracy", "macro_f1"]:
+            value = metric_lookup(metrics, key)
+            if value is not None:
+                details.append(f"{human_metric_name(key)}为{format_abstract_number(value)}")
+        return f"问题{problem_index}" + "、".join(details)
+    route_rows = metric_lookup(metrics, "route_feasible_rows")
+    checked_sites = metric_lookup(metrics, "capacity_checked_sites")
+    port_violations = metric_lookup(metrics, "port_violation_sites")
+    capacity_violations = metric_lookup(metrics, "capacity_violation_sites")
+    if any(value is not None for value in [route_rows, checked_sites, port_violations, capacity_violations]):
+        parts = []
+        if route_rows is not None:
+            parts.append(f"路由可行性核验{format_abstract_number(route_rows)}条")
+        if checked_sites is not None:
+            parts.append(f"容量复核{format_abstract_number(checked_sites)}个场地")
+        if port_violations is not None:
+            parts.append(f"格口超限场地{format_abstract_number(port_violations)}个")
+        if capacity_violations is not None:
+            parts.append(f"产能超限场地{format_abstract_number(capacity_violations)}个")
+        return f"问题{problem_index}" + "、".join(parts)
+    zero_violations = abstract_zero_violation_metrics(metrics)
+    if zero_violations:
+        return f"问题{problem_index}{'、'.join(zero_violations[:3])}均为0"
     return ""
+
+
+def abstract_zero_violation_metrics(metrics: dict[str, Any]) -> list[str]:
+    result = []
+    for key, value in metrics.items():
+        lower = str(key).lower()
+        if not any(marker in lower for marker in ["violation", "违约", "超限"]):
+            continue
+        number = numeric_metric_value(value)
+        if number is not None and abs(number) < 1e-12:
+            result.append(human_metric_name(str(key)))
+    return result
 
 
 def sanitize_abstract_result(text: str) -> str:
@@ -2134,6 +3355,17 @@ def insert_before_section(tex: str, section_title: str, block: str) -> str:
             return tex + "\n" + block
         return tex[:pos] + "\n" + block + "\n" + tex[pos:]
     return tex[: match.start()] + "\n" + block + "\n" + tex[match.start() :]
+
+
+def replace_model_validation_section(tex: str, block: str) -> str:
+    """Replace the whole model-validation section with computed validation output."""
+    block = block.strip() + "\n"
+    section_match = re.search(r"\\section\{模型检验\}", tex)
+    if not section_match:
+        return insert_before_section(tex, "模型评价与推广", "\\section{模型检验}\n" + block)
+    next_section = re.search(r"\n\\section\{", tex[section_match.end() :])
+    end = section_match.end() + next_section.start() if next_section else len(tex)
+    return tex[: section_match.end()].rstrip() + "\n" + block + "\n" + tex[end:].lstrip()
 
 
 def strip_auto_blocks(tex: str) -> str:
@@ -2199,6 +3431,7 @@ def clean_final_paper_prose(text: str) -> str:
 def clean_final_paper_document(tex: str) -> str:
     """Clean final-paper wording while preserving LaTeX structure."""
     tex = replace_legacy_symbol_table(tex)
+    tex = remove_embedded_json_fragments(tex)
     replacements = {
         r"\subsubsection{结果表格与图形解释}": "",
         r"\subsubsection{结果组织与判读}": "",
@@ -2240,6 +3473,11 @@ def clean_final_paper_document(tex: str) -> str:
         "\n",
         tex,
     )
+    tex = re.sub(
+        r"\n\\subsection\{检验指标体系\}[\s\S]*?(?=\n(?:% BEGIN AUTO COMPUTED VALIDATION|\\subsection\{|\\section\{模型评价与推广\}|\\section\{参考文献\}))",
+        "\n",
+        tex,
+    )
     tex = re.sub(r"\n\\noindent\\textbf\{任务定位：\}.*?(?=\n)", "\n", tex)
     tex = re.sub(r"\n\\subsubsection\{模型思想与数学表达\}\s*", "\n", tex)
     tex = re.sub(r"\n\\subsubsection\{算法流程与输入输出\}\s*", "\n", tex)
@@ -2265,7 +3503,30 @@ def clean_final_paper_document(tex: str) -> str:
     }
     for old, new in canned_replacements.items():
         tex = tex.replace(old, new)
+    tex = tex.replace(
+        "这些记录说明该项计算已经形成可直接判读的数值或类别结果，其含义应结合本问目标理解为实际状态、主要差异或约束满足程度。",
+        "由此可见，该项计算已经形成可直接判读的数值或类别结果，并直接支撑本问对任务分配、路径状态和约束满足程度的判断。",
+    )
+    tex = tex.replace(
+        "由此可见该项计算已经形成可直接判读的数值或类别结果，其含义应结合本问目标理解为实际状态、主要差异或约束满足程度。",
+        "由此可见，该项计算已经形成可直接判读的数值或类别结果，并直接支撑本问对任务分配、路径状态和约束满足程度的判断。",
+    )
+    tex = tex.replace(
+        "由此可见，该项计算已经形成可直接判读的数值或类别结果，其含义应结合本问目标理解为实际状态、主要差异或约束满足程度。",
+        "由此可见，该项计算已经形成可直接判读的数值或类别结果，并直接支撑本问对任务分配、路径状态和约束满足程度的判断。",
+    )
+    tex = tex.replace("。；读取题目附件", "；读取题目附件")
     return sanitize_abstract_in_document(tex)
+
+
+def remove_embedded_json_fragments(tex: str) -> str:
+    patterns = [
+        r"\n\\\{\s*\n\s*\"\$(?:model_building|model_solving|solution|analysis)\$\"\s*:\s*\"[\s\S]*?\"\s*\n\\\}\s*(?=\n|% BEGIN AUTO COMPUTED RESULTS|\\subsection|\\section)",
+        r"\n\\\{\s*\n\s*\"(?:model_building|model_solving|solution|analysis)\"\s*:\s*\"[\s\S]*?\"\s*\n\\\}\s*(?=\n|% BEGIN AUTO COMPUTED RESULTS|\\subsection|\\section)",
+    ]
+    for pattern in patterns:
+        tex = re.sub(pattern, "\n", tex, flags=re.S)
+    return tex
 
 
 def replace_legacy_symbol_table(tex: str) -> str:

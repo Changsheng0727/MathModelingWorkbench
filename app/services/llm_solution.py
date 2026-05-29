@@ -150,7 +150,7 @@ def generate_llm_sections(analysis: dict[str, Any], paper_options: dict[str, Any
   "validation": "模型检验。写稳定性、敏感性、误差指标、交叉验证或对照验证方案"
 }}
 
-硬性要求：不能声称已经得到未提供的精确数值；模型建立只写数学模型的原理、公式、目标函数、约束、算法和伪代码，不写结果；模型求解必须按子问题组织图表，并在图表附近用自然学术段落完成内容交代、结果判读和结论落点，不要使用带冒号的固定图表解读标签；所有独立公式必须用 $$...$$ 包裹，公式内部使用标准 LaTeX 语法；每个子问题都要覆盖。整体输出不超过 3200 个汉字。
+硬性要求：不能声称已经得到未提供的精确数值；模型建立只写数学模型的原理、公式、目标函数、约束、算法和伪代码，不写结果；模型求解必须按子问题组织图表，并在图表附近用自然学术段落完成内容交代、结果判读和结论落点，不要使用带冒号的固定图表解读标签；公式既要允许段内内联公式，也要使用独占一行的显式公式，内联公式用 $...$，所有独立公式必须用 $$...$$ 包裹并使用标准 LaTeX 语法，显式公式会自动编号；每个子问题都要覆盖。整体输出不超过 3200 个汉字。
 标准论文规则：
 ```text
 {standard_paper_rules}
@@ -528,6 +528,13 @@ def abstract_method_chain_sentence(selection: dict[str, Any]) -> str:
             "再将分拣中心抽象为有向路径图，建立包含规则唯一性、路径可达性、格口占用和产能上限的0-1集包规则优化模型；"
             "最后在货量增长情景下引入设备购置、人工补充、年化成本和约束余量变量，构建设备配置混合整数优化与敏感性检验流程。"
         )
+    if any(term in corpus for term in ["海上风电", "风力发电机", "风机", "无人艇", "无人机", "停泊点", "巡检"]):
+        return (
+            "本文首先对风机坐标、港口位置和设备参数进行字段校验、单位统一和局部投影距离换算；"
+            "随后由安全距离、续航时间和巡检时间构造风机--停泊点可服务矩阵，并建立候选停泊点覆盖、无人艇闭合路径和并行无人机调度模型；"
+            "再通过多艇分区、车辆路径启发式和最大完工时间均衡形成协同巡检方案；"
+            "最后采用区间不确定性、保守参数情景对比和上界续航复核检验方案的鲁棒性。"
+        )
     if any("预警" in item or "阈值" in item for item in chain):
         return (
             "本文首先使用字段盘点、单位统一、缺失异常识别和时间或编号对齐完成数据质量控制；"
@@ -573,7 +580,22 @@ def method_chain_sentence(selection: dict[str, Any]) -> str:
 def abstract_problem_sentence(index: int, task: str) -> str:
     task_text = inline_text(task)
     lower = task_text.lower()
-    if any(term in task_text for term in ["设备", "购置", "扩容", "折旧", "人工", "增长"]):
+    if any(term in task_text for term in ["不确定", "鲁棒", "风险偏好", "保守"]):
+        factors = "巡检时间区间波动、名义时间、最大偏差、保守参数、续航裕度和上界情景违约风险"
+        model_name = "基于保守参数的区间鲁棒协同调度模型"
+        algorithm = "确定性、低保守和高保守三情景对比、上界续航复核和效率--稳健性权衡分析"
+        result = "各保守情景的最大完工时间、上界情景续航裕度、违约次数和鲁棒权衡图"
+    elif any(term in task_text for term in ["多无人艇", "多艇", "多无人机", "舰队"]):
+        factors = "多艇任务互斥、艇载无人机容量、停泊点服务范围、路径连通和最大完工时间均衡"
+        model_name = "多车辆路径与负载均衡协同优化模型"
+        algorithm = "空间分区、车辆路径启发式、单艇子路径2-opt改进和LPT无人机装载调度"
+        result = "多艇访问路径、各艇完工时间、瓶颈无人艇、覆盖唯一性和续航安全核验结果"
+    elif any(term in task_text for term in ["无人艇", "无人机", "停泊点", "风机", "巡检", "路径规划"]):
+        factors = "停泊点覆盖、安全距离、无人机续航、无人艇闭合路径和停泊点内并行作业时间"
+        model_name = "KMeans候选停泊点覆盖--单艇TSP路径--并行机调度模型"
+        algorithm = "KMeans候选点生成、最近邻TSP初解、2-opt局部搜索和LPT任务分配"
+        result = "停泊点选择、单艇访问序列、无人机任务分配、总完工时间和约束可行性检查表"
+    elif any(term in task_text for term in ["设备", "购置", "扩容", "折旧", "人工", "增长"]):
         factors = "增长需求、候选设备格口与产能、年化折旧成本、人工补充能力和场地容量余量"
         model_name = "设备购置与人工补充联合混合整数优化模型"
         algorithm = "容量缺口计算、单位能力成本筛选、整数枚举或混合整数规划求解以及成本敏感性检验"
@@ -614,10 +636,10 @@ def abstract_problem_sentence(index: int, task: str) -> str:
         algorithm = "指标标准化、权重估计、阈值寻优、连续窗口确认和回放检验"
         result = "预警等级、阈值规则、触发原因表、风险指数曲线和由数据计算的误报漏报及提前量指标"
     else:
-        factors = "题目给定变量、数据质量、约束条件、目标输出和可解释性要求"
-        model_name = "数据驱动的任务适配数学模型"
-        algorithm = "特征构造、候选模型比较、参数选择和验证评估"
-        result = "可复现的模型参数、结果表格、图形解释和验证指标"
+        factors = "题目给定变量、数据质量、约束条件、目标函数、输出指标和可解释性要求"
+        model_name = "面向本问目标函数和约束结构的统计或优化求解模型"
+        algorithm = "字段校验、特征构造、候选算法比较、参数选择、约束核验和结果回填"
+        result = "可复现的模型参数、结果表格、图形解释、约束核验和验证指标"
     return f"针对问题{index}，考虑{factors}，建立{model_name}，采用{algorithm}，得到{result}。"
 
 
@@ -639,7 +661,7 @@ def generate_expanded_sections(
         "risk_control": selection.get("risk_control", []),
     }
     shared_rules = f"""论文正文目标不少于 {target_pages} 页，正文不包含摘要和附录，不生成目录页。
-必须遵守：问题重述和问题分析按子问题分别写，直接使用充分展开的分问题段落，不再额外添加“任务概括”或短概括段；模型建立只写数学原理、目标函数、约束、算法和伪代码，不写结果；所有独立公式必须用 $$...$$ 包裹，公式内部使用标准 LaTeX 语法；模型求解按子问题分别写；所有图表都要紧跟自然判读段落，段落应同时说明图表内容、关键现象和子问题结论，但不得使用带冒号的固定图表解读标签；不得编造未由附件计算得到的精确数值。
+必须遵守：问题重述和问题分析按子问题分别写，直接使用充分展开的分问题段落，不再额外添加“任务概括”或短概括段；模型建立只写数学原理、目标函数、约束、算法和伪代码，不写结果；公式既要允许段内内联公式，也要使用独占一行的显式公式，内联公式用 $...$，所有独立公式必须用 $$...$$ 包裹，公式内部使用标准 LaTeX 语法，显式公式会自动编号；模型求解按子问题分别写；所有图表都要紧跟自然判读段落，段落应同时说明图表内容、关键现象和子问题结论，但不得使用带冒号的固定图表解读标签；不得编造未由附件计算得到的精确数值。
 
 标准论文规则：
 {render_standard_paper_rules()}"""
@@ -688,7 +710,7 @@ def generate_expanded_sections(
         f"""请扩写数学建模论文正文中的“总体模型框架与数学原理”。
 只输出 JSON，不要 Markdown，不要解释。字段：
 {{
-  "content": "从统一变量表示、损失函数、鲁棒估计、变点检测、多源融合、分类/预测、风险指数、阈值寻优、模型选择准则等角度扩写，约3000-3800汉字；只写模型建立原理，不写任何结果；独立公式必须写成 $$...$$"
+  "content": "从统一变量表示、损失函数、鲁棒估计、变点检测、多源融合、分类/预测、风险指数、阈值寻优、模型选择准则等角度扩写，约3000-3800汉字；只写模型建立原理，不写任何结果；内联公式写成 $...$，独立公式必须写成 $$...$$"
 }}
 {shared_rules}
 
@@ -710,7 +732,7 @@ def generate_expanded_sections(
             f"""请针对数学建模论文的第 {index} 个子问题扩写“模型建立”和“模型求解”两个正文段。
 只输出 JSON，不要 Markdown，不要解释。字段：
 {{
-  "model_building": "围绕该子问题扩写模型建立：变量、输入输出、数学原理、目标函数、约束、参数估计、算法流程、伪代码解释；只写原理，不写结果，约1900-2600汉字；独立公式必须写成 $$...$$",
+  "model_building": "围绕该子问题扩写模型建立：变量、输入输出、数学原理、目标函数、约束、参数估计、算法流程、伪代码解释；只写原理，不写结果，约1900-2600汉字；内联公式写成 $...$，独立公式必须写成 $$...$$",
   "solving": "围绕该子问题扩写模型求解：数据如何进入模型、程序如何执行、应生成哪些表格和图片、图表后的自然判读段落怎样回答问题；不得编造精确数值，约2200-3000汉字"
 }}
 {shared_rules}
@@ -1051,7 +1073,6 @@ def render_latex_from_llm_sections(analysis: dict[str, Any], sections: dict[str,
 
 \section{{模型检验}}
 {markdown_to_latex(join_texts(model.get("validation") or "", text_field(validation_detail, "content")))}
-{validation_metrics_latex()}
 
 \section{{模型评价与推广}}
 {markdown_to_latex(join_texts(tail.get("evaluation") or "", text_field(evaluation_detail, "content")))}
@@ -1103,7 +1124,33 @@ def strict_skill_abstract(selection: dict[str, Any], abstract_text: Any) -> str:
         for index in range(1, len(tasks) + 1)
     )
     has_reliability = any(term in text for term in ["可靠性", "模型检验", "敏感性", "稳定性", "交叉验证"])
-    if has_chain and has_fixed_problem_sentences and has_reliability:
+    generic_markers = [
+        "任务适配的数学模型",
+        "建立数学模型并采用",
+        "建立任务适配",
+        "数据驱动的任务适配数学模型",
+    ]
+    concrete_method_markers = [
+        "KMeans",
+        "2-opt",
+        "LPT",
+        "TSP",
+        "0-1",
+        "整数优化",
+        "混合整数",
+        "时间序列",
+        "ARIMA",
+        "指数平滑",
+        "分段回归",
+        "变点",
+        "鲁棒",
+        "车辆路径",
+        "负载均衡",
+        "风险指数",
+    ]
+    has_concrete_method = any(term in text for term in concrete_method_markers)
+    is_not_generic = not any(term in text for term in generic_markers)
+    if has_chain and has_fixed_problem_sentences and has_reliability and has_concrete_method and is_not_generic:
         return text
     return sanitize_abstract_text(skill_abstract_text(selection))
 
@@ -1270,33 +1317,7 @@ def result_figure_latex(index: int) -> str:
 
 
 def validation_metrics_latex() -> str:
-    return r"""
-\subsection{检验指标体系}
-$$
-    \operatorname{MAE}=\frac{1}{n}\sum_{i=1}^{n}|y_i-\hat{y}_i|,\qquad
-    \operatorname{RMSE}=\sqrt{\frac{1}{n}\sum_{i=1}^{n}(y_i-\hat{y}_i)^2}.
-$$
-$$
-    \operatorname{Precision}=\frac{TP}{TP+FP},\quad
-    \operatorname{Recall}=\frac{TP}{TP+FN},\quad
-    F_1=\frac{2\operatorname{Precision}\operatorname{Recall}}{\operatorname{Precision}+\operatorname{Recall}}.
-$$
-\begin{table}[H]
-\centering
-\caption{模型检验项目与判读方式}
-\begin{tabular}{p{0.20\textwidth}p{0.34\textwidth}p{0.36\textwidth}}
-\toprule
-检验项目 & 实施方式 & 判读结论\\
-\midrule
-稳定性检验 & 改变窗口长度、随机种子、惩罚系数和异常处理规则 & 若关键输出变化较小，说明模型对局部设定不敏感。\\
-敏感性分析 & 对单一特征、阈值或权重做扰动 & 若风险等级或阶段标签大幅变化，需要说明该因素的主导作用。\\
-对照验证 & 比较无校正、无滞后、无扰动或单指标模型 & 若融合模型稳定优于对照模型，说明复杂模型具有必要性。\\
-业务或工程一致性 & 检查趋势、规则、分类或决策是否符合题目约束和业务机理 & 若统计结果与业务约束冲突，应优先复核数据、特征和约束表达。\\
-\bottomrule
-\end{tabular}
-\end{table}
-该表把统计误差、分类效果、稳定性和物理一致性放入同一检验框架。不同检验并不互相替代，误差低但物理解释差的模型仍存在提交风险；最终论文应同时报告数值指标和机制解释，确保模型可靠性不是由单一分数支撑。
-"""
+    return ""
 
 
 def fallback_model_building_text(index: int, task: str) -> str:
@@ -1506,28 +1527,168 @@ def repair_latex_math_fragments(tex: str) -> str:
 
     text = normalize_math_blocks_in_tex(text)
     text = repair_post_normalized_math_fragments(text)
+    text = promote_standalone_inline_formulas(text)
     text = number_display_equations(text)
     return text
 
 
 def number_display_equations(tex: str) -> str:
-    """Add equation numbers to every $$...$$ display while preserving $$ delimiters."""
-    if r"\newcommand{\eqnum}" not in tex:
-        tex = tex.replace(
-            r"\hypersetup{hidelinks}",
-            r"\hypersetup{hidelinks}" + "\n" + r"\newcommand{\eqnum}{\refstepcounter{equation}\eqno\hbox{\normalfont(\theequation)}}",
-            1,
-        )
+    """Add equation numbers to every standalone ``$$...$$`` display formula."""
+    added_number = False
 
     def repl(match: re.Match[str]) -> str:
         body = match.group(1).strip()
         if not body:
             return match.group(0)
-        if any(marker in body for marker in [r"\eqnum", r"\eqno", r"\tag{", r"\notag", r"\nonumber"]):
+        if any(marker in body for marker in [r"\eqno", r"\tag{", r"\notag", r"\nonumber"]):
             return match.group(0)
-        return "$$" + body.rstrip() + r"\eqnum" + "\n$$"
+        clean_body = re.sub(r"\s*\\eqnum\s*$", "", body).strip()
+        nonlocal added_number
+        added_number = True
+        return "$$" + clean_body.rstrip() + r"\eqnum" + "\n$$"
 
-    return re.sub(r"\$\$\s*([\s\S]*?)\s*\$\$", repl, tex)
+    updated = re.sub(r"\$\$\s*([\s\S]*?)\s*\$\$", repl, tex)
+    if added_number and r"\newcommand{\eqnum}" not in updated:
+        updated = updated.replace(
+            r"\hypersetup{hidelinks}",
+            r"\hypersetup{hidelinks}" + "\n" + r"\newcommand{\eqnum}{\refstepcounter{equation}\eqno\hbox{\normalfont(\theequation)}}",
+            1,
+        )
+    return updated
+
+
+STANDALONE_FORMULA_SKIP_ENVIRONMENTS = {
+    "algorithm",
+    "enumerate",
+    "figure",
+    "itemize",
+    "lstlisting",
+    "longtable",
+    "table",
+    "tabular",
+    "verbatim",
+}
+
+
+def promote_standalone_inline_formulas(tex: str) -> str:
+    """Promote formula-only lines written with ``$...$`` into display math blocks."""
+    lines = tex.splitlines()
+    rendered: list[str] = []
+    env_stack: list[str] = []
+    in_display_math = False
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        begin_env = re.match(r"\\begin\{([A-Za-z*]+)\}", stripped)
+        end_env = re.match(r"\\end\{([A-Za-z*]+)\}", stripped)
+        if begin_env:
+            rendered.append(line)
+            env_stack.append(begin_env.group(1))
+            continue
+        if end_env:
+            rendered.append(line)
+            if env_stack and env_stack[-1] == end_env.group(1):
+                env_stack.pop()
+            continue
+        if "$$" in stripped:
+            rendered.append(line)
+            if stripped.count("$$") % 2 == 1:
+                in_display_math = not in_display_math
+            continue
+        if not stripped:
+            rendered.append(line)
+            continue
+        if in_display_math or any(env in STANDALONE_FORMULA_SKIP_ENVIRONMENTS for env in env_stack):
+            rendered.append(line)
+            continue
+        if is_standalone_inline_formula_line(stripped):
+            display = format_display_math(normalize_standalone_inline_formula_line(stripped))
+            if rendered and rendered[-1] != "":
+                rendered.append("")
+            rendered.append(display)
+            rendered.append("")
+            continue
+        rendered.append(line)
+    return "\n".join(rendered)
+
+
+def is_standalone_inline_formula_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped or "$" not in stripped:
+        return False
+    if stripped.startswith("$$") or stripped.endswith("$$"):
+        return False
+    if re.match(r"\\(?:section|subsection|subsubsection|paragraph|caption|label|item|begin|end|includegraphics|textbf|textit|centering)\b", stripped):
+        return False
+    if re.search(r"[\u4e00-\u9fff]", re.sub(r"\\text\{[^{}]*\}", "", stripped)):
+        return False
+    candidate = stripped.replace("$", "")
+    candidate = candidate.replace(r"\textbackslash{}\textbackslash{}", "")
+    candidate = candidate.replace(r"\textbackslash{}", "")
+    candidate = candidate.replace(r"\&", "")
+    candidate = re.sub(r"\\text\{[^{}]*\}", "", candidate)
+    candidate = re.sub(r"\\[A-Za-z]+", "", candidate)
+    candidate = re.sub(r"[\\{}&,.;:，。；、\s\[\]\(\)\|]+", "", candidate)
+    candidate = re.sub(r"[0-9A-Za-z_+\-*/=<>\^≤≥≠∀∈∑∏∫→×−·√]+", "", candidate)
+    if candidate:
+        return False
+    return bool(re.search(r"[=<>≤≥≠∀∈\+\-*/^]|\\(?:min|max|sum|forall|exists|frac|sqrt|operatorname)", stripped))
+
+
+def normalize_standalone_inline_formula_line(line: str) -> str:
+    text = line.strip()
+    text = text.replace("$", "")
+    text = text.replace(r"\textbackslash{}\textbackslash{}", r"\\")
+    text = text.replace(r"\textbackslash{}", r"\quad ")
+    text = text.replace(r"\&", "&")
+    text = text.replace("≥", r"\geq")
+    text = text.replace("≤", r"\leq")
+    text = text.replace("≠", r"\ne")
+    text = text.replace("∀", r"\forall ")
+    text = text.replace("∈", r"\in ")
+    text = text.replace("∑", r"\sum")
+    text = text.replace("∏", r"\prod")
+    text = text.replace("∫", r"\int")
+    text = text.replace("→", r"\to ")
+    text = text.replace("×", r"\times ")
+    text = text.replace("−", "-")
+    text = text.replace("·", r"\cdot ")
+    text = text.replace("√", r"\sqrt{}")
+    text = re.sub(r"\\text\{([^{}]*)\}", lambda match: rf"\text{{{match.group(1).strip()}}}", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s*([,，；;。\.])\s*$", "", text)
+    text = re.sub(r"\\\\(?=\S)", r"\\\\ ", text)
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    return normalize_formula_for_latex(text)
+
+
+def should_number_display_equation(body: str) -> bool:
+    compact = re.sub(r"\s+", "", body)
+    if len(compact) < 45:
+        return False
+    if re.fullmatch(r"[A-Za-z0-9_{}\\,\.\^\-\+\s=]+", body) and not any(op in body for op in [r"\sum", r"\min", r"\max"]):
+        return False
+    core_markers = [
+        r"\min",
+        r"\max",
+        r"\operatorname{arg",
+        r"\forall",
+        r"\sum",
+        r"\prod",
+        r"\int",
+        r"\begin{aligned}",
+        r"\begin{cases}",
+    ]
+    if any(marker in body for marker in core_markers):
+        return True
+    if any(marker in body for marker in [r"\le", r"\ge", r"\leq", r"\geq"]) and len(compact) >= 65:
+        return True
+    if any(marker in body for marker in [r"\arcsin", r"\sqrt"]) and len(compact) >= 70:
+        return True
+    if "A_" in body and "L_" in body and r"\tau" in body:
+        return True
+    return False
 
 
 def expand_plain_replacement(match: re.Match[str], replacement: str) -> str:
@@ -1762,6 +1923,23 @@ def format_display_math(formula: str) -> str:
 
 def normalize_formula_for_latex(formula: str) -> str:
     text = formula.strip(" ，,。；;：:")
+    unicode_replacements = {
+        "≤": r"\leq",
+        "≥": r"\geq",
+        "≠": r"\ne",
+        "∀": r"\forall ",
+        "∈": r"\in ",
+        "∑": r"\sum",
+        "∏": r"\prod",
+        "∫": r"\int",
+        "→": r"\to ",
+        "×": r"\times ",
+        "−": "-",
+        "·": r"\cdot ",
+        "√": r"\sqrt{}",
+    }
+    for source, target in unicode_replacements.items():
+        text = text.replace(source, target)
     text = soften_inline_formula_text(text)
     text = re.sub(r"\|\|(.+?)\|\|(_\{?[A-Za-z0-9,+\-]+\}?)?", r"\\lVert \1\\rVert\2", text)
     for source, target in GREEK_TO_LATEX.items():
@@ -1820,7 +1998,7 @@ def build_solution_prompt(analysis: dict[str, Any], paper_options: dict[str, Any
 2. 对最终选题逐个子问题给出问题重述、问题分析、模型假设、符号、模型建立、求解算法、结果应如何得到、模型检验、评价推广。
 3. 不能编造已经计算出的精确数值；若原始上下文没有给出数值结果，只能写“需由数据计算得到”或给出可复现计算公式。
 4. 模型建立只写数学原理、变量、目标函数、约束和算法，不写结果。
-5. 所有独立公式必须使用 $$...$$ 包裹，公式内部使用标准 LaTeX 语法，不要把公式写成被转义的普通文本。
+5. 公式既要有段内内联公式，也要有独占一行的显式公式；内联公式使用 $...$，所有独立公式必须使用 $$...$$ 包裹，公式内部使用标准 LaTeX 语法，不要把公式写成被转义的普通文本，显式公式会自动编号。
 6. 模型求解必须按子问题组织，并说明应生成哪些表格和图片，以及图表后如何用自然段完成内容交代、结果判读和结论落点；不要使用带冒号的固定图表解读标签。
 7. {target_note}
 8. 输出中文 Markdown，结构要足够详细，可直接作为 LaTeX 论文生成依据。

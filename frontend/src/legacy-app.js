@@ -59,6 +59,8 @@ const els = {
   runSpecialized: document.querySelector("#run-specialized"),
   specializedStatus: document.querySelector("#specialized-status"),
   runAutoWorkflow: document.querySelector("#run-auto-workflow"),
+  resumeAutoWorkflow: document.querySelector("#resume-auto-workflow"),
+  cancelAutoWorkflow: document.querySelector("#cancel-auto-workflow"),
   autoWorkflowStatus: document.querySelector("#auto-workflow-status"),
   autoWorkflowProgress: document.querySelector("#auto-workflow-progress"),
   generateSkillReport: document.querySelector("#generate-skill-report"),
@@ -258,6 +260,7 @@ function renderProject(detail) {
   renderModelAssistantOptions(analysis, rec);
   renderArtifacts(metadata, analysis.project?.id || metadata.id);
   renderAutoWorkflowProgress(metadata.auto_workflow_progress);
+  updateAutoWorkflowButtons(metadata.auto_workflow_status, metadata.auto_workflow_progress || {});
   renderModelAssistantProgress(metadata.model_assistant_progress);
   renderProgressPanel(els.uploadProgress, metadata.analysis_progress, 7);
 }
@@ -369,6 +372,9 @@ function statusLabel(value) {
     requires_api_key: "待配置",
     script_generated: "已生成",
     between_steps: "阶段切换中",
+    cancel_requested: "正在中断",
+    cancelled: "已中断",
+    interrupted: "可继续",
     idle: "未开始",
     warning: "需注意",
   };
@@ -379,13 +385,13 @@ function statusTone(value) {
   if (value === "success" || value === "analyzed" || value === "script_generated") {
     return "success";
   }
-  if (value === "running") {
+  if (value === "running" || value === "cancel_requested") {
     return "running";
   }
-  if (value === "failed") {
+  if (value === "failed" || value === "interrupted") {
     return "failed";
   }
-  if (value === "completed_with_warnings" || value === "requires_api_key") {
+  if (value === "completed_with_warnings" || value === "requires_api_key" || value === "cancelled") {
     return "warning";
   }
   return "pending";
@@ -1199,7 +1205,13 @@ els.runSpecialized.addEventListener("click", async () => {
   }
 });
 
-async function runAutoWorkflow(projectId, initialMessage = "正在调用大模型完成选题、生成并运行代码、回填结果、论文生成和审查。") {
+async function runAutoWorkflow(
+  projectId,
+  {
+    resume = false,
+    initialMessage = "正在调用大模型完成选题、生成并运行代码、回填结果、论文生成和审查。",
+  } = {},
+) {
   if (!projectId) {
     els.autoWorkflowStatus.textContent = "请先打开一个项目。";
     return;
@@ -1216,10 +1228,13 @@ async function runAutoWorkflow(projectId, initialMessage = "正在调用大模�
     return;
   }
   els.runAutoWorkflow.disabled = true;
-  els.autoWorkflowStatus.textContent = initialMessage;
+  if (els.resumeAutoWorkflow) els.resumeAutoWorkflow.disabled = true;
+  if (els.cancelAutoWorkflow) els.cancelAutoWorkflow.disabled = false;
+  els.autoWorkflowStatus.textContent = resume ? "正在从上次成功阶段继续生成论文。" : initialMessage;
   const stopProgressPolling = startAutoProgressPolling(projectId);
   try {
-    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/run`, { method: "POST" });
+    const endpoint = resume ? "resume" : "run";
+    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/${endpoint}`, { method: "POST" });
     renderProject(payload.project);
     const workflow = payload.auto_workflow || {};
     const steps = workflow.steps || [];
@@ -1227,6 +1242,8 @@ async function runAutoWorkflow(projectId, initialMessage = "正在调用大模�
     const failedCount = steps.filter((step) => step.status === "failed").length;
     if (workflow.overall_status === "success") {
       els.autoWorkflowStatus.textContent = "LLM+代码自动流程完成：已生成题解方案、运行代码得到结果、回填论文、审查报告和支撑材料。";
+    } else if (workflow.overall_status === "cancelled") {
+      els.autoWorkflowStatus.textContent = "自动流程已中断：当前阶段已安全结束，可点击“继续生成”从断点恢复。";
     } else {
       els.autoWorkflowStatus.textContent = `自动流程完成但需复核：${warningCount} 个警告，${failedCount} 个失败项。请查看自动解题报告。`;
     }
@@ -1237,6 +1254,7 @@ async function runAutoWorkflow(projectId, initialMessage = "正在调用大模�
     stopProgressPolling();
     await refreshAutoProgress(projectId);
     els.runAutoWorkflow.disabled = false;
+    if (els.cancelAutoWorkflow) els.cancelAutoWorkflow.disabled = true;
   }
 }
 
@@ -1261,13 +1279,28 @@ async function refreshAutoProgress(projectId) {
   try {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/progress`);
     renderAutoWorkflowProgress(payload.progress);
+    updateAutoWorkflowButtons(payload.status, payload.progress || {});
   } catch {
     // Progress polling is best-effort; the main action will report hard failures.
   }
 }
 
 function renderAutoWorkflowProgress(progress = {}) {
-  renderProgressPanel(els.autoWorkflowProgress, progress, 6);
+  renderProgressPanel(els.autoWorkflowProgress, progress, 7);
+}
+
+function updateAutoWorkflowButtons(status = "", progress = {}) {
+  const running = status === "running" || status === "cancel_requested" || progress.status === "running" || progress.status === "between_steps";
+  const canResume = Boolean(progress.can_resume) || ["failed", "cancelled", "completed_with_warnings", "cancel_requested", "interrupted"].includes(status);
+  if (els.runAutoWorkflow) {
+    els.runAutoWorkflow.disabled = running;
+  }
+  if (els.resumeAutoWorkflow) {
+    els.resumeAutoWorkflow.disabled = running || !canResume;
+  }
+  if (els.cancelAutoWorkflow) {
+    els.cancelAutoWorkflow.disabled = !running || Boolean(progress.cancel_requested);
+  }
 }
 
 function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
@@ -1374,6 +1407,33 @@ els.runAutoWorkflow.addEventListener("click", async () => {
   const projectId = state.currentProject?.metadata?.id;
   await runAutoWorkflow(projectId);
 });
+
+if (els.resumeAutoWorkflow) {
+  els.resumeAutoWorkflow.addEventListener("click", async () => {
+    const projectId = state.currentProject?.metadata?.id;
+    await runAutoWorkflow(projectId, { resume: true });
+  });
+}
+
+if (els.cancelAutoWorkflow) {
+  els.cancelAutoWorkflow.addEventListener("click", async () => {
+    const projectId = state.currentProject?.metadata?.id;
+    if (!projectId) {
+      els.autoWorkflowStatus.textContent = "请先打开一个项目。";
+      return;
+    }
+    els.cancelAutoWorkflow.disabled = true;
+    els.autoWorkflowStatus.textContent = "已请求中断，系统会在当前阶段安全结束后停止。";
+    try {
+      const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/cancel`, { method: "POST" });
+      renderProject(payload.project);
+      await refreshAutoProgress(projectId);
+    } catch (error) {
+      els.autoWorkflowStatus.textContent = `中断请求失败：${error.message}`;
+      els.cancelAutoWorkflow.disabled = false;
+    }
+  });
+}
 
 els.generateSkillReport.addEventListener("click", async () => {
   const projectId = state.currentProject?.metadata?.id;
