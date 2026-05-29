@@ -2,6 +2,8 @@ name: Windows Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -84,6 +86,7 @@ jobs:
           "@ | Set-Content -Path release-notes.md -Encoding utf8
 
       - name: Publish GitHub Release
+        if: startsWith(steps.release_tag.outputs.tag, 'v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
