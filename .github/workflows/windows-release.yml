@@ -1,0 +1,101 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish"
+        required: true
+        default: "v0.1.9"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: release_tag
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "tag=${{ inputs.tag }}" >> $env:GITHUB_OUTPUT
+          } else {
+            "tag=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Build Windows packages
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\build-windows-installer.ps1
+
+      - name: Verify package files
+        shell: pwsh
+        run: |
+          $required = @(
+            "release\MathModelingWorkbench-Setup.exe",
+            "release\MathModelingWorkbench-Windows-x64.zip"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              throw "Missing release asset: $path"
+            }
+            Get-Item $path | Select-Object FullName, Length, LastWriteTime | Format-List
+          }
+
+      - name: Write release notes
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.release_tag.outputs.tag }}"
+          @"
+          MathModelingWorkbench Windows Client $tag
+
+          Updates:
+          - Rebuilt the Windows installer and portable package from the latest source.
+          - Improved paper-generation workflow stability, resume/cancel support, and result backfilling.
+          - Fixed display-formula handling so standalone constraints are centered and numbered automatically.
+          - Improved model validation backfill with concrete tables, figures, and computed values.
+
+          Assets:
+          - MathModelingWorkbench-Setup.exe: Windows installer.
+          - MathModelingWorkbench-Windows-x64.zip: Portable Windows package.
+          "@ | Set-Content -Path release-notes.md -Encoding utf8
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.release_tag.outputs.tag }}"
+          $title = "MathModelingWorkbench Windows Client $tag"
+          $assets = @(
+            "release\MathModelingWorkbench-Setup.exe",
+            "release\MathModelingWorkbench-Windows-x64.zip"
+          )
+          if (gh release view $tag *> $null) {
+            gh release upload $tag @assets --clobber
+          } else {
+            gh release create $tag @assets --title $title --notes-file release-notes.md
+          }
