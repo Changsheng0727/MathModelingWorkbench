@@ -18,6 +18,7 @@ from app.services.backend_skills import (
     list_backend_skills,
     list_model_method_routes,
     list_model_selection_rubric,
+    list_modeling_process_gates,
     list_standard_paper_checklist,
     list_standard_paper_workflow,
     write_backend_skill_report,
@@ -123,6 +124,7 @@ def backend_skills() -> dict:
         "standard_paper_checklist": list_standard_paper_checklist(),
         "model_method_routes": list_model_method_routes(),
         "model_selection_rubric": list_model_selection_rubric(),
+        "modeling_process_gates": list_modeling_process_gates(),
     }
 
 

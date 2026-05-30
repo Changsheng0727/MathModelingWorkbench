@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.services.executor import run_python_script
-from app.services.backend_skills import render_model_method_routes, render_standard_paper_rules
+from app.services.backend_skills import render_model_method_routes, render_modeling_process_gates, render_standard_paper_rules
 from app.services.llm_assistant import call_chat_completion, compact_analysis
 from app.services.llm_solution import (
     latex_text_preserving_math,
@@ -30,6 +30,7 @@ SPEC_MD_RELATIVE = "artifacts/computed_solver_spec.md"
 STATUS_RELATIVE = "artifacts/computed_solution_status.json"
 MANIFEST_RELATIVE = "results/computed_manifest.json"
 SUMMARY_RELATIVE = "results/computed_summary.md"
+FROZEN_NUMBERS_RELATIVE = "results/frozen_numbers.json"
 PROSE_RELATIVE = "artifacts/computed_result_prose.json"
 PROSE_MD_RELATIVE = "artifacts/computed_result_prose.md"
 REPAIR_RELATIVE = "artifacts/computed_solver_repair.json"
@@ -85,6 +86,7 @@ def generate_solver_spec(
         "llm_solution_model_chain": (llm_solution.get("sections") or {}).get("model", {}),
         "paper_options": paper_options,
         "model_method_routes": render_model_method_routes(max_chars=5000),
+        "modeling_process_gates": render_modeling_process_gates(max_chars=5000),
         "standard_paper_rules": render_standard_paper_rules(),
     }
     rec = analysis.get("recommended_problem", {}) or {}
@@ -106,10 +108,16 @@ def generate_solver_spec(
       "target_keywords": ["目标变量关键词"],
       "feature_keywords": ["重要解释变量关键词"],
       "model_family": "建议使用的数学模型或算法",
-      "expected_outputs": ["应输出的表格、图片、指标"]
+      "baseline_model": "必须先跑通的简单基线或可行性检查",
+      "candidate_models": ["候选模型或算法"],
+      "poc_validation": "用真实附件数据验证字段映射、约束和指标的 PoC 方式",
+      "expected_outputs": ["应输出的表格、图片、指标"],
+      "frozen_outputs": ["论文回填前应冻结的关键数值、表格或图片"]
     }}
   ],
   "paper_result_focus": ["论文回填时最应引用的数值或图表"],
+  "process_gates": ["G1-G6 中本次求解必须留下证据的关卡"],
+  "freeze_rules": ["结果冻结规则"],
   "traceability_rules": ["防止编造数值和结果漂移的规则"]
 }}
 
@@ -119,7 +127,8 @@ def generate_solver_spec(
 3. 每个子问题都要说明可计算输出；只有在脚本对所有相关附件做过鲁棒读取、单位换算和字段复核后，才能判定某子问题数据不足。
 4. 所有精确数值必须等待程序从附件计算，不得在规范中预设。
 5. 选择模型时参考输入中的 model_method_routes：每个子问题都要匹配题型、候选模型、应输出图表和检验方式；若不匹配，说明原因并选择更简单可复现的方法。
-6. traceability_rules 必须体现输入中的 standard_paper_rules：主张-证据对齐、数值来源、图表解释、引用真实性、支撑材料和人工复核点。
+6. process_gates 和 freeze_rules 必须体现输入中的 modeling_process_gates：先 PoC/基线，再完整求解；先冻结关键结果，再回填摘要、结论和模型检验。
+7. traceability_rules 必须体现输入中的 standard_paper_rules：主张-证据对齐、数值来源、图表解释、引用真实性、支撑材料和人工复核点。
 
 输入 JSON：
 ```json
@@ -210,11 +219,17 @@ def fallback_solver_spec_from_analysis(analysis: dict[str, Any]) -> dict[str, An
                 "target_keywords": [],
                 "feature_keywords": [],
                 "model_family": "可复现启发式优化与统计汇总",
+                "baseline_model": "先读取真实附件字段并生成最小可行统计或可行性检查",
+                "candidate_models": ["可解释基线", "任务适配的优化或统计模型"],
+                "poc_validation": "用真实附件数据检查字段映射、单位换算、目标函数或约束是否能计算。",
                 "expected_outputs": ["结果表", "结果图", "关键指标", "可追溯日志"],
+                "frozen_outputs": ["最终目标值", "关键方案表", "模型检验指标"],
             }
             for index, task in enumerate(tasks, 1)
         ],
         "paper_result_focus": ["目标函数值", "约束满足情况", "关键方案表", "结果图"],
+        "process_gates": ["G1_problem_parse", "G2_method_poc", "G3_code_execution", "G4_result_freeze", "G5_paper_backfill"],
+        "freeze_rules": ["论文回填前生成或识别关键结果冻结快照；摘要和结论只引用冻结数值或 manifest 中同一批结果。"],
         "traceability_rules": ["所有论文数值必须来自 computed_manifest、结果表、图片或运行日志。"],
     }
 
@@ -402,7 +417,7 @@ def render_repair_markdown(history: list[dict[str, Any]]) -> str:
 
 
 def clear_computed_outputs(root: Path) -> None:
-    for relative in [MANIFEST_RELATIVE, SUMMARY_RELATIVE]:
+    for relative in [MANIFEST_RELATIVE, SUMMARY_RELATIVE, FROZEN_NUMBERS_RELATIVE]:
         path = root / relative
         if path.exists() and path.is_file():
             path.unlink()
@@ -422,6 +437,7 @@ def build_solver_script_context(root: Path, analysis: dict[str, Any], spec: dict
         "output_contract": {
             "manifest": MANIFEST_RELATIVE,
             "summary": SUMMARY_RELATIVE,
+            "frozen_numbers": FROZEN_NUMBERS_RELATIVE,
             "tables_dir": "results/computed/tables",
             "figures_dir": "results/figures",
         },
@@ -439,13 +455,14 @@ Runtime contract:
 1. The script will be saved as code/run_computed_solution.py and executed with the project root as cwd.
 2. Define ROOT = Path(__file__).resolve().parents[1], RAW_DIR = ROOT / "raw", RESULTS_DIR = ROOT / "results".
 3. Read only files under RAW_DIR. Write only under RESULTS_DIR and ROOT / "artifacts".
-4. Create results/computed_manifest.json. Also create results/computed_summary.md.
+4. Create results/computed_manifest.json. Also create results/computed_summary.md. When key values are available,
+   also create results/frozen_numbers.json as the paper-facing snapshot of final numbers, tables, and figures.
 5. Put result tables under results/computed/tables and figures under results/figures.
 6. The manifest must be JSON and include at least:
    stage, generated_at, problem_id, problem_title, solver_spec, table_count,
    tables_overview, tables, figures, metrics, per_problem_results,
    narrative_findings, limitations, method_basis, references_used, summary_markdown,
-   validation_checks.
+   validation_checks, process_gates, poc_results, model_comparison, frozen_numbers.
 7. Each per_problem_results item must include:
    problem_index, title, metrics, tables, figures, description, analysis,
    conclusion, limitations, method_basis, validation_summary.
@@ -461,6 +478,10 @@ Mandatory figure/font setup:
 
 Modeling guidance:
 - Inspect the available files and schemas at runtime. Use the solver spec to choose columns, objectives, and algorithms.
+- Treat the solver as a gated delivery workflow:
+  G1 parse the problem and available schemas; G2 run a small PoC or simple baseline on real attachment data; G3 run the
+  final solver; G4 freeze the key results used by the paper; G5 leave tables/figures ready for paper backfill; G6 expose
+  enough evidence for the static reviewer. Record gate status in manifest.process_gates.
 - Parse problem-related Word attachments robustly. For .docx files, read word/document.xml with zipfile, strip XML tags,
   unescape text entities if needed, normalize whitespace, and also build a compact version with all whitespace removed.
   Use both the normal text and compact text when extracting parameters, because Word XML may split Chinese terms such as
@@ -471,6 +492,8 @@ Modeling guidance:
   name was split in a docx or appears with spaces between Chinese characters.
 - Do not stop at a single naive rule when the data support validation. Build an interpretable baseline first, then add
   a stronger task-appropriate candidate and select by a documented validation metric or feasibility/cost criterion.
+  Write the baseline/PoC evidence to manifest.poc_results or the matching per_problem_results item, and write the
+  final model selection comparison to manifest.model_comparison when multiple candidates are attempted.
 - For every numbered subproblem, generate model validation outputs after computing the main result. Save validation
   tables when applicable, such as coverage/uniqueness checks, feasibility or capacity checks, time-recursion checks,
   endurance or safety-margin checks, rolling validation errors, scenario violation counts, sensitivity results,
@@ -494,6 +517,9 @@ Modeling guidance:
 - Use pandas, numpy, matplotlib, and openpyxl. Optional libraries such as sklearn/scipy must be guarded with try/except and have a fallback.
 - Fix random seeds for stochastic code.
 - Make the script robust to Chinese column names, mixed encodings, missing sheets, and partially missing data.
+- Freeze paper-facing results after all computations finish. The frozen snapshot should contain only values that are
+  actually present in manifest metrics, validation checks, result tables, or figure metadata. If results/frozen_numbers.json
+  cannot be created, record the reason in manifest.limitations instead of silently omitting it.
 - Add method_basis/references_used in the manifest: name the mathematical methods actually used and cite stable
   sources conceptually, e.g. time-series forecasting texts for rolling validation/ETS/ARIMA and operations research
   or integer programming texts for network and resource-allocation models. Do not fabricate page numbers or papers.
@@ -698,6 +724,7 @@ def run_computed_solver(root: Path, timeout: int = 360) -> dict[str, Any]:
         "log": result.get("log"),
         "manifest": MANIFEST_RELATIVE if manifest_path.exists() else "",
         "summary": SUMMARY_RELATIVE if (root / SUMMARY_RELATIVE).exists() else "",
+        "frozen_numbers": FROZEN_NUMBERS_RELATIVE if (root / FROZEN_NUMBERS_RELATIVE).exists() else "",
         "outputs": compact_manifest(manifest),
     }
     if result.get("success") and not manifest_path.exists():
@@ -3603,7 +3630,7 @@ def local_result_prose(manifest: dict[str, Any], error: str) -> dict[str, Any]:
             }
         )
     return {
-        "abstract_result_sentence": f"本次求解生成了 {len(manifest.get('tables', []) or [])} 个结果表和 {len(manifest.get('figures', []) or [])} 张图，所有新增数值均可追溯。",
+        "abstract_result_sentence": "",
         "abstract_problem_results": [
             {"problem_index": index, "result": abstract_result_from_problem_item(index, item)}
             for index, item in [
@@ -3656,10 +3683,16 @@ def normalize_solver_spec(spec: dict[str, Any], analysis: dict[str, Any]) -> dic
         item.setdefault("target_keywords", [])
         item.setdefault("feature_keywords", [])
         item.setdefault("model_family", "数据驱动统计建模")
+        item.setdefault("baseline_model", "先用真实附件数据跑通简单基线或字段/约束可行性检查")
+        item.setdefault("candidate_models", [item.get("model_family", "数据驱动统计建模")])
+        item.setdefault("poc_validation", "检查数据字段、单位、目标函数或评价指标是否能在真实附件上计算。")
         item.setdefault("expected_outputs", ["结果表", "结果图", "评价指标"])
+        item.setdefault("frozen_outputs", ["关键计算结果", "主要结果表", "模型检验指标"])
         normalized.append(item)
     spec["per_problem"] = normalized
     spec.setdefault("paper_result_focus", [])
+    spec.setdefault("process_gates", ["G1_problem_parse", "G2_method_poc", "G3_code_execution", "G4_result_freeze", "G5_paper_backfill"])
+    spec.setdefault("freeze_rules", ["论文回填前冻结关键数值、表格和图片；正文、摘要和结论只引用冻结快照或 manifest 中同一批结果。"])
     spec.setdefault("traceability_rules", ["所有论文数值必须来自 computed_manifest、结果表或图片。"])
     return spec
 
@@ -3691,6 +3724,10 @@ def compact_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         "tables": [],
         "figures": [],
         "metrics": manifest.get("metrics", {}),
+        "process_gates": manifest.get("process_gates", [])[:8] if isinstance(manifest.get("process_gates"), list) else manifest.get("process_gates", {}),
+        "poc_results": manifest.get("poc_results", [])[:8] if isinstance(manifest.get("poc_results"), list) else manifest.get("poc_results", {}),
+        "model_comparison": manifest.get("model_comparison", [])[:8] if isinstance(manifest.get("model_comparison"), list) else manifest.get("model_comparison", {}),
+        "frozen_numbers": manifest.get("frozen_numbers", {}) if isinstance(manifest.get("frozen_numbers"), dict) else manifest.get("frozen_numbers", []),
         "per_problem_results": [],
         "narrative_findings": manifest.get("narrative_findings", [])[:12],
         "limitations": manifest.get("limitations", [])[:12],
@@ -3724,6 +3761,10 @@ def compact_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
                 "description": item.get("description"),
                 "analysis": item.get("analysis"),
                 "conclusion": item.get("conclusion"),
+                "validation_summary": item.get("validation_summary"),
+                "poc_result": item.get("poc_result") or item.get("poc_results"),
+                "baseline_model": item.get("baseline_model"),
+                "selected_model": item.get("selected_model"),
             }
         )
     return compact
@@ -3735,6 +3776,7 @@ def artifacts_from_run_result(result: dict[str, Any]) -> dict[str, str]:
         "computed_solution_status": STATUS_RELATIVE,
         "computed_manifest": result.get("manifest", ""),
         "computed_summary": result.get("summary", ""),
+        "computed_frozen_numbers": result.get("frozen_numbers", ""),
     }
     return {key: value for key, value in artifacts.items() if value}
 
@@ -3760,10 +3802,17 @@ def render_spec_markdown(payload: dict[str, Any]) -> str:
                 f"- 目标：{item.get('goal', '')}",
                 f"- 数据关键词：{'、'.join(str(x) for x in item.get('data_keywords', []))}",
                 f"- 模型算法：{item.get('model_family', '')}",
+                f"- 基线/PoC：{item.get('baseline_model', '')}；{item.get('poc_validation', '')}",
+                f"- 候选模型：{'、'.join(str(x) for x in item.get('candidate_models', []))}",
                 f"- 输出：{'、'.join(str(x) for x in item.get('expected_outputs', []))}",
+                f"- 冻结输出：{'、'.join(str(x) for x in item.get('frozen_outputs', []))}",
                 "",
             ]
         )
+    if spec.get("process_gates"):
+        lines.extend(["## 交付关卡", "、".join(str(x) for x in spec.get("process_gates", [])), ""])
+    if spec.get("freeze_rules"):
+        lines.extend(["## 结果冻结规则", "；".join(str(x) for x in spec.get("freeze_rules", [])), ""])
     return "\n".join(lines)
 
 

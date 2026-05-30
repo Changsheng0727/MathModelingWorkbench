@@ -147,7 +147,7 @@ LLM 参与节点会生成以下文件：
 
 ## GitHub 技能库集成
 
-后端提供一个只读技能库，用于吸收公开 GitHub 项目和竞赛官方规则中的数学建模、论文写作与审稿工作流思想。当前集成来源包括 COMAP 官方提交规则、MathModelAgent、LLM-MM-Agent、ModelingAgent、CUMCMThesis、mcmthesis、分文件 LaTeX 模板工作流、Datawhale 数学建模算法体系、优秀论文/资源索引、research-writing-skill 和 awesome-ai-research-writing-skill。系统只记录来源、许可证提示、集成理由和后端执行规则，不复制第三方代码、模板、优秀论文或大段文本。
+后端提供一个只读技能库，用于吸收公开 GitHub 项目和竞赛官方规则中的数学建模、论文写作与审稿工作流思想。当前集成来源包括 COMAP 官方提交规则、MathModelAgent、LLM-MM-Agent、ModelingAgent、CUMCMThesis、mcmthesis、分文件 LaTeX 模板工作流、Datawhale 数学建模算法体系、MathModeling-skills 关卡化交付流程、优秀论文/资源索引、research-writing-skill 和 awesome-ai-research-writing-skill。系统只记录来源、许可证提示、集成理由和后端执行规则，不复制第三方代码、模板、优秀论文或大段文本。
 
 后端还内置了题型-模型-结果-检验路由表，覆盖预测与时间序列、资源配置与调度优化、综合评价、多指标决策、分类聚类、机理仿真、小样本灰色系统、网络图论等常见赛题类型。上传题包后，分析器会给每道题附加 `method_routes`，LLM 选题、代码求解规范和论文审查会共同参考这些路由，要求每个子问题明确候选模型、程序输出表图和检验方式。
 
@@ -173,6 +173,18 @@ LLM 参与节点会生成以下文件：
 项目详情页新增“模型辅助”模块。用户可以选择推荐题的整体问题或某个子问题，填写希望引入的模型或算法名称，例如 `LSTM`、`GM(1,1)`、`TOPSIS`、`整数规划`，并补充使用目标。后端会先通过公开学术接口检索该模型相关资料，再把检索摘要、赛题分析和 LLM 题解上下文一起发送给 LLM。
 
 生成结果写入 `artifacts/llm_model_assistant.md` 和 `artifacts/llm_model_assistant.json`。报告会包含模型原理、数学形式、与指定问题的适配性、伪代码、Python 实现建议、应生成的图表、模型检验方案和论文写作落点。若没有配置 API Key，系统会保留检索结果并提示 LLM 未启用；若检索资料不足，报告会要求人工补充文献，避免伪造引用。
+
+## 交流与贡献
+
+如果你在使用过程中遇到问题、发现 Bug，或希望增加新的数学建模流程、模型算法、论文模板、打包方式和前端交互，欢迎在 GitHub 仓库提交 Issue 或 Pull Request。
+
+也可以通过邮箱联系维护者：
+
+```text
+2821452633@qq.com
+```
+
+提交 Issue 时建议附上软件版本、运行系统、复现步骤、错误截图或日志路径；提交 PR 时建议说明改动目标、影响范围和已完成的验证。
 
 ## 后续扩展
 

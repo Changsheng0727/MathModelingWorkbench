@@ -22,6 +22,7 @@ STANDARD_PAPER_WORKFLOW: list[dict[str, Any]] = [
         "stage": "建模方案设计",
         "rules": [
             "每个子问题都要明确输入、输出、目标函数、约束、候选模型、评价指标和与前后问题的依赖关系。",
+            "正式生成求解脚本前先设计小样本 PoC 或基线方案：用真实附件数据验证字段映射、目标函数、约束和评价指标是否能跑通。",
             "模型建立只写数学原理、变量定义、公式、算法流程和伪代码，不写任何实验结果、图表分析或最终数值。",
             "复杂模型必须说明为什么比简单可解释模型更适合；若证据不足，优先使用可解释、稳健、易复现的方法。",
             "建模方案要同步规划材料护照：原始数据、清洗表、脚本、参数、结果图表、运行日志和人工复核点应在支撑材料中可追踪。",
@@ -31,8 +32,10 @@ STANDARD_PAPER_WORKFLOW: list[dict[str, Any]] = [
         "stage": "求解与图表组织",
         "rules": [
             "模型求解按子问题分别组织，每个子问题都说明数据如何进入模型、参数如何确定、程序应输出哪些表格和图形。",
+            "计算脚本应先跑基线或 PoC，再跑最终模型，并把模型选择依据、失败兜底、验证指标和关键中间结果写入 manifest。",
             "表格和图片必须紧跟对应结果出现，不集中放置；每个图表后都要写自然判读段落，同时交代表图内容、关键现象和子问题结论。",
             "摘要、结论和正文中的精确数值必须来自附件数据、程序输出或审查报告；未运行得到的数值只能写成待计算项目。摘要不得暴露A题/B题/C题等题号字母、具体文件名、路径或Sheet名。",
+            "论文回填前冻结最终使用的关键数值、表格和图片；后续摘要、结论和模型检验只能引用冻结快照或 manifest 中的同一批结果。",
             "正文中的关键主张必须能对应到附件数据、代码结果、图表、公式推导或真实引用；不能让参考文献只停留在列表里而不支撑具体表述。",
         ],
     },
@@ -54,6 +57,7 @@ STANDARD_PAPER_WORKFLOW: list[dict[str, Any]] = [
             "审查模型建立与模型求解边界、分问题结构、图表自然判读、引用与附录、AI 工具披露和数值可追溯性。",
             "最终输出前执行学术诚信门禁：核对引用真实性、主张-证据对齐、数值来源、过程记录和支撑材料完整性。",
             "审稿应包含方法论审查、领域合理性审查和最强反方挑战，避免只做格式检查或无条件接受生成内容。",
+            "审稿器应额外检查 G1-G6 建模关卡：题面解析、PoC 可行性、代码运行、结果冻结、论文回填和终稿审查是否留下证据。",
         ],
     },
 ]
@@ -70,11 +74,13 @@ STANDARD_PAPER_CHECKLIST: list[str] = [
     "符号说明用表格统一变量、参数、函数和单位，全文同一符号只表示一个含义。",
     "模型建立包含数学公式、目标函数、约束、算法原理、伪代码或算法表，不出现结果分析。",
     "模型求解按模型或子问题分小节，包含可复现求解过程、程序工具、应生成的图表和结果解释。",
+    "每个子问题至少保留一个基线或 PoC 证据：字段读取成功、约束可计算、目标值可算、评价指标可得或清楚说明数据不足。",
     "每张图表都有标题、位置靠近对应结果，并在图表后用一段自然文字完成内容交代、结果判读和结论落点。",
     "模型检验包含误差、稳定性、敏感性、对照实验或交叉验证，不只用一句话声称可靠。",
     "评价与推广客观写优点、不足、改进方向和可迁移场景。",
     "参考文献只列正文真实引用来源；附录放代码、原始数据、中间表、长推导和 AI 工具使用说明。",
     "正文关键主张、摘要精确数值和结论性判断必须能追溯到附件、manifest、结果表、图形、公式推导或真实引用。",
+    "最终论文使用的关键数值应有冻结快照或等价 manifest 字段，避免修复脚本后正文仍引用旧数值。",
     "引用不只检查格式，还要检查主张与引用内容是否对齐；无法确认来源的文献不得作为最终论文依据。",
     "审稿至少覆盖方法论、领域解释、跨视角可迁移性和最强反方意见；重要反方问题必须进入修订建议。",
     "支撑材料包应保留过程记录、代码、运行日志、结果清单和人工复核点，便于赛后复现与追责。",
@@ -270,9 +276,75 @@ MODEL_SELECTION_RUBRIC: list[dict[str, Any]] = [
     {"item": "数据适配", "question": "模型输入是否能由题包附件直接得到，缺失字段是否有可解释处理方式。"},
     {"item": "数学可解释性", "question": "目标函数、约束、指标或概率假设能否在模型建立中清晰表达。"},
     {"item": "计算可复现", "question": "是否能由项目内脚本生成结果表、图片、日志和 manifest。"},
+    {"item": "PoC 可行性", "question": "是否已经用真实附件数据跑通小样本或基线模型，并记录失败兜底。"},
     {"item": "检验可完成", "question": "是否存在误差、敏感性、稳定性、约束可行性或对照实验。"},
+    {"item": "结果冻结", "question": "论文回填前关键数值、表格、图像是否已经形成冻结快照，后续文字是否引用同一批结果。"},
     {"item": "论文可写性", "question": "是否能支持摘要、模型链、图表分析和评价推广，而不是只有一个黑箱结论。"},
     {"item": "证据主张对齐", "question": "摘要、结论和关键引用是否都能对应到真实数据、程序输出、图表或可信来源。"},
+]
+
+
+MODELING_PROCESS_GATES: list[dict[str, Any]] = [
+    {
+        "id": "G1_problem_parse",
+        "name": "题面解析关",
+        "purpose": "确认题目、子问题、附件、单位、约束和目标输出已经被结构化识别。",
+        "pass_criteria": [
+            "每个子问题都有输入、输出、目标和附件来源。",
+            "缺失字段或歧义参数被列入风险清单，而不是被静默忽略。",
+        ],
+        "artifacts": ["artifacts/analysis.json", "artifacts/llm_problem_analysis.md"],
+    },
+    {
+        "id": "G2_method_poc",
+        "name": "方法 PoC 关",
+        "purpose": "在完整建模前用真实附件数据跑通小样本或基线模型，验证方法不是纸面设想。",
+        "pass_criteria": [
+            "每个子问题至少有基线、PoC、字段映射检查或数据不足证明之一。",
+            "复杂模型必须与简单可解释基线比较，并记录选择依据。",
+        ],
+        "artifacts": ["artifacts/computed_solver_spec.json", "results/computed_manifest.json"],
+    },
+    {
+        "id": "G3_code_execution",
+        "name": "代码执行关",
+        "purpose": "确认 LLM 当场生成的脚本可在本地项目目录复现运行，并生成标准结果清单。",
+        "pass_criteria": [
+            "脚本安全校验通过，运行日志可查看。",
+            "manifest 至少包含表格、图像、指标、分问题结果、模型依据和检验记录。",
+        ],
+        "artifacts": ["code/run_computed_solution.py", "artifacts/computed_solution_run.log", "results/computed_manifest.json"],
+    },
+    {
+        "id": "G4_result_freeze",
+        "name": "结果冻结关",
+        "purpose": "在论文回填前冻结关键数值、图表和方法选择，防止摘要与正文数字漂移。",
+        "pass_criteria": [
+            "冻结快照或 manifest 明确记录最终引用的关键数值、表格、图片和生成时间。",
+            "后续修复若改变结果，需要重新生成快照并保留原因。",
+        ],
+        "artifacts": ["results/frozen_numbers.json", "results/computed_manifest.json"],
+    },
+    {
+        "id": "G5_paper_backfill",
+        "name": "论文回填关",
+        "purpose": "把真实计算结果嵌入对应子问题的模型求解与模型检验部分。",
+        "pass_criteria": [
+            "图表紧跟对应子问题，并有基于实际含义的自然判读。",
+            "模型检验章节引用具体表格、数值和图像，而不是只写检验计划。",
+        ],
+        "artifacts": ["paper/main.tex", "artifacts/computed_result_prose.json"],
+    },
+    {
+        "id": "G6_final_review",
+        "name": "终稿审查关",
+        "purpose": "在导出前检查格式、公式、图表、摘要、引用、可追溯性和支撑材料。",
+        "pass_criteria": [
+            "LaTeX 编译无致命错误，PDF、Word 和支撑材料包生成成功。",
+            "审稿报告没有高严重失败项；警告项给出可执行修订建议。",
+        ],
+        "artifacts": ["artifacts/paper_review.json", "support_materials.zip"],
+    },
 ]
 
 
@@ -481,6 +553,22 @@ BACKEND_SKILLS: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "mathmodeling-skills-gated-delivery",
+        "name": "MathModeling-skills 关卡化数模交付流程",
+        "category": "math_modeling_workflow",
+        "source": "KyrieZhang329/MathModeling-skills",
+        "source_url": "https://github.com/KyrieZhang329/MathModeling-skills",
+        "license_note": "MIT；本项目仅吸收关卡化流程、PoC、结果冻结和多层审查思想，不复制 skill 文件、提示词或项目文本。",
+        "why_selected": "该仓库把数模协作拆成若干专用技能与 G1-G6 交付关卡，强调先用真实数据验证方法、再冻结结果、最后审查论文，适合提升本项目自动求解成功率。",
+        "backend_guidance": [
+            "在题目结构化后建立 G1-G6 关卡：题面解析、方法 PoC、代码执行、结果冻结、论文回填、终稿审查。",
+            "LLM 生成求解规范时必须写出每个子问题的基线或 PoC 方案、候选模型、评价指标、失败兜底和应冻结的关键输出。",
+            "代码求解脚本应把基线比较、模型选择依据、字段读取检查、验证指标、关键结果和限制写入 manifest。",
+            "论文回填前优先生成或识别 frozen_numbers 快照；摘要和结论不使用未冻结、未验证或仅存在于草稿中的精确数值。",
+            "审稿器增加关卡证据检查：分问题覆盖、PoC/基线证据、检验输出、冻结快照、图表回填和支撑材料是否齐全。",
+        ],
+    },
+    {
         "id": "research-writing-skill-engineering",
         "name": "科研写作工程化 Skill",
         "category": "scientific_writing",
@@ -522,6 +610,10 @@ def list_model_method_routes() -> list[dict[str, Any]]:
 
 def list_model_selection_rubric() -> list[dict[str, Any]]:
     return json.loads(json.dumps(MODEL_SELECTION_RUBRIC, ensure_ascii=False))
+
+
+def list_modeling_process_gates() -> list[dict[str, Any]]:
+    return json.loads(json.dumps(MODELING_PROCESS_GATES, ensure_ascii=False))
 
 
 def list_standard_paper_workflow() -> list[dict[str, Any]]:
@@ -594,13 +686,34 @@ def render_model_method_routes(max_chars: int = 9000) -> str:
     return "\n".join(lines)
 
 
+def render_modeling_process_gates(max_chars: int = 6000) -> str:
+    lines = ["数学建模自动交付 G1-G6 关卡："]
+    for gate in MODELING_PROCESS_GATES:
+        lines.extend(
+            [
+                f"【{gate['id']}】{gate['name']}",
+                f"- 目的：{gate['purpose']}",
+                "- 通过标准：" + "；".join(gate["pass_criteria"]),
+                "- 证据文件：" + "、".join(gate["artifacts"]),
+                "",
+            ]
+        )
+        if len("\n".join(lines)) > max_chars:
+            lines.append("...（关卡列表已截断）")
+            break
+    return "\n".join(lines)
+
+
 def render_backend_skill_context(max_chars: int = 12000) -> str:
     lines = [
         "后端已集成的数学建模与科研写作技能库要求如下：",
         "1. 仅吸收公开项目的方法论与流程，不复制第三方代码、模板、论文或大段文本。",
         "2. 所有精确数值必须来自上传附件、程序运行结果、检索到的真实资料或审查报告；不能由 LLM 编造。",
         "3. 自动流程默认采用 LLM 当场分析、代码求解执行和论文结果整合，必须保留可追溯输出、LaTeX 编译、论文审查和支撑材料包。",
-        "4. 最终论文要通过学术诚信门禁：主张-证据对齐、引用真实可核、数值来源明确、过程记录完整、人工复核点清楚。",
+        "4. 自动求解采用 G1-G6 关卡：题面解析、方法 PoC、代码执行、结果冻结、论文回填、终稿审查；每关都要留下证据。",
+        "5. 最终论文要通过学术诚信门禁：主张-证据对齐、引用真实可核、数值来源明确、过程记录完整、人工复核点清楚。",
+        "",
+        render_modeling_process_gates(max_chars=3500),
         "",
         render_standard_paper_rules(),
         "",
@@ -629,11 +742,12 @@ def render_backend_skill_context(max_chars: int = 12000) -> str:
 def write_backend_skill_report(root: Path) -> dict[str, str]:
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "source_policy": "Summarize workflow ideas from public GitHub and official contest sources; do not vendor third-party code, templates, papers, prompts, agents, or long text into the backend. Academic-research-skills is integrated as methodology and integrity-gate guidance only.",
+        "source_policy": "Summarize workflow ideas from public GitHub and official contest sources; do not vendor third-party code, templates, papers, prompts, agents, or long text into the backend. Academic-research-skills and MathModeling-skills are integrated as methodology, process-gate, PoC, freeze, and integrity-review guidance only.",
         "standard_paper_workflow": list_standard_paper_workflow(),
         "standard_paper_checklist": list_standard_paper_checklist(),
         "model_method_routes": list_model_method_routes(),
         "model_selection_rubric": list_model_selection_rubric(),
+        "modeling_process_gates": list_modeling_process_gates(),
         "skills": list_backend_skills(),
     }
     artifacts_dir = root / "artifacts"
@@ -666,6 +780,14 @@ def render_backend_skill_report(payload: dict[str, Any]) -> str:
     lines.append("## 标准论文审查清单")
     for index, rule in enumerate(payload.get("standard_paper_checklist", []), 1):
         lines.append(f"{index}. {rule}")
+    lines.extend(["", "## G1-G6 建模交付关卡"])
+    for gate in payload.get("modeling_process_gates", []):
+        lines.append(f"### {gate.get('id')} {gate.get('name')}")
+        lines.append(f"- 目的：{gate.get('purpose')}")
+        lines.append("- 通过标准：" + "；".join(gate.get("pass_criteria", [])))
+        lines.append("- 证据文件：" + "、".join(gate.get("artifacts", [])))
+        lines.append("")
+
     lines.extend(["", "## 题型-模型-结果路由"])
     for route in payload.get("model_method_routes", []):
         lines.extend(

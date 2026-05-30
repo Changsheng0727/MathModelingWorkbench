@@ -150,6 +150,7 @@ def build_review(root: Path) -> dict[str, Any]:
     checks.extend(check_template_configuration(metadata))
     checks.extend(check_body_page_target(root, metadata))
     checks.extend(check_traceability(root, specialized, baseline, computed, metadata))
+    checks.extend(check_modeling_process_gates(root, computed, analysis, metadata, tex))
 
     fail_count = sum(1 for item in checks if item["status"] == "fail")
     warning_count = sum(1 for item in checks if item["status"] == "warning")
@@ -972,6 +973,162 @@ def check_traceability(
     return checks
 
 
+def check_modeling_process_gates(
+    root: Path,
+    computed: dict[str, Any],
+    analysis: dict[str, Any],
+    metadata: dict[str, Any],
+    tex: str,
+) -> list[Check]:
+    workflow_mode = str(metadata.get("auto_workflow_mode") or "") if isinstance(metadata, dict) else ""
+    if not workflow_mode.startswith("llm_code_results"):
+        return []
+    if not computed:
+        return []
+
+    checks: list[Check] = []
+    per_problem = [item for item in (computed.get("per_problem_results", []) or []) if isinstance(item, dict)]
+    expected_count = expected_problem_count(analysis or {}, tex)
+    solved_indices = {
+        safe_int(item.get("problem_index"))
+        for item in per_problem
+        if item.get("tables") or item.get("figures") or item.get("metrics")
+    }
+    solved_indices.discard(0)
+    if expected_count:
+        missing = [str(index) for index in range(1, expected_count + 1) if index not in solved_indices]
+        if missing:
+            checks.append(
+                make_check(
+                    "gate_subproblem_coverage",
+                    "warning",
+                    "G1/G3 分问题覆盖",
+                    "代码结果未覆盖子问题：" + "、".join(missing) + "；请检查题面解析、附件字段映射或求解脚本兜底逻辑。",
+                    "medium",
+                )
+            )
+        else:
+            checks.append(
+                make_check(
+                    "gate_subproblem_coverage",
+                    "pass",
+                    "G1/G3 分问题覆盖",
+                    f"检测到 {expected_count} 个子问题均有表格、图片或指标输出。",
+                )
+            )
+
+    if has_poc_or_baseline_evidence(computed, per_problem):
+        checks.append(
+            make_check(
+                "gate_method_poc",
+                "pass",
+                "G2 方法 PoC",
+                "manifest 中检测到 PoC、基线、模型比较或选择依据证据。",
+            )
+        )
+    else:
+        checks.append(
+            make_check(
+                "gate_method_poc",
+                "warning",
+                "G2 方法 PoC",
+                "未检测到明显的 PoC、基线或模型比较字段；建议让求解脚本记录 baseline_model、poc_results 或 model_comparison。",
+                "medium",
+            )
+        )
+
+    if has_validation_gate_evidence(computed, per_problem):
+        checks.append(
+            make_check(
+                "gate_validation_outputs",
+                "pass",
+                "G5 模型检验证据",
+                "manifest 中检测到模型检验表、指标、图像或分问题 validation_summary。",
+            )
+        )
+    else:
+        checks.append(
+            make_check(
+                "gate_validation_outputs",
+                "warning",
+                "G5 模型检验证据",
+                "未检测到具体模型检验证据；模型检验章节可能退化为文字说明。",
+                "medium",
+            )
+        )
+
+    frozen_path = root / "results" / "frozen_numbers.json"
+    frozen_field = computed.get("frozen_numbers")
+    if frozen_path.exists() or bool(frozen_field):
+        source = "results/frozen_numbers.json" if frozen_path.exists() else "computed_manifest.frozen_numbers"
+        checks.append(make_check("gate_result_freeze", "pass", "G4 结果冻结", f"已检测到关键结果冻结快照：{source}。"))
+    else:
+        checks.append(
+            make_check(
+                "gate_result_freeze",
+                "warning",
+                "G4 结果冻结",
+                "未检测到 results/frozen_numbers.json 或 manifest.frozen_numbers；建议在论文回填前冻结摘要和结论会引用的关键数值。",
+                "medium",
+            )
+        )
+
+    gate_status = computed.get("process_gates")
+    if gate_status:
+        checks.append(make_check("gate_status_manifest", "pass", "G1-G6 关卡状态", "manifest 已记录 process_gates。"))
+    else:
+        checks.append(
+            make_check(
+                "gate_status_manifest",
+                "warning",
+                "G1-G6 关卡状态",
+                "manifest 未记录 process_gates；建议求解脚本写入每个关卡的状态与证据文件。",
+                "low",
+            )
+        )
+    return checks
+
+
+def has_poc_or_baseline_evidence(computed: dict[str, Any], per_problem: list[dict[str, Any]]) -> bool:
+    keys = ["poc_results", "model_comparison", "baseline_results", "baseline_model"]
+    if any(computed.get(key) for key in keys):
+        return True
+    for item in per_problem:
+        if any(item.get(key) for key in ["poc_result", "poc_results", "baseline_model", "model_comparison", "selected_model"]):
+            return True
+        metrics = item.get("metrics")
+        if isinstance(metrics, dict) and any(key in metrics for key in ["baseline", "selected_model", "model_comparison"]):
+            return True
+    return False
+
+
+def has_validation_gate_evidence(computed: dict[str, Any], per_problem: list[dict[str, Any]]) -> bool:
+    if computed.get("validation_checks"):
+        return True
+    validation_terms = ("validation", "检验", "验证", "敏感", "误差", "残差", "feasibility", "constraint")
+    for table in computed.get("tables", []) or []:
+        title = str(table.get("title") if isinstance(table, dict) else table).lower()
+        if any(term.lower() in title for term in validation_terms):
+            return True
+    for figure in computed.get("figures", []) or []:
+        title = str(figure.get("title") if isinstance(figure, dict) else figure).lower()
+        if any(term.lower() in title for term in validation_terms):
+            return True
+    for item in per_problem:
+        if item.get("validation_summary"):
+            return True
+        metrics = item.get("metrics")
+        if isinstance(metrics, dict) and any(
+            key.lower() in {"mae", "rmse", "mape", "smape", "accuracy", "f1", "auc", "silhouette"}
+            or "validation" in key.lower()
+            or "violation" in key.lower()
+            or "constraint" in key.lower()
+            for key in metrics
+        ):
+            return True
+    return False
+
+
 def render_markdown(report: dict[str, Any]) -> str:
     overall = report["overall"]
     status_label = {"pass": "通过", "warning": "需注意", "fail": "需修订"}.get(overall["status"], overall["status"])
@@ -1070,6 +1227,8 @@ def build_recommendations(checks: list[Check]) -> list[str]:
             recommendations.append("围绕模型建立、逐问题求解、图表自然判读和模型检验扩写正文；重新生成、编译两次后复查正文页数。")
         elif item["id"].startswith("computed_"):
             recommendations.append("重新运行一键自动流程中的代码求解步骤，确认 computed manifest、结果表、图片和运行日志完整生成。")
+        elif item["id"].startswith("gate_"):
+            recommendations.append("按 G1-G6 关卡补齐证据：分问题覆盖、PoC/基线、模型检验、结果冻结和论文回填都应写入 manifest 或支撑材料。")
         elif item["id"].startswith("manifest"):
             recommendations.append("重新运行建模脚本，确保结果 manifest、图片和表格文件完整存在。")
     seen = set()
