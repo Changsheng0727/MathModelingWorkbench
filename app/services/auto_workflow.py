@@ -10,9 +10,9 @@ from typing import Any, Callable
 from app.services.analyzer import apply_problem_selection
 from app.services.backend_skills import write_backend_skill_report
 from app.services.code_graph import write_code_graph_report
-from app.services.code_solution import run_code_result_pipeline
+from app.services.code_solution import integrate_existing_code_results, run_code_result_pipeline
 from app.services.llm_stream import bind_llm_stream
-from app.services.llm_solution import require_llm_configured, run_llm_only_solution
+from app.services.llm_solution import require_llm_configured, run_llm_only_solution, run_llm_planning_solution
 from app.services.reviewer import review_paper
 from app.services.runner import compile_latex
 from app.services.store import load_json, make_support_zip, save_json
@@ -20,7 +20,7 @@ from app.services.store import load_json, make_support_zip, save_json
 
 StepFn = Callable[[], dict[str, Any]]
 CONTROL_RELATIVE = "artifacts/auto_workflow_control.json"
-AUTO_WORKFLOW_TOTAL_STEPS = 7
+AUTO_WORKFLOW_TOTAL_STEPS = 8
 
 LEGACY_MODELING_ARTIFACT_KEYS = {
     "modeling_script",
@@ -47,7 +47,7 @@ class AutoWorkflowCancelled(RuntimeError):
 
 def run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -> dict[str, Any]:
     stream_title = "继续自动流程大模型直播" if resume else "一键自动流程大模型直播"
-    stream_detail = "正在从最后成功阶段继续执行。" if resume else "正在执行 LLM 当场分析、代码生成、修复和结果回填。"
+    stream_detail = "正在从最后成功阶段继续执行。" if resume else "正在先完成代码求解和图表完整性校验，再生成论文。"
     with bind_llm_stream(root, "auto_workflow", stream_title, stream_detail) as live_stream:
         report = _run_auto_workflow(root, meta, resume=resume)
         status = report.get("overall_status") or "success"
@@ -95,11 +95,11 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
     meta.pop("auto_workflow_error", None)
     save_json(root / "metadata.json", meta)
 
-    def llm_solution_step() -> dict[str, Any]:
+    def llm_planning_step() -> dict[str, Any]:
         metadata_path = root / "metadata.json"
         metadata = load_json(metadata_path) if metadata_path.exists() else {}
         paper_options = metadata.get("paper_options", {}) if isinstance(metadata, dict) else {}
-        artifacts = run_llm_only_solution(root, analysis, paper_options)
+        artifacts = run_llm_planning_solution(root, analysis, paper_options)
         selection = load_llm_final_selection(root, artifacts)
         user_selected = meta.get("final_problem") if isinstance(meta.get("final_problem"), dict) else {}
         if user_selected.get("id") and user_selected.get("source") == "user":
@@ -130,9 +130,9 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
             report["recommended_problem"] = final_problem
             meta["final_problem"] = final_problem
         update_artifacts(meta, artifacts)
-        meta["llm_solution_status"] = "success"
-        meta["paper_fill_status"] = "success"
-        return {"success": True, "detail": "大模型已完成当场选题、题解分析和 LaTeX 论文生成。", "artifacts": artifacts}
+        meta["llm_solution_status"] = "planning_success"
+        meta["paper_fill_status"] = "waiting_for_computed_results"
+        return {"success": True, "detail": "大模型已完成选题确认、子问题拆解和代码求解规划；尚未撰写论文。", "artifacts": artifacts}
 
     def computed_solution_step() -> dict[str, Any]:
         metadata_path = root / "metadata.json"
@@ -152,13 +152,43 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
                 "source": final_problem.get("source") or "workflow",
             }
             save_json(analysis_path, analysis_for_code)
-        artifacts = run_code_result_pipeline(root, analysis_for_code, paper_options)
+        artifacts = run_code_result_pipeline(root, analysis_for_code, paper_options, integrate_paper=False)
         update_artifacts(meta, artifacts)
         meta["computed_solution_status"] = "success"
+        meta["paper_fill_status"] = "waiting_for_paper_generation"
+        return {
+            "success": True,
+            "detail": "已根据 LLM 求解规范生成并运行代码；每个子问题的结果表和图片完整性检查已通过，下一步才开始撰写论文。",
+            "artifacts": artifacts,
+        }
+
+    def paper_generation_step() -> dict[str, Any]:
+        metadata_path = root / "metadata.json"
+        metadata = load_json(metadata_path) if metadata_path.exists() else {}
+        paper_options = metadata.get("paper_options", {}) if isinstance(metadata, dict) else {}
+        analysis_for_paper = load_json(analysis_path) if analysis_path.exists() else dict(analysis)
+        final_problem = metadata.get("final_problem") if isinstance(metadata.get("final_problem"), dict) else {}
+        if final_problem.get("id"):
+            selected = apply_problem_selection(
+                analysis_for_paper,
+                str(final_problem.get("id")),
+                source=str(final_problem.get("source") or "workflow"),
+            )
+            analysis_for_paper["selected_problem"] = {
+                "id": selected.get("id", ""),
+                "title": selected.get("title", ""),
+                "source": final_problem.get("source") or "workflow",
+            }
+            save_json(analysis_path, analysis_for_paper)
+        paper_artifacts = run_llm_only_solution(root, analysis_for_paper, paper_options)
+        result_artifacts = integrate_existing_code_results(root, analysis_for_paper, paper_options)
+        artifacts = {**paper_artifacts, **result_artifacts}
+        update_artifacts(meta, artifacts)
+        meta["llm_solution_status"] = "success"
         meta["paper_fill_status"] = "success"
         return {
             "success": True,
-            "detail": "已根据 LLM 求解规范生成并运行代码，计算结果已写入 manifest 并回填论文。",
+            "detail": "代码求解完整性检查通过后，已生成论文并把计算结果、图表和模型检验回填到对应章节。",
             "artifacts": artifacts,
         }
 
@@ -209,8 +239,9 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
 
     steps: list[tuple[str, str, StepFn, bool]] = [
         ("backend_skills", "GitHub 技能库与诚信门禁上下文注入", skill_context_step, False),
-        ("llm_solution", "大模型当场分析、选题、求解与论文生成", llm_solution_step, True),
-        ("computed_solution", "LLM 规划代码求解、运行结果、最终摘要与论文回填", computed_solution_step, True),
+        ("llm_planning", "大模型当场分析、选题与代码求解规划", llm_planning_step, True),
+        ("computed_solution", "LLM 规划代码求解、运行结果、分问题与图表完整性校验", computed_solution_step, True),
+        ("paper_generation", "完整解题通过后生成论文并回填图表结果", paper_generation_step, True),
         ("code_graph", "本地代码图谱与影响关系分析", code_graph_step, False),
         ("latex_compile", "LaTeX 双轮编译与 Word 导出", compile_step, False),
         ("paper_review", "论文质量审查", review_step, False),

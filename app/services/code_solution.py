@@ -31,6 +31,8 @@ STATUS_RELATIVE = "artifacts/computed_solution_status.json"
 MANIFEST_RELATIVE = "results/computed_manifest.json"
 SUMMARY_RELATIVE = "results/computed_summary.md"
 FROZEN_NUMBERS_RELATIVE = "results/frozen_numbers.json"
+COMPLETENESS_RELATIVE = "artifacts/computed_solution_completeness.json"
+COMPLETENESS_MD_RELATIVE = "artifacts/computed_solution_completeness.md"
 PROSE_RELATIVE = "artifacts/computed_result_prose.json"
 PROSE_MD_RELATIVE = "artifacts/computed_result_prose.md"
 REPAIR_RELATIVE = "artifacts/computed_solver_repair.json"
@@ -41,6 +43,7 @@ def run_code_result_pipeline(
     root: Path,
     analysis: dict[str, Any],
     paper_options: dict[str, Any] | None = None,
+    integrate_paper: bool = True,
 ) -> dict[str, str]:
     """Generate a solver plan, run project-local code, and insert computed results."""
     settings = require_llm_configured()
@@ -49,6 +52,7 @@ def run_code_result_pipeline(
     artifacts = write_computed_solver_script(root, analysis, spec, settings)
     clear_computed_outputs(root)
     run_result = run_computed_solver(root)
+    run_result = enforce_computed_solution_completeness(root, analysis, spec, run_result)
     for attempt in range(1, 3):
         if run_result.get("success"):
             break
@@ -56,16 +60,49 @@ def run_code_result_pipeline(
         artifacts.update(repair_artifacts)
         clear_computed_outputs(root)
         run_result = run_computed_solver(root)
+        run_result = enforce_computed_solution_completeness(root, analysis, spec, run_result)
     artifacts.update(artifacts_from_run_result(run_result))
     if not run_result.get("success"):
-        raise RuntimeError(f"求解脚本运行失败，请查看 {run_result.get('log') or LOG_RELATIVE}")
+        raise RuntimeError(
+            run_result.get("error")
+            or f"求解脚本运行失败，请查看 {run_result.get('log') or LOG_RELATIVE}"
+        )
 
     manifest = load_json(root / MANIFEST_RELATIVE)
-    artifacts.update(write_result_integration(root, analysis, spec, manifest, paper_options))
+    if integrate_paper:
+        artifacts.update(write_result_integration(root, analysis, spec, manifest, paper_options))
     artifacts.update(
         {
             "computed_manifest": MANIFEST_RELATIVE,
             "computed_summary": SUMMARY_RELATIVE if (root / SUMMARY_RELATIVE).exists() else "",
+            "computed_completeness": COMPLETENESS_MD_RELATIVE if (root / COMPLETENESS_MD_RELATIVE).exists() else "",
+            "computed_completeness_json": COMPLETENESS_RELATIVE if (root / COMPLETENESS_RELATIVE).exists() else "",
+        }
+    )
+    return {key: value for key, value in artifacts.items() if value}
+
+
+def integrate_existing_code_results(
+    root: Path,
+    analysis: dict[str, Any],
+    paper_options: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Insert already-computed results into an already-created paper."""
+    paper_options = paper_options or {}
+    spec_payload = load_json_if_exists(root / SPEC_RELATIVE)
+    spec = spec_payload.get("spec") if isinstance(spec_payload.get("spec"), dict) else spec_payload
+    manifest = load_json(root / MANIFEST_RELATIVE)
+    completeness = build_computed_solution_completeness_report(root, analysis, spec if isinstance(spec, dict) else {}, manifest)
+    write_completeness_report(root, completeness)
+    if not completeness.get("success"):
+        raise RuntimeError(completeness_failure_message(completeness))
+    artifacts = write_result_integration(root, analysis, spec if isinstance(spec, dict) else {}, manifest, paper_options)
+    artifacts.update(
+        {
+            "computed_manifest": MANIFEST_RELATIVE,
+            "computed_summary": SUMMARY_RELATIVE if (root / SUMMARY_RELATIVE).exists() else "",
+            "computed_completeness": COMPLETENESS_MD_RELATIVE,
+            "computed_completeness_json": COMPLETENESS_RELATIVE,
         }
     )
     return {key: value for key, value in artifacts.items() if value}
@@ -365,6 +402,9 @@ Current project context JSON:
 Keep all original security constraints:
 - no network, subprocess, shell commands, eval/exec/compile, environment variables, deletion, or project-external reads;
 - write results/computed_manifest.json and results/computed_summary.md;
+- pass the completeness gate before paper writing: every expected subproblem must have a per_problem_results item,
+  at least one existing result/validation table, at least one existing result/validation figure, and computed metrics
+  or table values; do not mark a required subproblem as solved with only a limitation;
 - if data is insufficient, emit a clear limitation instead of failing.
 """
     script, validation_attempts = generate_validated_solver_script(prompt, max_attempts=2, label_prefix=f"修复项目求解脚本（第 {attempt} 轮）")
@@ -417,7 +457,7 @@ def render_repair_markdown(history: list[dict[str, Any]]) -> str:
 
 
 def clear_computed_outputs(root: Path) -> None:
-    for relative in [MANIFEST_RELATIVE, SUMMARY_RELATIVE, FROZEN_NUMBERS_RELATIVE]:
+    for relative in [MANIFEST_RELATIVE, SUMMARY_RELATIVE, FROZEN_NUMBERS_RELATIVE, COMPLETENESS_RELATIVE, COMPLETENESS_MD_RELATIVE]:
         path = root / relative
         if path.exists() and path.is_file():
             path.unlink()
@@ -468,7 +508,9 @@ Runtime contract:
    conclusion, limitations, method_basis, validation_summary.
 8. Each table entry should include path, title, rows, cols, preview_records, problem_index when possible.
 9. Each figure entry should include path, title, description, problem_index when possible.
-10. If a subproblem cannot be solved from available data after robust parsing and fallback schema matching, write a clear limitation and still emit a per_problem_results item. Never invent numerical results.
+10. For every expected subproblem, write at least one result/validation table file and at least one result/validation figure file.
+11. If a subproblem cannot be solved from available data after robust parsing and fallback schema matching, write a clear limitation and still emit a per_problem_results item. Never invent numerical results.
+    However, required subproblems with only limitations will fail the completeness gate and the script will be repaired before paper writing starts.
 
 Mandatory figure/font setup:
 - If matplotlib is imported, configure Chinese fonts before creating figures. Use font_manager candidates
@@ -732,6 +774,220 @@ def run_computed_solver(root: Path, timeout: int = 360) -> dict[str, Any]:
         payload["error"] = "求解脚本已结束，但未生成 results/computed_manifest.json。"
     save_json(root / STATUS_RELATIVE, payload)
     return payload
+
+
+def enforce_computed_solution_completeness(
+    root: Path,
+    analysis: dict[str, Any],
+    spec: dict[str, Any],
+    run_result: dict[str, Any],
+) -> dict[str, Any]:
+    if not run_result.get("success"):
+        return run_result
+    manifest = load_json_if_exists(root / MANIFEST_RELATIVE)
+    report = build_computed_solution_completeness_report(root, analysis, spec, manifest)
+    write_completeness_report(root, report)
+    run_result["completeness"] = COMPLETENESS_RELATIVE
+    if not report.get("success"):
+        run_result["success"] = False
+        run_result["error"] = completeness_failure_message(report)
+    save_json(root / STATUS_RELATIVE, run_result)
+    return run_result
+
+
+def build_computed_solution_completeness_report(
+    root: Path,
+    analysis: dict[str, Any],
+    spec: dict[str, Any],
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+    expected_indices = expected_problem_indices(analysis, spec)
+    per_problem = [item for item in (manifest.get("per_problem_results", []) if isinstance(manifest, dict) else []) if isinstance(item, dict)]
+    by_problem = {safe_int(item.get("problem_index")): item for item in per_problem if safe_int(item.get("problem_index"))}
+    tables = [item for item in (manifest.get("tables", []) if isinstance(manifest, dict) else []) if isinstance(item, dict)]
+    figures = [item for item in (manifest.get("figures", []) if isinstance(manifest, dict) else []) if isinstance(item, dict)]
+
+    if not isinstance(manifest, dict) or not manifest:
+        checks.append(make_completeness_check("manifest", False, "缺少 results/computed_manifest.json 或内容不是 JSON 对象。", "high"))
+    else:
+        checks.append(make_completeness_check("manifest", True, "已生成 results/computed_manifest.json。"))
+
+    if not expected_indices:
+        checks.append(make_completeness_check("expected_problems", False, "未能从求解规范或赛题分析中识别子问题数量。", "high"))
+    else:
+        checks.append(make_completeness_check("expected_problems", True, "需要完成的子问题：" + "、".join(str(i) for i in expected_indices)))
+
+    for index in expected_indices:
+        item = by_problem.get(index)
+        if not item:
+            checks.append(make_completeness_check(f"problem_{index}_result", False, f"问题 {index} 缺少 per_problem_results 记录。", "high", index))
+            continue
+        limitation_text = json.dumps(item.get("limitations", ""), ensure_ascii=False)
+        if any(term in limitation_text for term in ["数据不足", "无法求解", "未能", "缺少", "insufficient", "failed"]):
+            checks.append(make_completeness_check(f"problem_{index}_limitation", False, f"问题 {index} 仍包含数据不足或无法求解限制：{limitation_text[:160]}", "high", index))
+        else:
+            checks.append(make_completeness_check(f"problem_{index}_limitation", True, f"问题 {index} 未报告阻断性数据不足。", problem_index=index))
+
+        problem_tables = artifacts_for_problem(item, tables, index, "tables")
+        problem_figures = artifacts_for_problem(item, figures, index, "figures")
+        table_files = existing_artifact_paths(root, problem_tables)
+        figure_files = existing_artifact_paths(root, problem_figures)
+        if table_files:
+            checks.append(make_completeness_check(f"problem_{index}_tables", True, f"问题 {index} 已生成 {len(table_files)} 个表格文件。", problem_index=index))
+        else:
+            checks.append(make_completeness_check(f"problem_{index}_tables", False, f"问题 {index} 未生成可定位的结果表或检验表。", "high", index))
+        if figure_files:
+            checks.append(make_completeness_check(f"problem_{index}_figures", True, f"问题 {index} 已生成 {len(figure_files)} 张图片。", problem_index=index))
+        else:
+            checks.append(make_completeness_check(f"problem_{index}_figures", False, f"问题 {index} 未生成可定位的结果图或检验图。", "high", index))
+
+        metrics = item.get("metrics")
+        if metrics or table_files:
+            checks.append(make_completeness_check(f"problem_{index}_computed_values", True, f"问题 {index} 已生成指标或结果表。", problem_index=index))
+        else:
+            checks.append(make_completeness_check(f"problem_{index}_computed_values", False, f"问题 {index} 缺少指标和结果表，不能判定已解完。", "high", index))
+
+    missing_global = missing_manifest_artifact_paths(root, [*tables, *figures])
+    if missing_global:
+        checks.append(make_completeness_check("artifact_files", False, "manifest 中存在缺失文件：" + "、".join(missing_global[:12]), "high"))
+    else:
+        checks.append(make_completeness_check("artifact_files", True, "manifest 记录的表格和图片文件均可定位。"))
+
+    success = all(item["status"] == "pass" for item in checks)
+    return {
+        "stage": "computed_solution_completeness",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "success": success,
+        "expected_problem_indices": expected_indices,
+        "checks": checks,
+        "policy": "所有子问题必须先完成代码求解，并且每个子问题至少生成可定位的结果表和结果图，才允许进入论文撰写与回填。",
+    }
+
+
+def make_completeness_check(
+    check_id: str,
+    passed: bool,
+    detail: str,
+    severity: str = "low",
+    problem_index: int | None = None,
+) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "id": check_id,
+        "status": "pass" if passed else "fail",
+        "severity": severity,
+        "detail": detail,
+    }
+    if problem_index is not None:
+        item["problem_index"] = problem_index
+    return item
+
+
+def write_completeness_report(root: Path, report: dict[str, Any]) -> None:
+    save_json(root / COMPLETENESS_RELATIVE, report)
+    lines = [
+        "# 代码求解完整性检查",
+        "",
+        f"- 生成时间：{report.get('generated_at')}",
+        f"- 状态：{'通过' if report.get('success') else '未通过'}",
+        f"- 策略：{report.get('policy')}",
+        "",
+        "| 检查项 | 状态 | 说明 |",
+        "|---|---|---|",
+    ]
+    for item in report.get("checks", []) or []:
+        status = "通过" if item.get("status") == "pass" else "失败"
+        detail = str(item.get("detail") or "").replace("|", "/")
+        lines.append(f"| {item.get('id')} | {status} | {detail} |")
+    (root / COMPLETENESS_MD_RELATIVE).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def completeness_failure_message(report: dict[str, Any]) -> str:
+    failures = [item for item in report.get("checks", []) or [] if item.get("status") != "pass"]
+    details = "；".join(str(item.get("detail") or item.get("id")) for item in failures[:6])
+    return f"代码求解完整性检查未通过：{details}。请查看 {COMPLETENESS_MD_RELATIVE}"
+
+
+def expected_problem_indices(analysis: dict[str, Any], spec: dict[str, Any]) -> list[int]:
+    indices: set[int] = set()
+    for item in spec.get("per_problem", []) or []:
+        index = safe_int(item.get("problem_index")) if isinstance(item, dict) else 0
+        if index:
+            indices.add(index)
+    tasks = (analysis.get("recommended_problem", {}) or {}).get("tasks", []) if isinstance(analysis, dict) else []
+    for offset, task in enumerate(tasks or [], 1):
+        text = str(task or "")
+        match = re.search(r"(?:问题|第)\s*([一二三四五六七八九十\d]+)", text)
+        if match:
+            index = chinese_problem_number(match.group(1))
+            if index:
+                indices.add(index)
+        elif len(tasks) <= 8:
+            indices.add(offset)
+    if not indices and safe_int((analysis.get("recommended_problem", {}) or {}).get("task_count")):
+        indices.update(range(1, safe_int((analysis.get("recommended_problem", {}) or {}).get("task_count")) + 1))
+    return sorted(indices)
+
+
+def chinese_problem_number(value: str) -> int:
+    value = str(value or "").strip()
+    if value.isdigit():
+        return safe_int(value)
+    mapping = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+    if value in mapping:
+        return mapping[value]
+    if value.startswith("十") and len(value) == 2:
+        return 10 + mapping.get(value[1], 0)
+    if value.endswith("十") and len(value) == 2:
+        return mapping.get(value[0], 0) * 10
+    if "十" in value:
+        left, right = value.split("十", 1)
+        return mapping.get(left, 1) * 10 + mapping.get(right, 0)
+    return 0
+
+
+def artifacts_for_problem(problem_item: dict[str, Any], global_items: list[dict[str, Any]], problem_index: int, key: str) -> list[Any]:
+    items: list[Any] = []
+    direct = problem_item.get(key)
+    if isinstance(direct, list):
+        items.extend(direct)
+    elif direct:
+        items.append(direct)
+    for item in global_items:
+        if safe_int(item.get("problem_index")) == problem_index:
+            items.append(item)
+    return items
+
+
+def existing_artifact_paths(root: Path, items: list[Any]) -> list[str]:
+    paths: list[str] = []
+    for item in items:
+        relative = artifact_relative_path(item)
+        if not relative:
+            continue
+        path = root / relative
+        if path.exists() and path.is_file() and path.stat().st_size > 0:
+            paths.append(relative)
+    return list(dict.fromkeys(paths))
+
+
+def missing_manifest_artifact_paths(root: Path, items: list[Any]) -> list[str]:
+    missing = []
+    for item in items:
+        relative = artifact_relative_path(item)
+        if relative and not (root / relative).exists():
+            missing.append(relative)
+    return list(dict.fromkeys(missing))
+
+
+def artifact_relative_path(item: Any) -> str:
+    if isinstance(item, str):
+        return item.replace("\\", "/")
+    if isinstance(item, dict):
+        for key in ["path", "file", "relative_path"]:
+            if item.get(key):
+                return str(item.get(key)).replace("\\", "/")
+    return ""
 
 
 def write_result_integration(
@@ -3777,6 +4033,8 @@ def artifacts_from_run_result(result: dict[str, Any]) -> dict[str, str]:
         "computed_manifest": result.get("manifest", ""),
         "computed_summary": result.get("summary", ""),
         "computed_frozen_numbers": result.get("frozen_numbers", ""),
+        "computed_completeness": COMPLETENESS_MD_RELATIVE if result.get("completeness") else "",
+        "computed_completeness_json": result.get("completeness", ""),
     }
     return {key: value for key, value in artifacts.items() if value}
 

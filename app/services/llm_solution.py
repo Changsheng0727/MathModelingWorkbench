@@ -77,6 +77,122 @@ def run_llm_only_solution(root: Path, analysis: dict[str, Any], paper_options: d
     }
 
 
+def run_llm_planning_solution(root: Path, analysis: dict[str, Any], paper_options: dict[str, Any] | None = None) -> dict[str, str]:
+    """Generate only modeling/code-solver planning context; do not write paper/main.tex."""
+    settings = require_llm_configured()
+    paper_options = paper_options or {}
+    sections = generate_llm_planning_sections(analysis, paper_options)
+    solution = render_solution_markdown(sections)
+    solution_payload = {
+        "stage": "llm_planning_solution",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "settings": public_settings(settings),
+        "success": True,
+        "content": solution,
+        "sections": sections,
+        "paper_options": paper_options,
+        "paper_written": False,
+        "note": "本阶段只完成选题、子问题、模型链、代码求解和图表产出规划；不生成 paper/main.tex。",
+    }
+    solution_md = root / "artifacts" / "llm_full_solution.md"
+    solution_json = root / "artifacts" / "llm_full_solution.json"
+    solution_md.parent.mkdir(parents=True, exist_ok=True)
+    solution_md.write_text(render_stage_markdown("LLM 建模与代码求解规划", solution_payload), encoding="utf-8")
+    save_json(solution_json, solution_payload)
+    return {
+        "llm_full_solution": "artifacts/llm_full_solution.md",
+        "llm_full_solution_json": "artifacts/llm_full_solution.json",
+    }
+
+
+def generate_llm_planning_sections(analysis: dict[str, Any], paper_options: dict[str, Any]) -> dict[str, Any]:
+    backend_skill_context = render_backend_skill_context(max_chars=12000)
+    standard_paper_rules = render_standard_paper_rules()
+    context = {
+        "analysis": compact_analysis(analysis),
+        "inventory": compact_inventory(analysis.get("inventory", [])),
+        "paper_options": paper_options,
+        "backend_skill_context": backend_skill_context,
+        "standard_paper_rules": standard_paper_rules,
+        "model_method_routes": render_model_method_routes(max_chars=6000),
+    }
+    rec = analysis.get("recommended_problem", {}) or {}
+    selection = call_json_response(
+        f"""你是数学建模竞赛自动求解流程的总控。当前阶段只允许做选题确认、子问题拆解、模型链和代码求解规划，不允许撰写论文正文、摘要或结论。
+
+用户已经确认本次求解使用 {rec.get("id", "-")} 题：{rec.get("title", "")}。不得自行改选其他题目。
+
+只输出 JSON，不要 Markdown，不要解释。字段：
+{{
+  "final_problem_id": "最终选择题号",
+  "final_problem_title": "最终选择题名",
+  "reason": "选择理由，500字以内",
+  "tasks": ["按子问题列出任务"],
+  "model_chain": ["按顺序列出拟采用的模型或算法"],
+  "data_needs": ["需要从附件中读取或计算的关键数据"],
+  "risk_control": ["不能编造数值、需要复核的风险点"]
+}}
+
+要求：final_problem_id 和 final_problem_title 必须与用户确认的题目一致；每个子问题都要能进入后续代码求解；如果缺少可计算数值，只写需由数据计算得到。
+
+输入 JSON：
+```json
+{json.dumps(context, ensure_ascii=False, indent=2)}
+```""",
+        max_tokens=1600,
+        stream_label="生成建模求解规划：选题与任务拆解",
+    )
+    selection["final_problem_id"] = rec.get("id") or selection.get("final_problem_id")
+    selection["final_problem_title"] = rec.get("title") or selection.get("final_problem_title")
+    model = call_json_response(
+        f"""请继续为自动代码求解生成建模规划。当前阶段仍然不允许写论文正文、摘要、结论或图表分析段落；只写给代码求解器使用的规划。
+
+只输出 JSON，不要 Markdown，不要解释。字段：
+{{
+  "model_building": "按子问题说明数学模型、变量、目标函数、约束和算法思路；不写结果",
+  "solving": "按子问题说明代码如何读取数据、计算结果、生成表格和绘制图片",
+  "validation": "按子问题说明必须由代码跑出的检验表、检验图和评价指标",
+  "per_problem_plan": [
+    {{
+      "problem_index": 1,
+      "goal": "本问最终要解决的问题",
+      "data_mapping": ["需要读取的附件、表、字段或文本参数"],
+      "model_family": "模型或算法",
+      "baseline_model": "先跑通的基线或PoC",
+      "candidate_models": ["候选模型"],
+      "expected_tables": ["必须输出的结果表或检验表"],
+      "expected_figures": ["必须绘制的结果图或检验图"],
+      "validation_outputs": ["误差、敏感性、约束可行性或稳定性检查"],
+      "completion_criteria": "什么情况下才算本问解完"
+    }}
+  ]
+}}
+
+硬性要求：
+1. 每个子问题都必须有 expected_tables 和 expected_figures，后续软件会在所有子问题都产出表格和图片后才开始写论文。
+2. 先设计简单可解释的 PoC/基线，再给候选模型；不能只给黑箱模型名。
+3. 不要编造精确数值，所有数值等待代码从附件计算。
+
+题型-模型路由：
+```text
+{render_model_method_routes(max_chars=6000)}
+```
+
+最终选题 JSON：
+```json
+{json.dumps(selection, ensure_ascii=False, indent=2)}
+```
+
+赛题上下文 JSON：
+```json
+{json.dumps(context, ensure_ascii=False, indent=2)}
+```""",
+        max_tokens=3000,
+        stream_label="生成建模求解规划：模型与图表产出",
+    )
+    return {"selection": selection, "model": model, "paper_options": paper_options, "planning_only": True}
+
+
 def generate_llm_sections(analysis: dict[str, Any], paper_options: dict[str, Any]) -> dict[str, Any]:
     backend_skill_context = render_backend_skill_context(max_chars=14000)
     standard_paper_rules = render_standard_paper_rules()
@@ -828,11 +944,11 @@ def generate_expanded_sections(
     }
 
 
-def call_json_response(prompt: str, max_tokens: int) -> dict[str, Any]:
+def call_json_response(prompt: str, max_tokens: int, stream_label: str | None = None) -> dict[str, Any]:
     last_error = ""
     for _ in range(2):
         try:
-            text = call_chat_completion(prompt, max_tokens=max_tokens, stream_label=infer_json_stage_label(prompt))
+            text = call_chat_completion(prompt, max_tokens=max_tokens, stream_label=stream_label or infer_json_stage_label(prompt))
             try:
                 return json.loads(extract_json_object(text))
             except Exception:

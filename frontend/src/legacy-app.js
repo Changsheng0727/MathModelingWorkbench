@@ -642,6 +642,7 @@ function renderArtifacts(metadata, projectId) {
     ["computed_solver_repair", "代码求解自动修复记录"],
     ["computed_solver_log", "代码运行日志"],
     ["computed_solution_status", "代码运行状态 JSON"],
+    ["computed_completeness", "代码求解完整性检查"],
     ["computed_manifest", "代码计算结果清单"],
     ["computed_summary", "代码计算结果摘要"],
     ["computed_result_prose", "结果整合说明"],
@@ -674,6 +675,7 @@ function renderArtifacts(metadata, projectId) {
     ["computed_solver_spec_json", "LLM 代码求解规范 JSON"],
     ["computed_solver_script_json", "代码求解脚本 JSON"],
     ["computed_solver_repair_json", "代码求解自动修复 JSON"],
+    ["computed_completeness_json", "代码求解完整性检查 JSON"],
     ["computed_result_prose_json", "结果整合说明 JSON"],
   ]
     .filter(([key]) => artifacts[key])
