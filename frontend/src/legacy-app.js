@@ -1,5 +1,7 @@
 const state = {
   currentProject: null,
+  projects: [],
+  projectQuery: "",
   templates: [],
   llmSettings: null,
   uploadProgressStop: null,
@@ -15,6 +17,8 @@ const els = {
   status: document.querySelector("#upload-status"),
   uploadProgress: document.querySelector("#upload-analysis-progress"),
   refresh: document.querySelector("#refresh-projects"),
+  projectSearch: document.querySelector("#project-search"),
+  projectCount: document.querySelector("#project-count"),
   projectList: document.querySelector("#project-list"),
   health: document.querySelector("#health"),
   llmSettingsForm: document.querySelector("#llm-settings-form"),
@@ -24,6 +28,7 @@ const els = {
   clearLlmSettings: document.querySelector("#clear-llm-settings"),
   llmSettingsStatus: document.querySelector("#llm-settings-status"),
   title: document.querySelector("#project-title"),
+  openProjectRoot: document.querySelector("#open-project-root"),
   environment: document.querySelector("#environment-status"),
   empty: document.querySelector("#empty-state"),
   analysisView: document.querySelector("#analysis-view"),
@@ -75,6 +80,7 @@ const els = {
   paperReviewStatus: document.querySelector("#paper-review-status"),
   runLlmAnalysis: document.querySelector("#run-llm-analysis"),
   llmAnalysisStatus: document.querySelector("#llm-analysis-status"),
+  toastRegion: document.querySelector("#toast-region"),
 };
 
 function escapeHtml(value) {
@@ -84,6 +90,48 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function encodeRelativePath(value) {
+  return String(value ?? "")
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+}
+
+function readPreference(key, fallback = "") {
+  try {
+    return window.localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writePreference(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Some embedded browser policies disable localStorage; the UI still works without it.
+  }
+}
+
+function normalizeSearch(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function showToast(message, tone = "info") {
+  if (!els.toastRegion || !message) {
+    return;
+  }
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${tone}`;
+  toast.setAttribute("role", tone === "error" ? "alert" : "status");
+  toast.textContent = message;
+  els.toastRegion.appendChild(toast);
+  window.setTimeout(() => {
+    toast.classList.add("is-leaving");
+    window.setTimeout(() => toast.remove(), 180);
+  }, 2800);
 }
 
 async function api(path, options = {}) {
@@ -108,12 +156,14 @@ async function checkHealth() {
   try {
     await api("/api/health");
     els.health.textContent = "已连接";
+    els.health.dataset.status = "connected";
     const env = await api("/api/environments");
     renderEnvironments(env);
     await loadLlmSettings();
     await loadTemplates();
   } catch {
     els.health.textContent = "未连接";
+    els.health.dataset.status = "disconnected";
   }
 }
 
@@ -201,19 +251,46 @@ function renderLlmSettings(settings) {
 }
 
 async function loadProjects() {
-  const projects = await api("/api/projects");
+  state.projects = await api("/api/projects");
+  renderProjectList();
+}
+
+function renderProjectList() {
+  const projects = state.projects || [];
+  const query = normalizeSearch(state.projectQuery);
+  const filtered = query
+    ? projects.filter((project) => projectSearchText(project).includes(query))
+    : projects;
+
+  if (els.projectCount) {
+    els.projectCount.textContent = projects.length
+      ? query
+        ? `筛选出 ${filtered.length} / ${projects.length} 个项目`
+        : `${projects.length} 个项目`
+      : "暂无项目";
+  }
+
   if (!projects.length) {
     els.projectList.innerHTML = '<p class="status">暂无项目</p>';
     return;
   }
-  els.projectList.innerHTML = projects
+  if (!filtered.length) {
+    els.projectList.innerHTML = '<p class="status">没有匹配的项目。</p>';
+    return;
+  }
+
+  els.projectList.innerHTML = filtered
     .map(
       (project) => {
         const active = state.currentProject?.metadata?.id === project.id ? " is-active" : "";
+        const autoBadge = project.auto_workflow_status ? `<span class="project-badge">${escapeHtml(project.auto_workflow_status)}</span>` : "";
+        const analysisBadge = project.analysis_available ? '<span class="project-badge project-badge-ok">已分析</span>' : '<span class="project-badge project-badge-muted">未分析</span>';
+        const status = project.status || "-";
         return `
         <button class="project-button${active}" type="button" data-project-id="${escapeHtml(project.id)}">
           <span class="project-name">${escapeHtml(project.name)}</span>
-          <span class="project-meta">${escapeHtml(project.created_at)} · ${escapeHtml(project.status)}</span>
+          <span class="project-meta">${escapeHtml(formatProjectTime(project.created_at))} · ${escapeHtml(status)}</span>
+          <span class="project-badges">${analysisBadge}${autoBadge}</span>
         </button>
       `;
       },
@@ -224,9 +301,29 @@ async function loadProjects() {
   });
 }
 
+function projectSearchText(project = {}) {
+  return normalizeSearch([
+    project.id,
+    project.name,
+    project.original_name,
+    project.created_at,
+    project.status,
+    project.auto_workflow_status,
+    project.analysis_available ? "已分析" : "未分析",
+  ].filter(Boolean).join(" "));
+}
+
+function formatProjectTime(value) {
+  if (!value) {
+    return "-";
+  }
+  return String(value).replace("T", " ").slice(0, 16);
+}
+
 async function openProject(projectId) {
   const detail = await api(`/api/projects/${projectId}`);
   renderProject(detail);
+  showToast("已打开项目", "success");
 }
 
 function renderProject(detail) {
@@ -234,6 +331,10 @@ function renderProject(detail) {
   syncProjectSelection();
   const { metadata, analysis } = detail;
   els.title.textContent = metadata.name || metadata.original_name || "项目";
+  if (els.openProjectRoot) {
+    els.openProjectRoot.classList.remove("hidden");
+    els.openProjectRoot.disabled = false;
+  }
   els.projectStatus.textContent = metadata.auto_workflow_status
     ? `${metadata.status || "-"} · 自动流程：${metadata.auto_workflow_status}`
     : metadata.status || "-";
@@ -710,11 +811,13 @@ function renderArtifacts(metadata, projectId) {
 
 function renderArtifactItem(projectId, key, label, path) {
   const encodedProject = encodeURIComponent(projectId);
-  const encodedPath = encodeURI(path);
+  const encodedPath = encodeRelativePath(path);
+  const safeLabel = escapeHtml(label);
+  const safePath = escapeHtml(path);
   return `
     <div class="artifact-row">
-      <a class="artifact-link" data-kind="${artifactKind(key, path)}" href="/api/projects/${encodedProject}/download/${encodedPath}" title="${escapeHtml(path)}">${escapeHtml(label)}</a>
-      <button class="artifact-open" type="button" data-project-id="${escapeHtml(projectId)}" data-path="${escapeHtml(path)}" title="在资源管理器中打开所在位置">打开位置</button>
+      <a class="artifact-link" data-kind="${artifactKind(key, path)}" href="/api/projects/${encodedProject}/download/${encodedPath}" title="${safePath}" aria-label="下载或查看${safeLabel}">${safeLabel}</a>
+      <button class="artifact-open" type="button" data-project-id="${escapeHtml(projectId)}" data-path="${safePath}" title="在资源管理器中打开所在位置" aria-label="打开${safeLabel}所在文件夹">打开位置</button>
     </div>
   `;
 }
@@ -733,8 +836,9 @@ els.artifacts.addEventListener("click", async (event) => {
   const originalText = button.textContent;
   button.textContent = "打开中";
   try {
-    await api(`/api/projects/${encodeURIComponent(projectId)}/open-location/${encodeURI(path)}`, { method: "POST" });
+    await api(`/api/projects/${encodeURIComponent(projectId)}/open-location/${encodeRelativePath(path)}`, { method: "POST" });
     button.textContent = "已打开";
+    showToast("已打开文件所在位置", "success");
     window.setTimeout(() => {
       button.textContent = originalText;
       button.disabled = false;
@@ -742,6 +846,7 @@ els.artifacts.addEventListener("click", async (event) => {
   } catch (error) {
     button.textContent = "打开失败";
     els.projectStatus.textContent = `打开文件位置失败：${error.message}`;
+    showToast(`打开位置失败：${error.message}`, "error");
     window.setTimeout(() => {
       button.textContent = originalText;
       button.disabled = false;
@@ -870,6 +975,7 @@ els.form.addEventListener("submit", async (event) => {
     const detail = await api(endpoint, { method: "POST", body: formData });
     await refreshUploadProgress(progressId);
     els.status.textContent = "分析完成。";
+    showToast("赛题分析完成", "success");
     renderProject(detail);
     await loadProjects();
     if (els.autoRunAfterUpload?.checked) {
@@ -878,7 +984,10 @@ els.form.addEventListener("submit", async (event) => {
         await selectProblem(rec.id);
         await runAutoWorkflow(
           detail.metadata.id,
-          "上传分析完成，已按系统推荐题目确认选择，正在调用大模型生成并运行代码，随后回填结果、撰写论文和审查。",
+          {
+            initialMessage:
+              "上传分析完成，已按系统推荐题目确认选择，正在调用大模型生成并运行代码，随后回填结果、撰写论文和审查。",
+          },
         );
       } else {
         els.status.textContent = "分析完成，但未识别到可自动确认的推荐题目，请在选题模块手动选择。";
@@ -887,6 +996,7 @@ els.form.addEventListener("submit", async (event) => {
   } catch (error) {
     await refreshUploadProgress(progressId);
     els.status.textContent = `分析失败：${error.message}`;
+    showToast(`赛题分析失败：${error.message}`, "error");
   } finally {
     if (state.uploadProgressStop) {
       state.uploadProgressStop();
@@ -946,7 +1056,52 @@ function folderNameFromFiles(files) {
   return relative.split(/[\\/]/)[0] || "赛题文件夹";
 }
 
-els.refresh.addEventListener("click", loadProjects);
+els.refresh.addEventListener("click", async () => {
+  els.refresh.disabled = true;
+  try {
+    await loadProjects();
+    showToast("项目列表已刷新", "success");
+  } catch (error) {
+    showToast(`刷新项目失败：${error.message}`, "error");
+  } finally {
+    els.refresh.disabled = false;
+  }
+});
+
+if (els.projectSearch) {
+  els.projectSearch.addEventListener("input", () => {
+    state.projectQuery = els.projectSearch.value;
+    renderProjectList();
+  });
+}
+
+if (els.openProjectRoot) {
+  els.openProjectRoot.addEventListener("click", async () => {
+    const projectId = state.currentProject?.metadata?.id;
+    if (!projectId) {
+      showToast("请先打开一个项目。", "warning");
+      return;
+    }
+    els.openProjectRoot.disabled = true;
+    const originalText = els.openProjectRoot.textContent;
+    els.openProjectRoot.textContent = "打开中";
+    try {
+      await api(`/api/projects/${encodeURIComponent(projectId)}/open-root`, { method: "POST" });
+      els.openProjectRoot.textContent = "已打开";
+      showToast("已打开项目文件夹", "success");
+      window.setTimeout(() => {
+        els.openProjectRoot.textContent = originalText;
+      }, 1200);
+    } catch (error) {
+      showToast(`打开项目文件夹失败：${error.message}`, "error");
+      els.openProjectRoot.textContent = originalText;
+    } finally {
+      window.setTimeout(() => {
+        els.openProjectRoot.disabled = false;
+      }, 250);
+    }
+  });
+}
 
 els.llmSettingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -965,8 +1120,10 @@ els.llmSettingsForm.addEventListener("submit", async (event) => {
       body: JSON.stringify(payload),
     });
     renderLlmSettings(settings);
+    showToast("AI 设置已保存", "success");
   } catch (error) {
     els.llmSettingsStatus.textContent = `保存失败：${error.message}`;
+    showToast(`AI 设置保存失败：${error.message}`, "error");
   } finally {
     button.disabled = false;
   }
@@ -978,8 +1135,10 @@ els.clearLlmSettings.addEventListener("click", async () => {
   try {
     const settings = await api("/api/settings/llm", { method: "DELETE" });
     renderLlmSettings(settings);
+    showToast("AI 设置已清除", "success");
   } catch (error) {
     els.llmSettingsStatus.textContent = `清除失败：${error.message}`;
+    showToast(`清除 AI 设置失败：${error.message}`, "error");
   } finally {
     els.clearLlmSettings.disabled = false;
   }
@@ -1114,7 +1273,7 @@ els.modelAssistantForm.addEventListener("submit", async (event) => {
     const artifacts = payload.artifacts || {};
     const report = artifacts.llm_model_assistant;
     els.modelAssistantStatus.innerHTML = report
-      ? `模型辅助方案已生成：<a href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeURI(report)}">查看报告</a>。`
+      ? `模型辅助方案已生成：<a href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(report)}">查看报告</a>。`
       : "模型辅助方案已生成，可在生成文件中查看。";
     await loadProjects();
   } catch (error) {
@@ -1244,14 +1403,18 @@ async function runAutoWorkflow(
     const failedCount = steps.filter((step) => step.status === "failed").length;
     if (workflow.overall_status === "success") {
       els.autoWorkflowStatus.textContent = "LLM+代码自动流程完成：已生成题解方案、运行代码得到结果、回填论文、审查报告和支撑材料。";
+      showToast("自动流程已完成", "success");
     } else if (workflow.overall_status === "cancelled") {
       els.autoWorkflowStatus.textContent = "自动流程已中断：当前阶段已安全结束，可点击“继续生成”从断点恢复。";
+      showToast("自动流程已中断，可继续生成", "warning");
     } else {
       els.autoWorkflowStatus.textContent = `自动流程完成但需复核：${warningCount} 个警告，${failedCount} 个失败项。请查看自动解题报告。`;
+      showToast("自动流程完成但需要复核", "warning");
     }
     await loadProjects();
   } catch (error) {
     els.autoWorkflowStatus.textContent = `自动流程失败：${error.message}`;
+    showToast(`自动流程失败：${error.message}`, "error");
   } finally {
     stopProgressPolling();
     await refreshAutoProgress(projectId);
@@ -1318,6 +1481,8 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
     return;
   }
   element.classList.remove("hidden");
+  element.setAttribute("role", "status");
+  element.setAttribute("aria-live", "polite");
   const percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
   const allSteps = current ? [...steps, current] : steps;
   const currentTitle = current?.title || statusLabel(progress.status) || "等待更新";
@@ -1390,7 +1555,7 @@ function renderProgressStep(step) {
   const detail = step.detail ? `<p>${escapeHtml(step.detail)}</p>` : "";
   const projectId = state.currentProject?.metadata?.id;
   const errorLog = projectId && step.error_log
-    ? `<a class="progress-link" href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeURI(step.error_log)}">查看错误日志</a>`
+    ? `<a class="progress-link" href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(step.error_log)}">查看错误日志</a>`
     : "";
   return `
     <div class="progress-step" data-status="${escapeHtml(status)}">
@@ -1542,15 +1707,51 @@ els.reviewPaper.addEventListener("click", async () => {
 function initModuleTabs() {
   const tabs = Array.from(document.querySelectorAll("[data-module-tab]"));
   const panels = Array.from(document.querySelectorAll("[data-module-panel]"));
-  tabs.forEach((tab) => {
+  if (!tabs.length) {
+    return;
+  }
+  const activateTab = (target, { focus = false } = {}) => {
+    const activeTab = tabs.find((item) => item.dataset.moduleTab === target) || tabs[0];
+    tabs.forEach((item) => {
+      const active = item === activeTab;
+      item.classList.toggle("is-active", active);
+      item.setAttribute("aria-selected", active ? "true" : "false");
+      item.tabIndex = active ? 0 : -1;
+    });
+    panels.forEach((panel) => {
+      const active = panel.dataset.modulePanel === activeTab.dataset.moduleTab;
+      panel.classList.toggle("is-active", active);
+      panel.hidden = !active;
+    });
+    writePreference("mmw-active-module", activeTab.dataset.moduleTab);
+    if (focus) {
+      activeTab.focus();
+    }
+  };
+  tabs.forEach((tab, index) => {
     tab.addEventListener("click", () => {
-      const target = tab.dataset.moduleTab;
-      tabs.forEach((item) => item.classList.toggle("is-active", item === tab));
-      panels.forEach((panel) => {
-        panel.classList.toggle("is-active", panel.dataset.modulePanel === target);
-      });
+      activateTab(tab.dataset.moduleTab);
+    });
+    tab.addEventListener("keydown", (event) => {
+      const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+      if (!keys.includes(event.key)) {
+        return;
+      }
+      event.preventDefault();
+      let nextIndex = index;
+      if (event.key === "ArrowRight") {
+        nextIndex = (index + 1) % tabs.length;
+      } else if (event.key === "ArrowLeft") {
+        nextIndex = (index - 1 + tabs.length) % tabs.length;
+      } else if (event.key === "Home") {
+        nextIndex = 0;
+      } else if (event.key === "End") {
+        nextIndex = tabs.length - 1;
+      }
+      activateTab(tabs[nextIndex].dataset.moduleTab, { focus: true });
     });
   });
+  activateTab(readPreference("mmw-active-module", tabs[0].dataset.moduleTab));
 }
 
 els.runLlmAnalysis.addEventListener("click", async () => {

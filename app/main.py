@@ -912,6 +912,19 @@ def open_location(project_id: str, relative_path: str) -> dict:
     return {"success": True, "path": display_path}
 
 
+@app.post("/api/projects/{project_id}/open-root")
+def open_project_root(project_id: str) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在") from exc
+    try:
+        open_in_file_manager(root)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"无法打开项目文件夹：{type(exc).__name__}: {exc}") from exc
+    return {"success": True, "path": str(root)}
+
+
 def resolve_project_target(project_id: str, relative_path: str, create_support_zip: bool = False) -> tuple[Path, Path]:
     try:
         root = project_root(project_id)

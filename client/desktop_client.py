@@ -61,6 +61,14 @@ def wait_for_health(url: str, timeout: float = 30.0) -> None:
     raise RuntimeError(f"后端服务启动超时：{last_error}")
 
 
+def health_check_ok(url: str, timeout: float = 0.8) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return response.status == 200
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return False
+
+
 class BackendHandle:
     def __init__(self, server: object | None, thread: threading.Thread) -> None:
         self.server = server
@@ -220,6 +228,14 @@ def open_window(url: str) -> None:
 
 def main() -> int:
     log_client_event("client main starting")
+    root = project_root()
+    configure_runtime_paths(root)
+    preferred_url = f"http://{HOST}:{PREFERRED_PORT}"
+    if health_check_ok(f"{preferred_url}/api/health"):
+        log_client_event(f"reusing existing backend at {preferred_url}")
+        start_dependency_bootstrap(root)
+        open_window(preferred_url)
+        return 0
     port = find_available_port(PREFERRED_PORT)
     log_client_event(f"selected port={port}")
     process = start_backend(port)
@@ -227,7 +243,7 @@ def main() -> int:
     try:
         wait_for_health(f"{url}/api/health")
         log_client_event("backend health check ok")
-        start_dependency_bootstrap(project_root())
+        start_dependency_bootstrap(root)
     except Exception:
         log_client_event("backend health check failed:\n" + traceback.format_exc())
         if process.poll() is None:
@@ -235,6 +251,31 @@ def main() -> int:
         raise
     open_window(url)
     return 0
+
+
+def show_startup_error(exc: BaseException) -> None:
+    try:
+        log_client_event("client startup failed:\n" + traceback.format_exc())
+    except Exception:
+        pass
+    try:
+        log_path = project_root() / "data" / "client" / "client.log"
+    except Exception:
+        log_path = Path("data/client/client.log")
+    message = (
+        "数学建模竞赛智能工作台启动失败。\n\n"
+        f"{type(exc).__name__}: {exc}\n\n"
+        f"日志位置：{log_path}"
+    )
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(None, message, APP_TITLE, 0x10)
+            return
+        except Exception:
+            pass
+    print(message, file=sys.stderr)
 
 
 def run_script_mode(argv: list[str]) -> int:
@@ -259,4 +300,8 @@ def run_script_mode(argv: list[str]) -> int:
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--mw-run-script":
         raise SystemExit(run_script_mode(sys.argv[2:]))
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        show_startup_error(exc)
+        raise SystemExit(1)

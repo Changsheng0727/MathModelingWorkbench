@@ -569,6 +569,38 @@ BACKEND_SKILLS: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "taste-skill-anti-template-frontend",
+        "name": "Taste Skill 反模板化前端审查规则",
+        "category": "frontend_client_experience",
+        "source": "Leonxlnx/taste-skill",
+        "source_url": "https://github.com/Leonxlnx/taste-skill",
+        "license_note": "MIT；本项目仅吸收前端审查方法、信息密度、动效约束和反模板化原则，不复制 skill 文件、提示词、图片资产或实现代码。",
+        "why_selected": "该仓库强调根据产品语境设置布局变化、动效强度和信息密度，避免泛用 AI 风格界面，适合把建模工作台从装饰性页面优化为高密度任务界面。",
+        "backend_guidance": [
+            "前端改动前先判断产品语境：本软件是数据与论文生产工作台，应优先使用可扫描、可重复操作、信息密度适中的布局。",
+            "避免把所有内容都做成相同卡片；状态、输出文件、流程步骤和表单应根据用途采用不同层级、间距和强调方式。",
+            "动效只服务状态变化、加载反馈和按钮响应；所有动画必须尊重 prefers-reduced-motion，避免无意义循环动画。",
+            "按钮、状态、标签和文件类型使用稳定的语义色，不使用泛紫蓝渐变作为默认装饰，也不让颜色意义在不同模块里漂移。",
+            "每次构建前端后要检查长中文路径、长项目名、空状态、失败状态、移动窄屏和高密度文件列表是否仍能正常阅读。",
+        ],
+    },
+    {
+        "id": "impeccable-product-ui-hardening",
+        "name": "Impeccable 产品界面打磨与硬化规则",
+        "category": "frontend_client_experience",
+        "source": "pbakaus/impeccable",
+        "source_url": "https://github.com/pbakaus/impeccable",
+        "license_note": "Apache 2.0；本项目仅吸收交互状态、布局、文案、可访问性和硬化检查思想，不复制命令实现、脚本、素材或 skill 文本。",
+        "why_selected": "该仓库把前端质量拆成 typography、color、layout、interaction、responsive、UX writing 和 hardening 等检查维度，适合提升桌面客户端与本地 Web UI 的稳定体验。",
+        "backend_guidance": [
+            "每个交互元素至少覆盖默认、悬停、键盘焦点、按下、禁用、加载、错误和成功状态；不能只设计鼠标悬停。",
+            "错误和加载文案必须说明正在做什么、哪里失败、下一步怎么恢复；长流程要显示进度、当前阶段和可查看日志。",
+            "标签页、文件按钮、上传入口和流程控制应能通过键盘访问，并用 aria-live 或等价机制提示动态状态变化。",
+            "桌面客户端启动失败不能静默退出，应写入日志并显示可理解的错误窗口；重复启动时优先复用已运行的本地后端。",
+            "使用 UTF-8、可换行文本、最小触控目标和 reduced-motion 兜底来处理中文路径、长文件名、慢网络和旧依赖环境。",
+        ],
+    },
+    {
         "id": "research-writing-skill-engineering",
         "name": "科研写作工程化 Skill",
         "category": "scientific_writing",
@@ -742,7 +774,7 @@ def render_backend_skill_context(max_chars: int = 12000) -> str:
 def write_backend_skill_report(root: Path) -> dict[str, str]:
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "source_policy": "Summarize workflow ideas from public GitHub and official contest sources; do not vendor third-party code, templates, papers, prompts, agents, or long text into the backend. Academic-research-skills and MathModeling-skills are integrated as methodology, process-gate, PoC, freeze, and integrity-review guidance only.",
+        "source_policy": "Summarize workflow ideas from public GitHub and official contest sources; do not vendor third-party code, templates, papers, prompts, agents, UI assets, scripts, or long text into the backend. Academic-research-skills, MathModeling-skills, taste-skill, and impeccable are integrated as methodology, process-gate, UX-quality, hardening, and integrity-review guidance only.",
         "standard_paper_workflow": list_standard_paper_workflow(),
         "standard_paper_checklist": list_standard_paper_checklist(),
         "model_method_routes": list_model_method_routes(),

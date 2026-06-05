@@ -3,6 +3,7 @@ import LegacyRuntime from "./LegacyRuntime";
 export default function WorkbenchPage() {
   return (
     <>
+      <a className="skip-link" href="#main-content">跳到工作区</a>
       <main className="shell">
         <aside className="sidebar">
           <div className="brand">
@@ -32,8 +33,8 @@ export default function WorkbenchPage() {
               </label>
               <button className="primary" type="submit">开始分析</button>
             </form>
-            <p id="upload-status" className="status"></p>
-            <div id="upload-analysis-progress" className="workflow-progress hidden"></div>
+            <p id="upload-status" className="status" aria-live="polite"></p>
+            <div id="upload-analysis-progress" className="workflow-progress hidden" aria-live="polite"></div>
           </section>
 
           <section className="panel">
@@ -56,7 +57,7 @@ export default function WorkbenchPage() {
                 <button id="clear-llm-settings" className="ghost" type="button">清除</button>
               </div>
             </form>
-            <p id="llm-settings-status" className="status"></p>
+            <p id="llm-settings-status" className="status" aria-live="polite"></p>
           </section>
 
           <section className="panel">
@@ -64,18 +65,26 @@ export default function WorkbenchPage() {
               <h2>项目</h2>
               <button id="refresh-projects" className="ghost" type="button">刷新</button>
             </div>
+            <label className="project-search" htmlFor="project-search">
+              <span className="sr-only">搜索项目</span>
+              <input id="project-search" className="text-input" type="search" placeholder="搜索项目名、状态或时间" autoComplete="off" />
+            </label>
+            <p id="project-count" className="project-count" aria-live="polite">暂无项目</p>
             <div id="project-list" className="project-list"></div>
           </section>
         </aside>
 
-        <section className="workspace">
+        <section id="main-content" className="workspace" tabIndex="-1">
           <header className="topbar">
             <div>
               <p className="eyebrow">Modeling Workbench</p>
               <h2 id="project-title">等待上传赛题</h2>
-              <p id="environment-status" className="environment-status">检测执行环境中</p>
+              <p id="environment-status" className="environment-status" aria-live="polite">检测执行环境中</p>
             </div>
-            <div id="health" className="health">连接中</div>
+            <div className="topbar-actions">
+              <button id="open-project-root" className="ghost compact hidden" type="button">打开项目文件夹</button>
+              <div id="health" className="health" data-status="checking" aria-live="polite">连接中</div>
+            </div>
           </header>
 
           <div id="empty-state" className="empty-state">
@@ -84,15 +93,15 @@ export default function WorkbenchPage() {
           </div>
 
           <div id="analysis-view" className="analysis hidden">
-            <nav className="module-tabs" aria-label="工作台模块">
-              <button className="module-tab is-active" type="button" data-module-tab="overview">概览</button>
-              <button className="module-tab" type="button" data-module-tab="problems">选题</button>
-              <button className="module-tab" type="button" data-module-tab="materials">材料</button>
-              <button className="module-tab" type="button" data-module-tab="paper">论文</button>
-              <button className="module-tab" type="button" data-module-tab="outputs">输出</button>
+            <nav className="module-tabs" aria-label="工作台模块" role="tablist">
+              <button className="module-tab is-active" type="button" role="tab" aria-selected="true" data-module-tab="overview">概览</button>
+              <button className="module-tab" type="button" role="tab" aria-selected="false" data-module-tab="problems">选题</button>
+              <button className="module-tab" type="button" role="tab" aria-selected="false" data-module-tab="materials">材料</button>
+              <button className="module-tab" type="button" role="tab" aria-selected="false" data-module-tab="paper">论文</button>
+              <button className="module-tab" type="button" role="tab" aria-selected="false" data-module-tab="outputs">输出</button>
             </nav>
 
-            <section className="module-panel is-active" data-module-panel="overview">
+            <section className="module-panel is-active" role="tabpanel" data-module-panel="overview">
               <section className="summary-strip">
                 <div>
                   <span className="label">当前选题</span>
@@ -119,17 +128,17 @@ export default function WorkbenchPage() {
               </section>
             </section>
 
-            <section className="module-panel" data-module-panel="problems">
+            <section className="module-panel" role="tabpanel" data-module-panel="problems" hidden>
               <section className="panel wide">
                 <div className="section-title">
                   <h2>选题分析</h2>
                 </div>
-                <p id="problem-selection-status" className="status"></p>
+                <p id="problem-selection-status" className="status" aria-live="polite"></p>
                 <div id="problem-cards" className="problem-grid"></div>
               </section>
             </section>
 
-            <section className="module-panel" data-module-panel="materials">
+            <section className="module-panel" role="tabpanel" data-module-panel="materials" hidden>
               <section className="panel wide">
                 <div className="section-title">
                   <h2>自动工作流</h2>
@@ -144,7 +153,7 @@ export default function WorkbenchPage() {
               </section>
             </section>
 
-            <section className="module-panel" data-module-panel="paper">
+            <section className="module-panel" role="tabpanel" data-module-panel="paper" hidden>
               <section className="panel wide">
                 <div className="section-title">
                   <h2>论文设置</h2>
@@ -174,8 +183,8 @@ export default function WorkbenchPage() {
                     <button id="delete-template" className="ghost" type="button">删除所选模板</button>
                   </div>
                 </form>
-                <p id="paper-options-status" className="status"></p>
-                <p id="template-status" className="status"></p>
+                <p id="paper-options-status" className="status" aria-live="polite"></p>
+                <p id="template-status" className="status" aria-live="polite"></p>
                 <p id="template-hint" className="status template-hint"></p>
               </section>
 
@@ -198,12 +207,12 @@ export default function WorkbenchPage() {
                   </label>
                   <button id="run-model-assistant" className="primary compact" type="submit">生成模型辅助方案</button>
                 </form>
-                <p id="model-assistant-status" className="status"></p>
-                <div id="model-assistant-progress" className="workflow-progress hidden"></div>
+                <p id="model-assistant-status" className="status" aria-live="polite"></p>
+                <div id="model-assistant-progress" className="workflow-progress hidden" aria-live="polite"></div>
               </section>
             </section>
 
-            <section className="module-panel" data-module-panel="outputs">
+            <section className="module-panel" role="tabpanel" data-module-panel="outputs" hidden>
               <section className="panel wide">
                 <div className="section-title">
                   <h2>执行操作</h2>
@@ -222,16 +231,16 @@ export default function WorkbenchPage() {
                   </div>
                 </div>
                 <div className="status-stack">
-                  <p id="modeling-status" className="status"></p>
-                  <p id="specialized-status" className="status"></p>
-                  <p id="auto-workflow-status" className="status"></p>
-                  <div id="auto-workflow-progress" className="workflow-progress hidden"></div>
-                  <p id="skill-report-status" className="status"></p>
-                  <p id="code-graph-status" className="status"></p>
-                  <p id="paper-fill-status" className="status"></p>
-                  <p id="compile-status" className="status"></p>
-                  <p id="paper-review-status" className="status"></p>
-                  <p id="llm-analysis-status" className="status"></p>
+                  <p id="modeling-status" className="status" aria-live="polite"></p>
+                  <p id="specialized-status" className="status" aria-live="polite"></p>
+                  <p id="auto-workflow-status" className="status" aria-live="polite"></p>
+                  <div id="auto-workflow-progress" className="workflow-progress hidden" aria-live="polite"></div>
+                  <p id="skill-report-status" className="status" aria-live="polite"></p>
+                  <p id="code-graph-status" className="status" aria-live="polite"></p>
+                  <p id="paper-fill-status" className="status" aria-live="polite"></p>
+                  <p id="compile-status" className="status" aria-live="polite"></p>
+                  <p id="paper-review-status" className="status" aria-live="polite"></p>
+                  <p id="llm-analysis-status" className="status" aria-live="polite"></p>
                 </div>
               </section>
 
@@ -245,6 +254,7 @@ export default function WorkbenchPage() {
           </div>
         </section>
       </main>
+      <div id="toast-region" className="toast-region" aria-live="polite" aria-atomic="true"></div>
       <LegacyRuntime />
     </>
   );
