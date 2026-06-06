@@ -57,7 +57,7 @@ from app.services.templates import (
 )
 
 
-app = FastAPI(title="Math Modeling Workbench", version="0.1.0")
+app = FastAPI(title="ModelArk", version="0.1.0")
 static_dir = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 

@@ -21,6 +21,8 @@ const els = {
   projectCount: document.querySelector("#project-count"),
   projectList: document.querySelector("#project-list"),
   health: document.querySelector("#health"),
+  themeToggle: document.querySelector("#theme-toggle"),
+  themeToggleLabel: document.querySelector("#theme-toggle-label"),
   llmSettingsForm: document.querySelector("#llm-settings-form"),
   apiKeyInput: document.querySelector("#api-key-input"),
   baseUrlInput: document.querySelector("#base-url-input"),
@@ -113,6 +115,43 @@ function writePreference(key, value) {
   } catch {
     // Some embedded browser policies disable localStorage; the UI still works without it.
   }
+}
+
+function resolveThemePreference() {
+  const requested = new URLSearchParams(window.location.search).get("theme");
+  if (requested === "light" || requested === "dark") {
+    writePreference("modelark-theme", requested);
+    return requested;
+  }
+  const stored = readPreference("modelark-theme", "");
+  if (stored === "light" || stored === "dark") {
+    return stored;
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme, { persist = false } = {}) {
+  const nextTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = nextTheme;
+  if (persist) {
+    writePreference("modelark-theme", nextTheme);
+  }
+  const isDark = nextTheme === "dark";
+  if (els.themeToggle) {
+    els.themeToggle.setAttribute("aria-checked", isDark ? "true" : "false");
+    els.themeToggle.setAttribute("aria-label", isDark ? "切换到浅色模式" : "切换到深色模式");
+  }
+  if (els.themeToggleLabel) {
+    els.themeToggleLabel.textContent = isDark ? "深色" : "浅色";
+  }
+}
+
+function initThemeToggle() {
+  applyTheme(resolveThemePreference());
+  els.themeToggle?.addEventListener("click", () => {
+    const current = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    applyTheme(current === "dark" ? "light" : "dark", { persist: true });
+  });
 }
 
 function normalizeSearch(value) {
@@ -1774,6 +1813,7 @@ els.runLlmAnalysis.addEventListener("click", async () => {
   }
 });
 
+initThemeToggle();
 initModuleTabs();
 checkHealth();
 loadProjects();

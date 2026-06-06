@@ -82,9 +82,10 @@ jobs:
 
           Updates:
           - Rebuilt the Windows installer and portable package from the latest source.
-          - Improved paper-generation workflow stability, resume/cancel support, and result backfilling.
-          - Fixed display-formula handling so standalone constraints are centered and numbered automatically.
-          - Improved model validation backfill with concrete tables, figures, and computed values.
+          - Refreshed the client branding as ModelArk / 数模方舟.
+          - Added light/dark theme switching with saved user preference.
+          - Added a direct "获取 API Key" entry that opens api.chshapi.org.
+          - Polished the claymorphism frontend for desktop and narrow screens.
 
           Assets:
           - MathModelingWorkbench-Setup.exe: Windows installer.

@@ -16,7 +16,7 @@ import webbrowser
 from pathlib import Path
 
 
-APP_TITLE = "数学建模竞赛智能工作台"
+APP_TITLE = "数模方舟 ModelArk"
 HOST = "127.0.0.1"
 PREFERRED_PORT = int(os.environ.get("MODELING_WORKBENCH_PORT", "8765"))
 
@@ -263,7 +263,7 @@ def show_startup_error(exc: BaseException) -> None:
     except Exception:
         log_path = Path("data/client/client.log")
     message = (
-        "数学建模竞赛智能工作台启动失败。\n\n"
+        "数模方舟 ModelArk 启动失败。\n\n"
         f"{type(exc).__name__}: {exc}\n\n"
         f"日志位置：{log_path}"
     )

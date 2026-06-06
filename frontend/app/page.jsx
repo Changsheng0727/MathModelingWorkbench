@@ -7,10 +7,20 @@ export default function WorkbenchPage() {
       <main className="shell">
         <aside className="sidebar">
           <div className="brand">
-            <div className="mark">M</div>
-            <div>
-              <h1>数学建模工作台</h1>
-              <p>赛题解析、选题分析、论文骨架生成</p>
+            <div className="mark" aria-hidden="true">
+              <svg viewBox="0 0 64 64" focusable="false">
+                <path className="mark-sail" d="M32 9 48 35H32Z" />
+                <path className="mark-fold" d="M30 16 15 35h15Z" />
+                <path className="mark-hull" d="M13 39h38l-7 10H20Z" />
+                <path className="mark-route" d="M18 28c6-6 16-8 27-5" />
+                <circle cx="18" cy="28" r="3" />
+                <circle cx="45" cy="23" r="3" />
+              </svg>
+            </div>
+            <div className="brand-copy">
+              <span className="brand-kicker">ModelArk</span>
+              <h1>数模方舟</h1>
+              <p>竞赛建模闭环助手</p>
             </div>
           </div>
 
@@ -38,7 +48,18 @@ export default function WorkbenchPage() {
           </section>
 
           <section className="panel">
-            <h2>AI 设置</h2>
+            <div className="section-title panel-title-actions">
+              <h2>AI 设置</h2>
+              <a
+                id="get-api-key"
+                className="ghost compact external-link"
+                href="https://api.chshapi.org"
+                target="_blank"
+                rel="noreferrer"
+              >
+                获取 API Key
+              </a>
+            </div>
             <form id="llm-settings-form" className="settings-form">
               <label>
                 <span className="label">OpenAI API Key</span>
@@ -77,12 +98,18 @@ export default function WorkbenchPage() {
         <section id="main-content" className="workspace" tabIndex="-1">
           <header className="topbar">
             <div>
-              <p className="eyebrow">Modeling Workbench</p>
+              <p className="eyebrow">ModelArk Studio</p>
               <h2 id="project-title">等待上传赛题</h2>
               <p id="environment-status" className="environment-status" aria-live="polite">检测执行环境中</p>
             </div>
             <div className="topbar-actions">
               <button id="open-project-root" className="ghost compact hidden" type="button">打开项目文件夹</button>
+              <button id="theme-toggle" className="theme-toggle" type="button" role="switch" aria-checked="false" aria-label="切换深色模式">
+                <span className="theme-toggle-track" aria-hidden="true">
+                  <span className="theme-toggle-thumb"></span>
+                </span>
+                <span id="theme-toggle-label">浅色</span>
+              </button>
               <div id="health" className="health" data-status="checking" aria-live="polite">连接中</div>
             </div>
           </header>

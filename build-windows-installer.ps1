@@ -4,7 +4,7 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 
 $appName = "MathModelingWorkbench"
-$displayName = "Math Modeling Workbench"
+$displayName = "数模方舟 ModelArk"
 $releaseDir = Join-Path $root "release"
 $installerWorkDir = Join-Path $releaseDir "installer"
 $distAppDir = Join-Path $root "dist\$appName"
@@ -122,7 +122,7 @@ $installScript = @'
 $ErrorActionPreference = "Stop"
 
 $appName = "MathModelingWorkbench"
-$displayName = "Math Modeling Workbench"
+$displayName = "数模方舟 ModelArk"
 $installDir = Join-Path $env:LOCALAPPDATA $appName
 $dataBackup = Join-Path $env:TEMP "$appName-data-backup"
 $zipPath = Join-Path $PSScriptRoot "$appName-Windows-x64.zip"
