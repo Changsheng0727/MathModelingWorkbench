@@ -4,6 +4,7 @@ import ast
 import json
 import re
 import shutil
+import traceback
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -44,23 +45,43 @@ def run_code_result_pipeline(
     analysis: dict[str, Any],
     paper_options: dict[str, Any] | None = None,
     integrate_paper: bool = True,
+    resume: bool = False,
+    repair_context: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Generate a solver plan, run project-local code, and insert computed results."""
     settings = require_llm_configured()
     paper_options = paper_options or {}
-    spec = generate_solver_spec(root, analysis, paper_options)
-    artifacts = write_computed_solver_script(root, analysis, spec, settings)
-    clear_computed_outputs(root)
-    run_result = run_computed_solver(root)
-    run_result = enforce_computed_solution_completeness(root, analysis, spec, run_result)
-    for attempt in range(1, 3):
-        if run_result.get("success"):
-            break
-        repair_artifacts = repair_computed_solver_after_run(root, analysis, spec, settings, run_result, attempt)
-        artifacts.update(repair_artifacts)
-        clear_computed_outputs(root)
-        run_result = run_computed_solver(root)
-        run_result = enforce_computed_solution_completeness(root, analysis, spec, run_result)
+    failure_context = collect_solver_repair_context(root, repair_context)
+    should_reuse = bool(resume or failure_context.get("has_failure"))
+    artifacts: dict[str, str] = {}
+
+    spec = load_existing_solver_spec(root) if should_reuse else {}
+    if spec:
+        spec = normalize_solver_spec(spec, analysis)
+        artifacts.update(existing_solver_artifacts(root))
+    else:
+        spec = generate_solver_spec(root, analysis, paper_options, repair_context=failure_context if should_reuse else None)
+        artifacts.update(write_computed_solver_script(root, analysis, spec, settings, repair_context=failure_context if should_reuse else None))
+        should_reuse = False
+
+    script_path = root / SCRIPT_RELATIVE
+    if should_reuse and script_path.exists():
+        artifacts.update(existing_solver_artifacts(root))
+        if failure_context.get("has_failure"):
+            repair_artifacts = repair_computed_solver_after_run(
+                root,
+                analysis,
+                spec,
+                settings,
+                synthetic_run_result_from_repair_context(root, failure_context),
+                next_repair_attempt(root),
+                repair_context=failure_context,
+            )
+            artifacts.update(repair_artifacts)
+    else:
+        artifacts.update(write_computed_solver_script(root, analysis, spec, settings, repair_context=failure_context if should_reuse else None))
+
+    run_result = run_solver_with_repair_loop(root, analysis, spec, settings, artifacts, failure_context)
     artifacts.update(artifacts_from_run_result(run_result))
     if not run_result.get("success"):
         raise RuntimeError(
@@ -112,6 +133,7 @@ def generate_solver_spec(
     root: Path,
     analysis: dict[str, Any],
     paper_options: dict[str, Any],
+    repair_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Ask the LLM for a task-specific computational specification, not executable code."""
     settings = require_llm_configured()
@@ -126,6 +148,16 @@ def generate_solver_spec(
         "modeling_process_gates": render_modeling_process_gates(max_chars=5000),
         "standard_paper_rules": render_standard_paper_rules(),
     }
+    if repair_context:
+        context["repair_context"] = compact_for_prompt(repair_context, max_chars=14000)
+    repair_note = ""
+    if repair_context:
+        repair_note = """
+This is a resume/repair planning pass. Use repair_context before writing the spec.
+Do not blindly change the selected problem. Repair only the assumptions that caused the previous failure, such as
+wrong subproblem indices, missing attachment/schema recognition, bad output contract, type-mismatch errors, or
+missing validation tables/figures. Preserve useful existing solver decisions when they are not related to the error.
+"""
     rec = analysis.get("recommended_problem", {}) or {}
     prompt = f"""你是数学建模竞赛自动求解软件中的“代码求解规范设计器”。请根据赛题、附件清单和大模型题解方案，给出一个可由后端安全执行器实现的计算规范。
 
@@ -171,6 +203,8 @@ def generate_solver_spec(
 ```json
 {json.dumps(context, ensure_ascii=False, indent=2)}
 ```"""
+    if repair_note:
+        prompt = f"{repair_note}\n{prompt}"
     spec, spec_attempts = generate_valid_solver_spec(prompt, analysis)
     spec = normalize_solver_spec(spec, analysis)
     payload = {
@@ -271,15 +305,364 @@ def fallback_solver_spec_from_analysis(analysis: dict[str, Any]) -> dict[str, An
     }
 
 
+def load_existing_solver_spec(root: Path) -> dict[str, Any]:
+    payload = load_json_if_exists(root / SPEC_RELATIVE)
+    if not isinstance(payload, dict):
+        return {}
+    spec = payload.get("spec") if isinstance(payload.get("spec"), dict) else payload
+    if not isinstance(spec, dict):
+        return {}
+    if spec.get("per_problem") or spec.get("final_problem_id") or spec.get("global_objective"):
+        return spec
+    return {}
+
+
+def existing_solver_artifacts(root: Path) -> dict[str, str]:
+    candidates = {
+        "computed_solver_spec": SPEC_MD_RELATIVE,
+        "computed_solver_spec_json": SPEC_RELATIVE,
+        "computed_solver_script": SCRIPT_RELATIVE,
+        "computed_solver_script_json": "artifacts/computed_solver_script.json",
+        "computed_solver_log": LOG_RELATIVE,
+        "computed_solution_status": STATUS_RELATIVE,
+        "computed_manifest": MANIFEST_RELATIVE,
+        "computed_summary": SUMMARY_RELATIVE,
+        "computed_frozen_numbers": FROZEN_NUMBERS_RELATIVE,
+        "computed_completeness": COMPLETENESS_MD_RELATIVE,
+        "computed_completeness_json": COMPLETENESS_RELATIVE,
+        "computed_solver_repair": REPAIR_MD_RELATIVE,
+        "computed_solver_repair_json": REPAIR_RELATIVE,
+    }
+    return {key: value for key, value in candidates.items() if (root / value).exists()}
+
+
+def collect_solver_repair_context(root: Path, explicit: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Collect project-local workflow context for LLM repair/resume prompts."""
+    explicit = explicit if isinstance(explicit, dict) else {}
+    context: dict[str, Any] = {
+        "stage": "solver_repair_context",
+        "collected_at": datetime.now().isoformat(timespec="seconds"),
+        "project_name": root.name,
+        "explicit": compact_for_prompt(explicit, max_chars=10000) if explicit else {},
+        "available_artifacts": [],
+    }
+
+    failure_signals: list[str] = []
+    if explicit.get("has_failure"):
+        failure_signals.append("explicit_has_failure")
+    if explicit.get("error") or explicit.get("last_error") or explicit.get("previous_error"):
+        failure_signals.append("explicit_error")
+
+    metadata = load_json_if_exists(root / "metadata.json")
+    if isinstance(metadata, dict) and metadata:
+        metadata_summary = {
+            key: metadata.get(key)
+            for key in [
+                "id",
+                "name",
+                "final_problem",
+                "auto_workflow_status",
+                "auto_workflow_mode",
+                "auto_workflow_error",
+                "computed_solution_status",
+                "paper_fill_status",
+                "llm_solution_status",
+                "compile_status",
+                "artifacts",
+                "auto_workflow_progress",
+            ]
+            if key in metadata
+        }
+        context["metadata"] = compact_for_prompt(metadata_summary, max_chars=12000)
+        if metadata.get("auto_workflow_error"):
+            failure_signals.append("metadata_auto_workflow_error")
+
+    json_sources = {
+        "computed_solution_status": STATUS_RELATIVE,
+        "computed_solution_completeness": COMPLETENESS_RELATIVE,
+        "computed_solver_repair": REPAIR_RELATIVE,
+        "computed_solver_script_record": "artifacts/computed_solver_script.json",
+        "auto_workflow_progress": "artifacts/auto_workflow_progress.json",
+        "auto_workflow_report": "artifacts/auto_workflow_report.json",
+        "llm_live_stream": "artifacts/llm_live_stream.json",
+    }
+    loaded_json: dict[str, Any] = {}
+    for name, relative in json_sources.items():
+        payload = load_json_if_exists(root / relative)
+        if not payload:
+            continue
+        context["available_artifacts"].append(relative)
+        loaded_json[name] = payload
+        context[name] = compact_for_prompt(payload, max_chars=12000)
+
+    status_payload = loaded_json.get("computed_solution_status", {})
+    completeness_payload = loaded_json.get("computed_solution_completeness", {})
+    report_payload = loaded_json.get("auto_workflow_report", {})
+    progress_payload = loaded_json.get("auto_workflow_progress", {})
+    status_success = status_payload.get("success") is True if isinstance(status_payload, dict) else False
+    completeness_success = completeness_payload.get("success") is True if isinstance(completeness_payload, dict) else None
+    current_solver_success = bool(status_success and completeness_success is not False)
+    if isinstance(status_payload, dict) and status_payload.get("success") is False:
+        failure_signals.append("computed_solution_status_failed")
+    if isinstance(completeness_payload, dict) and completeness_payload.get("success") is False:
+        failure_signals.append("computed_solution_completeness_failed")
+    if isinstance(report_payload, dict) and report_payload.get("overall_status") in {"failed", "cancelled", "completed_with_warnings"}:
+        failure_signals.append(f"auto_workflow_report_{report_payload.get('overall_status')}")
+    if isinstance(progress_payload, dict) and progress_payload.get("status") in {"failed", "cancelled", "completed_with_warnings"}:
+        failure_signals.append(f"auto_workflow_progress_{progress_payload.get('status')}")
+
+    spec = load_existing_solver_spec(root)
+    if spec:
+        context["existing_solver_spec"] = compact_for_prompt(spec, max_chars=12000)
+        context["available_artifacts"].append(SPEC_RELATIVE)
+    manifest = load_json_if_exists(root / MANIFEST_RELATIVE)
+    if manifest:
+        context["existing_manifest_summary"] = compact_manifest(manifest)
+        context["available_artifacts"].append(MANIFEST_RELATIVE)
+    script_path = root / SCRIPT_RELATIVE
+    if script_path.exists():
+        script_text = read_text(script_path, 12000)
+        context["existing_solver_script"] = {
+            "path": SCRIPT_RELATIVE,
+            "chars": script_path.stat().st_size,
+            "head": script_text,
+        }
+        context["available_artifacts"].append(SCRIPT_RELATIVE)
+
+    log_entries: list[dict[str, Any]] = []
+    log_paths = [
+        root / LOG_RELATIVE,
+        root / COMPLETENESS_MD_RELATIVE,
+        root / REPAIR_MD_RELATIVE,
+        root / "artifacts" / "computed_solution_backend_exception.log",
+    ]
+    artifacts_dir = root / "artifacts"
+    if artifacts_dir.exists():
+        log_paths.extend(sorted(artifacts_dir.glob("auto_workflow_error_*.log")))
+    seen_logs: set[str] = set()
+    for path in log_paths:
+        if not path.exists() or not path.is_file():
+            continue
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        if relative in seen_logs:
+            continue
+        seen_logs.add(relative)
+        text = read_text_tail(path, 10000)
+        log_entries.append({"path": relative, "chars": path.stat().st_size, "tail": text})
+        context["available_artifacts"].append(relative)
+    if log_entries:
+        context["error_logs"] = log_entries[-8:]
+        if not current_solver_success:
+            failure_signals.append("project_error_logs_present")
+
+    context["failure_signals"] = list(dict.fromkeys(failure_signals))
+    context["has_failure"] = bool(context["failure_signals"])
+    context["resume_requested"] = bool(explicit.get("resume"))
+    context["latest_error"] = summarize_failure_context(context)
+    return context
+
+
+def synthetic_run_result_from_repair_context(root: Path, context: dict[str, Any]) -> dict[str, Any]:
+    manifest_exists = (root / MANIFEST_RELATIVE).exists()
+    status = load_json_if_exists(root / STATUS_RELATIVE)
+    return {
+        "stage": "computed_solution_resume_repair",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "success": False,
+        "returncode": status.get("returncode") if isinstance(status, dict) else None,
+        "executor": (status.get("executor") if isinstance(status, dict) else None) or "resume_context",
+        "log": latest_context_log_path(context) or LOG_RELATIVE,
+        "manifest": MANIFEST_RELATIVE if manifest_exists else "",
+        "summary": SUMMARY_RELATIVE if (root / SUMMARY_RELATIVE).exists() else "",
+        "frozen_numbers": FROZEN_NUMBERS_RELATIVE if (root / FROZEN_NUMBERS_RELATIVE).exists() else "",
+        "outputs": compact_manifest(load_json_if_exists(root / MANIFEST_RELATIVE)),
+        "error": sanitize_for_prompt(context.get("latest_error") or "Previous code-solution workflow failed; repair from saved project context."),
+        "repair_context_available": True,
+    }
+
+
+def next_repair_attempt(root: Path) -> int:
+    payload = load_json_if_exists(root / REPAIR_RELATIVE)
+    history = payload.get("history", []) if isinstance(payload, dict) else []
+    attempts = [safe_int(item.get("attempt")) for item in history if isinstance(item, dict)]
+    attempts = [item for item in attempts if item > 0]
+    return (max(attempts) + 1) if attempts else 1
+
+
+def run_solver_with_repair_loop(
+    root: Path,
+    analysis: dict[str, Any],
+    spec: dict[str, Any],
+    settings: dict[str, Any],
+    artifacts: dict[str, str],
+    failure_context: dict[str, Any] | None = None,
+    max_repairs: int = 2,
+) -> dict[str, Any]:
+    clear_computed_outputs(root)
+    run_result = run_solver_once_with_gate(root, analysis, spec, failure_context or {})
+    attempt = next_repair_attempt(root)
+    for _ in range(max_repairs):
+        if run_result.get("success"):
+            break
+        repair_context = collect_solver_repair_context(
+            root,
+            {
+                "previous_context": failure_context or {},
+                "last_run_result": compact_for_prompt(run_result, max_chars=10000),
+                "has_failure": True,
+            },
+        )
+        repair_artifacts = repair_computed_solver_after_run(
+            root,
+            analysis,
+            spec,
+            settings,
+            run_result,
+            attempt,
+            repair_context=repair_context,
+        )
+        artifacts.update(repair_artifacts)
+        clear_computed_outputs(root)
+        run_result = run_solver_once_with_gate(root, analysis, spec, repair_context)
+        attempt += 1
+    return run_result
+
+
+def run_solver_once_with_gate(
+    root: Path,
+    analysis: dict[str, Any],
+    spec: dict[str, Any],
+    failure_context: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        run_result = run_computed_solver(root)
+    except Exception as exc:
+        return backend_exception_run_result(root, exc, "script_execution", failure_context)
+    try:
+        return enforce_computed_solution_completeness(root, analysis, spec, run_result)
+    except Exception as exc:
+        return backend_exception_run_result(root, exc, "completeness_gate", failure_context, run_result)
+
+
+def backend_exception_run_result(
+    root: Path,
+    exc: BaseException,
+    stage: str,
+    context: dict[str, Any] | None = None,
+    previous_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    log_path = root / "artifacts" / "computed_solution_backend_exception.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    trace = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(f"\n[{datetime.now().isoformat(timespec='seconds')}] {stage}\n")
+        handle.write(trace)
+        handle.write("\n")
+    relative_log = log_path.relative_to(root).as_posix()
+    manifest = load_json_if_exists(root / MANIFEST_RELATIVE)
+    payload: dict[str, Any] = {
+        "stage": "computed_solution_run",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "success": False,
+        "returncode": previous_result.get("returncode") if isinstance(previous_result, dict) else None,
+        "executor": "backend",
+        "log": relative_log,
+        "manifest": MANIFEST_RELATIVE if (root / MANIFEST_RELATIVE).exists() else "",
+        "summary": SUMMARY_RELATIVE if (root / SUMMARY_RELATIVE).exists() else "",
+        "frozen_numbers": FROZEN_NUMBERS_RELATIVE if (root / FROZEN_NUMBERS_RELATIVE).exists() else "",
+        "outputs": compact_manifest(manifest),
+        "error": sanitize_for_prompt(f"{type(exc).__name__}: {exc}"),
+        "exception_stage": stage,
+        "traceback_tail": sanitize_for_prompt(trace[-8000:]),
+        "repair_context": compact_for_prompt(context or {}, max_chars=8000),
+    }
+    if previous_result:
+        payload["previous_run_result"] = compact_for_prompt(previous_result, max_chars=8000)
+    save_json(root / STATUS_RELATIVE, payload)
+    return payload
+
+
+def summarize_failure_context(context: dict[str, Any]) -> str:
+    candidates: list[Any] = []
+    for key in ["explicit", "metadata", "computed_solution_status", "computed_solution_completeness", "auto_workflow_report"]:
+        value = context.get(key)
+        if isinstance(value, dict):
+            candidates.extend([value.get("error"), value.get("detail"), value.get("auto_workflow_error"), value.get("overall_status")])
+    for entry in context.get("error_logs", []) or []:
+        if isinstance(entry, dict) and entry.get("tail"):
+            candidates.append(f"{entry.get('path')}: {str(entry.get('tail'))[-1200:]}")
+    for item in candidates:
+        text = str(item or "").strip()
+        if text and text not in {"None", "success"}:
+            return str(sanitize_for_prompt(text[:2000]))
+    return ""
+
+
+def latest_context_log_path(context: dict[str, Any]) -> str:
+    logs = context.get("error_logs", []) if isinstance(context, dict) else []
+    if logs and isinstance(logs[-1], dict):
+        return str(logs[-1].get("path") or "")
+    return ""
+
+
+def compact_for_prompt(value: Any, max_chars: int = 12000) -> Any:
+    safe = sanitize_for_prompt(value)
+    try:
+        serialized = json.dumps(safe, ensure_ascii=False, indent=2)
+    except Exception:
+        serialized = str(safe)
+    if len(serialized) <= max_chars:
+        return safe
+    return {
+        "truncated": True,
+        "chars": len(serialized),
+        "tail_json": serialized[-max_chars:],
+    }
+
+
+def sanitize_for_prompt(value: Any) -> Any:
+    sensitive_terms = ("api_key", "access_token", "id_token", "token", "secret", "password", "authorization", "cookie", "credential", "bearer")
+    if isinstance(value, dict):
+        clean: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if any(term in key_text.lower() for term in sensitive_terms):
+                clean[key_text] = "[REDACTED]"
+            else:
+                clean[key_text] = sanitize_for_prompt(item)
+        return clean
+    if isinstance(value, list):
+        return [sanitize_for_prompt(item) for item in value[:80]]
+    if isinstance(value, str):
+        redacted = re.sub(r"(sk-[A-Za-z0-9_\-]{16,}|github_pat_[A-Za-z0-9_]+|eyJ[A-Za-z0-9_\-.]+)", "[REDACTED]", value)
+        if len(redacted) > 16000:
+            return redacted[:6000] + "\n...[truncated]...\n" + redacted[-6000:]
+        return redacted
+    return value
+
+
+def read_text_tail(path: Path, max_chars: int) -> str:
+    if not path.exists():
+        return ""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return text[-max_chars:]
+
+
 def write_computed_solver_script(
     root: Path,
     analysis: dict[str, Any],
     spec: dict[str, Any],
     settings: dict[str, Any],
+    repair_context: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     script_path = root / SCRIPT_RELATIVE
     script_path.parent.mkdir(parents=True, exist_ok=True)
     context = build_solver_script_context(root, analysis, spec)
+    if repair_context:
+        context["repair_context"] = compact_for_prompt(repair_context, max_chars=16000)
     prompt = build_solver_script_prompt(context)
     script, attempts = generate_validated_solver_script(prompt, label_prefix="生成项目求解脚本")
     script_path.write_text(script, encoding="utf-8")
@@ -370,28 +753,34 @@ def repair_computed_solver_after_run(
     settings: dict[str, Any],
     run_result: dict[str, Any],
     attempt: int,
+    repair_context: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     script_path = root / SCRIPT_RELATIVE
     context = build_solver_script_context(root, analysis, spec)
+    if repair_context:
+        context["repair_context"] = compact_for_prompt(repair_context, max_chars=18000)
     current_script = script_path.read_text(encoding="utf-8", errors="replace") if script_path.exists() else ""
     log_text = read_text(root / LOG_RELATIVE, 5000) if (root / LOG_RELATIVE).exists() else ""
+    safe_run_result = compact_for_prompt(run_result, max_chars=12000)
+    safe_log_text = sanitize_for_prompt(log_text[-5000:])
+    safe_current_script = sanitize_for_prompt(current_script[:18000])
     prompt = f"""The project-specific solver script failed when executed.
 
 Repair the full Python script. Return only executable Python code.
 
 Failure status JSON:
 ```json
-{json.dumps(run_result, ensure_ascii=False, indent=2)}
+{json.dumps(safe_run_result, ensure_ascii=False, indent=2)}
 ```
 
 Run log tail:
 ```text
-{log_text[-5000:]}
+{safe_log_text}
 ```
 
 Current script:
 ```python
-{current_script[:18000]}
+{safe_current_script}
 ```
 
 Current project context JSON:

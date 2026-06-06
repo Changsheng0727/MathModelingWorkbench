@@ -74,6 +74,7 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
         }
         save_json(analysis_path, analysis)
     clear_legacy_modeling_artifacts(meta)
+    previous_auto_workflow_error = meta.get("auto_workflow_error")
     report: dict[str, Any] = {
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "project_id": meta.get("id"),
@@ -84,6 +85,8 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
         "artifacts": {},
         "resume": bool(resume),
     }
+    if previous_auto_workflow_error:
+        report["previous_auto_workflow_error"] = previous_auto_workflow_error
     if resume:
         previous_steps = load_resumable_steps(root)
         if previous_steps:
@@ -152,7 +155,21 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
                 "source": final_problem.get("source") or "workflow",
             }
             save_json(analysis_path, analysis_for_code)
-        artifacts = run_code_result_pipeline(root, analysis_for_code, paper_options, integrate_paper=False)
+        repair_context = build_auto_solver_repair_context(
+            root,
+            metadata,
+            report,
+            resume=resume,
+            previous_error=previous_auto_workflow_error,
+        )
+        artifacts = run_code_result_pipeline(
+            root,
+            analysis_for_code,
+            paper_options,
+            integrate_paper=False,
+            resume=resume,
+            repair_context=repair_context,
+        )
         update_artifacts(meta, artifacts)
         meta["computed_solution_status"] = "success"
         meta["paper_fill_status"] = "waiting_for_paper_generation"
@@ -410,6 +427,76 @@ def append_cancelled_step(root: Path, meta: dict[str, Any], report: dict[str, An
     }
     report.setdefault("steps", []).append(item)
     write_progress(root, meta, report, current_step=None)
+
+
+def build_auto_solver_repair_context(
+    root: Path,
+    metadata: dict[str, Any],
+    report: dict[str, Any],
+    *,
+    resume: bool,
+    previous_error: Any = None,
+) -> dict[str, Any]:
+    failed_steps = [
+        {
+            "id": step.get("id"),
+            "title": step.get("title"),
+            "status": step.get("status"),
+            "detail": step.get("detail"),
+            "error_log": step.get("error_log"),
+        }
+        for step in report.get("steps", [])
+        if isinstance(step, dict) and step.get("status") in {"failed", "warning", "cancelled"}
+    ]
+    context: dict[str, Any] = {
+        "source": "auto_workflow",
+        "resume": bool(resume),
+        "previous_auto_workflow_error": previous_error,
+        "workflow_status": metadata.get("auto_workflow_status") if isinstance(metadata, dict) else "",
+        "computed_solution_status": metadata.get("computed_solution_status") if isinstance(metadata, dict) else "",
+        "paper_fill_status": metadata.get("paper_fill_status") if isinstance(metadata, dict) else "",
+        "final_problem": metadata.get("final_problem") if isinstance(metadata, dict) else {},
+        "failed_or_warning_steps": failed_steps[-8:],
+        "current_report_steps": [
+            {
+                "id": step.get("id"),
+                "status": step.get("status"),
+                "detail": step.get("detail"),
+                "error_log": step.get("error_log"),
+            }
+            for step in report.get("steps", [])[-8:]
+            if isinstance(step, dict)
+        ],
+    }
+    log_paths = [root / "artifacts" / "auto_workflow_error_computed_solution.log"]
+    artifacts_dir = root / "artifacts"
+    if artifacts_dir.exists():
+        log_paths.extend(sorted(artifacts_dir.glob("auto_workflow_error_*.log")))
+    logs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for path in log_paths:
+        if not path.exists() or not path.is_file():
+            continue
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError:
+            continue
+        if relative in seen:
+            continue
+        seen.add(relative)
+        logs.append({"path": relative, "tail": read_text_tail(path, 6000)})
+    if logs:
+        context["workflow_error_logs"] = logs[-8:]
+        context["has_failure"] = True
+    if previous_error:
+        context["has_failure"] = True
+    return context
+
+
+def read_text_tail(path: Path, max_chars: int) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8", errors="replace")[-max_chars:]
 
 
 def load_resumable_steps(root: Path) -> list[dict[str, Any]]:
