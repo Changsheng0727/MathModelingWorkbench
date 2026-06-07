@@ -57,22 +57,33 @@ export default function WorkbenchPage() {
                 target="_blank"
                 rel="noreferrer"
               >
-                获取 API Key
+                获取密钥
               </a>
             </div>
             <form id="llm-settings-form" className="settings-form">
               <label>
-                <span className="label">OpenAI API Key</span>
+                <span className="label">OpenAI API 密钥</span>
                 <input id="api-key-input" className="text-input" type="password" autoComplete="off" placeholder="sk-..." />
               </label>
               <label>
-                <span className="label">Base URL</span>
+                <span className="label">接口地址</span>
                 <input id="base-url-input" className="text-input" type="url" autoComplete="off" />
               </label>
               <label>
                 <span className="label">模型</span>
                 <input id="model-input" className="text-input" type="text" autoComplete="off" />
               </label>
+              <label>
+                <span className="label">求解策略</span>
+                <select id="workflow-strategy-input" className="text-input">
+                  <option value="balanced">均衡：速度和成功率兼顾</option>
+                  <option value="stable">稳妥：更多校验和自动修复</option>
+                  <option value="turbo">极速：并行读取附件和子问题</option>
+                </select>
+              </label>
+              <p id="workflow-strategy-hint" className="strategy-hint">
+                均衡档适合大多数赛题；极速档会要求 LLM 生成更高并发的求解脚本。
+              </p>
               <div className="inline-actions">
                 <button id="save-llm-settings" className="primary compact" type="submit">保存</button>
                 <button id="clear-llm-settings" className="ghost" type="button">清除</button>
@@ -91,6 +102,12 @@ export default function WorkbenchPage() {
               <input id="project-search" className="text-input" type="search" placeholder="搜索项目名、状态或时间" autoComplete="off" />
             </label>
             <p id="project-count" className="project-count" aria-live="polite">暂无项目</p>
+            <div className="project-batch-actions">
+              <button id="select-analyzed-projects" className="ghost compact" type="button">选择已分析</button>
+              <button id="clear-project-selection" className="ghost compact" type="button">清空</button>
+              <button id="batch-start-projects" className="primary compact" type="button">批量入队</button>
+            </div>
+            <p id="batch-project-status" className="status" aria-live="polite"></p>
             <div id="project-list" className="project-list"></div>
           </section>
         </aside>
@@ -98,7 +115,7 @@ export default function WorkbenchPage() {
         <section id="main-content" className="workspace" tabIndex="-1">
           <header className="topbar">
             <div>
-              <p className="eyebrow">ModelArk Studio</p>
+              <p className="eyebrow">数模方舟工作台</p>
               <h2 id="project-title">等待上传赛题</h2>
               <p id="environment-status" className="environment-status" aria-live="polite">检测执行环境中</p>
             </div>
@@ -152,6 +169,29 @@ export default function WorkbenchPage() {
                   <h2>流程状态</h2>
                 </div>
                 <div id="status-cards" className="status-grid"></div>
+              </section>
+              <section className="panel wide">
+                <div className="section-title">
+                  <h2>解题进度中心</h2>
+                  <button id="refresh-growth-metrics" className="ghost" type="button">刷新</button>
+                </div>
+                <div id="growth-center" className="growth-center" aria-live="polite"></div>
+                <p id="growth-center-status" className="status" aria-live="polite"></p>
+              </section>
+              <section className="panel wide">
+                <div className="section-title">
+                  <h2>信任中心</h2>
+                  <button id="refresh-trust-center" className="ghost" type="button">刷新</button>
+                </div>
+                <div id="trust-center" className="trust-center" aria-live="polite"></div>
+                <p id="trust-center-status" className="status" aria-live="polite"></p>
+              </section>
+              <section className="panel wide">
+                <div className="section-title">
+                  <h2>后台任务中心</h2>
+                  <button id="refresh-auto-jobs" className="ghost" type="button">刷新</button>
+                </div>
+                <div id="auto-job-center" className="job-center" aria-live="polite"></div>
               </section>
             </section>
 
@@ -249,6 +289,7 @@ export default function WorkbenchPage() {
                     <button id="run-auto-workflow" className="primary compact" type="button">LLM+代码一键完成</button>
                     <button id="resume-auto-workflow" className="ghost" type="button">继续生成</button>
                     <button id="cancel-auto-workflow" className="ghost" type="button">中断流程</button>
+                    <button id="refresh-diagnostics" className="ghost" type="button">刷新诊断/性能</button>
                     <button id="generate-skill-report" className="ghost" type="button">生成技能库/诚信门禁</button>
                     <button id="generate-code-graph" className="ghost" type="button">生成代码图谱</button>
                     <button id="fill-paper" className="ghost hidden" type="button">回填论文</button>
@@ -262,6 +303,7 @@ export default function WorkbenchPage() {
                   <p id="specialized-status" className="status" aria-live="polite"></p>
                   <p id="auto-workflow-status" className="status" aria-live="polite"></p>
                   <div id="auto-workflow-progress" className="workflow-progress hidden" aria-live="polite"></div>
+                  <p id="diagnostics-status" className="status" aria-live="polite"></p>
                   <p id="skill-report-status" className="status" aria-live="polite"></p>
                   <p id="code-graph-status" className="status" aria-live="polite"></p>
                   <p id="paper-fill-status" className="status" aria-live="polite"></p>
@@ -269,6 +311,24 @@ export default function WorkbenchPage() {
                   <p id="paper-review-status" className="status" aria-live="polite"></p>
                   <p id="llm-analysis-status" className="status" aria-live="polite"></p>
                 </div>
+              </section>
+
+              <section className="panel wide">
+                <div className="section-title">
+                  <h2>自动修复中心</h2>
+                  <button id="refresh-repair-center" className="ghost" type="button">刷新修复</button>
+                </div>
+                <div id="repair-center" className="repair-center" aria-live="polite"></div>
+                <p id="repair-center-status" className="status" aria-live="polite"></p>
+              </section>
+
+              <section className="panel wide">
+                <div className="section-title">
+                  <h2>交付就绪中心</h2>
+                  <button id="refresh-delivery-readiness" className="ghost" type="button">刷新交付</button>
+                </div>
+                <div id="delivery-center" className="delivery-center" aria-live="polite"></div>
+                <p id="delivery-readiness-status" className="status" aria-live="polite"></p>
               </section>
 
               <section className="panel wide">

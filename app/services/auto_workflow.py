@@ -8,19 +8,23 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.services.analyzer import apply_problem_selection
+from app.services.attachment_profile import build_attachment_profile
 from app.services.backend_skills import write_backend_skill_report
 from app.services.code_graph import write_code_graph_report
 from app.services.code_solution import integrate_existing_code_results, run_code_result_pipeline
+from app.services.llm_settings import get_llm_settings
 from app.services.llm_stream import bind_llm_stream
 from app.services.llm_solution import require_llm_configured, run_llm_only_solution, run_llm_planning_solution
+from app.services.performance_health import write_performance_health_report
 from app.services.reviewer import review_paper
 from app.services.runner import compile_latex
 from app.services.store import load_json, make_support_zip, save_json
+from app.services.workflow_strategy import get_workflow_strategy, public_workflow_strategy
 
 
 StepFn = Callable[[], dict[str, Any]]
 CONTROL_RELATIVE = "artifacts/auto_workflow_control.json"
-AUTO_WORKFLOW_TOTAL_STEPS = 8
+AUTO_WORKFLOW_TOTAL_STEPS = 9
 
 LEGACY_MODELING_ARTIFACT_KEYS = {
     "modeling_script",
@@ -63,6 +67,7 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
 
     clear_auto_workflow_control(root)
     require_llm_configured()
+    workflow_strategy = get_workflow_strategy(get_llm_settings().get("workflow_strategy"))
     analysis = load_json(analysis_path)
     user_final_problem = meta.get("final_problem") if isinstance(meta.get("final_problem"), dict) else {}
     if user_final_problem.get("id") and user_final_problem.get("source") == "user":
@@ -81,6 +86,7 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
         "project_name": meta.get("name"),
         "recommended_problem": analysis.get("recommended_problem", {}),
         "mode": "llm_code_results",
+        "workflow_strategy": public_workflow_strategy(workflow_strategy["id"]),
         "steps": [],
         "artifacts": {},
         "resume": bool(resume),
@@ -95,7 +101,10 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
 
     meta["auto_workflow_status"] = "running"
     meta["auto_workflow_mode"] = "llm_code_results"
+    meta["workflow_strategy"] = workflow_strategy["id"]
+    meta["workflow_strategy_label"] = workflow_strategy["label"]
     meta.pop("auto_workflow_error", None)
+    meta.pop("last_failure_diagnosis", None)
     save_json(root / "metadata.json", meta)
 
     def llm_planning_step() -> dict[str, Any]:
@@ -169,6 +178,7 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
             integrate_paper=False,
             resume=resume,
             repair_context=repair_context,
+            workflow_strategy=workflow_strategy["id"],
         )
         update_artifacts(meta, artifacts)
         meta["computed_solution_status"] = "success"
@@ -254,8 +264,26 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
         update_artifacts(meta, artifacts)
         return {"success": True, "detail": "GitHub 数学建模、科研写作与学术诚信技能库已注入后端上下文。", "artifacts": artifacts}
 
+    def attachment_profile_step() -> dict[str, Any]:
+        artifacts = build_attachment_profile(root, analysis)
+        update_artifacts(meta, artifacts)
+        profile_path = root / "artifacts" / "attachment_profile.json"
+        profile = load_json(profile_path) if profile_path.exists() else {}
+        summary = profile.get("summary", {}) if isinstance(profile, dict) else {}
+        kind_counts = summary.get("kind_counts", {}) if isinstance(summary, dict) else {}
+        return {
+            "success": True,
+            "detail": (
+                f"已用 {profile.get('worker_count', 0) if isinstance(profile, dict) else 0} 个线程并发生成附件画像，"
+                f"覆盖 {profile.get('profiled_count', 0) if isinstance(profile, dict) else 0} 个文件；"
+                f"数据/文档分布：{kind_counts}。"
+            ),
+            "artifacts": artifacts,
+        }
+
     steps: list[tuple[str, str, StepFn, bool]] = [
         ("backend_skills", "GitHub 技能库与诚信门禁上下文注入", skill_context_step, False),
+        ("attachment_profile", "并发附件画像与字段缓存", attachment_profile_step, False),
         ("llm_planning", "大模型当场分析、选题与代码求解规划", llm_planning_step, True),
         ("computed_solution", "LLM 规划代码求解、运行结果、分问题与图表完整性校验", computed_solution_step, True),
         ("paper_generation", "完整解题通过后生成论文并回填图表结果", paper_generation_step, True),
@@ -317,6 +345,14 @@ def run_step(
         item["status"] = "failed" if required else "warning"
         item["success"] = False
         item["detail"] = f"{type(exc).__name__}: {exc}"
+        diagnosis = load_failure_diagnosis(root)
+        if diagnosis:
+            item["failure_diagnosis"] = diagnosis
+            meta["last_failure_diagnosis"] = compact_failure_diagnosis(diagnosis)
+            meta["auto_workflow_repair_hint"] = meta["last_failure_diagnosis"].get(
+                "suggested_action",
+                "点击继续生成，系统会基于上次失败诊断继续自动修复。",
+            )
         error_log = root / "artifacts" / f"auto_workflow_error_{step_id}.log"
         error_log.parent.mkdir(parents=True, exist_ok=True)
         error_log.write_text(
@@ -346,6 +382,7 @@ def write_progress(
         "status": "running" if current_step else "between_steps",
         "started_at": report.get("started_at"),
         "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "workflow_strategy": report.get("workflow_strategy") or {},
         "current_step": compact_step(current_step) if current_step else None,
         "steps": [compact_step(step) for step in report.get("steps", [])],
         "completed_steps": completed,
@@ -353,6 +390,8 @@ def write_progress(
         "percent": min(100, round((completed + (0.35 if current_step else 0)) / total * 100)),
         "cancel_requested": is_cancel_requested(root),
         "can_resume": False,
+        "last_failure_diagnosis": meta.get("last_failure_diagnosis", {}),
+        "resume_hint": meta.get("auto_workflow_repair_hint", ""),
     }
     meta["auto_workflow_progress"] = progress
     save_json(root / "artifacts" / "auto_workflow_progress.json", progress)
@@ -372,7 +411,50 @@ def compact_step(step: dict[str, Any] | None) -> dict[str, Any] | None:
         "finished_at": step.get("finished_at"),
         "duration_seconds": step.get("duration_seconds"),
         "error_log": step.get("error_log", ""),
+        "failure_diagnosis": step.get("failure_diagnosis") if isinstance(step.get("failure_diagnosis"), dict) else {},
     }
+
+
+def load_failure_diagnosis(root: Path) -> dict[str, Any]:
+    for relative in [
+        "artifacts/computed_solution_status.json",
+        "artifacts/computed_solution_completeness.json",
+        "artifacts/computed_solver_repair.json",
+    ]:
+        if not (root / relative).exists():
+            continue
+        try:
+            payload = load_json(root / relative)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        diagnosis = payload.get("failure_diagnosis")
+        if isinstance(diagnosis, dict) and diagnosis.get("category"):
+            return diagnosis
+        latest = payload.get("latest_attempt")
+        if isinstance(latest, dict):
+            diagnosis = latest.get("failure_diagnosis")
+            if isinstance(diagnosis, dict) and diagnosis.get("category"):
+                return diagnosis
+    return {}
+
+
+def compact_failure_diagnosis(diagnosis: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(diagnosis, dict) or not diagnosis.get("category"):
+        return {}
+    compact = {
+        "category": diagnosis.get("category"),
+        "label": diagnosis.get("label") or diagnosis.get("category"),
+        "stage": diagnosis.get("stage", ""),
+        "severity": diagnosis.get("severity", ""),
+        "repair_focus": diagnosis.get("repair_focus", ""),
+        "suggested_action": diagnosis.get("suggested_action", ""),
+    }
+    evidence = str(diagnosis.get("evidence") or "").strip()
+    if evidence:
+        compact["evidence"] = evidence[:700]
+    return {key: value for key, value in compact.items() if value}
 
 
 def request_auto_workflow_cancel(root: Path, meta: dict[str, Any]) -> dict[str, Any]:
@@ -453,6 +535,7 @@ def build_auto_solver_repair_context(
         "resume": bool(resume),
         "previous_auto_workflow_error": previous_error,
         "workflow_status": metadata.get("auto_workflow_status") if isinstance(metadata, dict) else "",
+        "workflow_strategy": metadata.get("workflow_strategy") if isinstance(metadata, dict) else "",
         "computed_solution_status": metadata.get("computed_solution_status") if isinstance(metadata, dict) else "",
         "paper_fill_status": metadata.get("paper_fill_status") if isinstance(metadata, dict) else "",
         "final_problem": metadata.get("final_problem") if isinstance(metadata, dict) else {},
@@ -572,6 +655,18 @@ def finalize_report(root: Path, meta: dict[str, Any], report: dict[str, Any]) ->
     report["finished_at"] = datetime.now().isoformat(timespec="seconds")
     report["overall_status"] = overall_status(report["steps"])
     report["artifacts"] = meta.get("artifacts", {})
+    if report["overall_status"] == "success":
+        meta.pop("last_failure_diagnosis", None)
+        meta.pop("auto_workflow_repair_hint", None)
+    elif not meta.get("last_failure_diagnosis"):
+        for step in reversed(report.get("steps", [])):
+            diagnosis = step.get("failure_diagnosis") if isinstance(step, dict) else {}
+            if isinstance(diagnosis, dict) and diagnosis.get("category"):
+                meta["last_failure_diagnosis"] = compact_failure_diagnosis(diagnosis)
+                break
+    if meta.get("last_failure_diagnosis"):
+        diagnosis = meta["last_failure_diagnosis"]
+        meta["auto_workflow_repair_hint"] = diagnosis.get("suggested_action") or "点击继续生成，系统会基于上次失败诊断继续自动修复。"
 
     json_path = root / "artifacts" / "auto_workflow_report.json"
     md_path = root / "artifacts" / "auto_workflow_report.md"
@@ -584,12 +679,17 @@ def finalize_report(root: Path, meta: dict[str, Any], report: dict[str, Any]) ->
             "auto_workflow_report_json": "artifacts/auto_workflow_report.json",
         },
     )
+    update_artifacts(meta, write_performance_health_report(root, meta))
+    report["artifacts"] = meta.get("artifacts", {})
+    save_json(json_path, report)
+    md_path.write_text(render_auto_report(report), encoding="utf-8")
     make_support_zip(root)
     meta["auto_workflow_status"] = report["overall_status"]
     meta["auto_workflow_progress"] = {
         "status": report["overall_status"],
         "started_at": report.get("started_at"),
         "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "workflow_strategy": report.get("workflow_strategy") or {},
         "current_step": None,
         "steps": [compact_step(step) for step in report.get("steps", [])],
         "completed_steps": len(report.get("steps", [])),
@@ -597,6 +697,8 @@ def finalize_report(root: Path, meta: dict[str, Any], report: dict[str, Any]) ->
         "percent": 100,
         "cancel_requested": is_cancel_requested(root),
         "can_resume": report["overall_status"] in {"failed", "cancelled", "completed_with_warnings"},
+        "last_failure_diagnosis": meta.get("last_failure_diagnosis", {}),
+        "resume_hint": meta.get("auto_workflow_repair_hint", ""),
     }
     save_json(root / "artifacts" / "auto_workflow_progress.json", meta["auto_workflow_progress"])
     save_json(root / "metadata.json", meta)
@@ -625,6 +727,7 @@ def render_auto_report(report: dict[str, Any]) -> str:
         f"- 完成时间：{report.get('finished_at')}",
         f"- 总体状态：{report.get('overall_status')}",
         f"- 执行模式：{report.get('mode', 'llm_only')}",
+        f"- 求解策略：{(report.get('workflow_strategy') or {}).get('label', '-')} / {(report.get('workflow_strategy') or {}).get('id', '-')}",
         "",
         "## 自动流程",
     ]
@@ -635,6 +738,11 @@ def render_auto_report(report: dict[str, Any]) -> str:
             "failed": "失败",
         }.get(step.get("status"), step.get("status"))
         lines.append(f"- **{step.get('title')}**：{status}，耗时 {step.get('duration_seconds')} 秒。{step.get('detail', '')}")
+        diagnosis = step.get("failure_diagnosis") if isinstance(step.get("failure_diagnosis"), dict) else {}
+        if diagnosis:
+            lines.append(f"  - 失败类型：{diagnosis.get('label') or diagnosis.get('category')}；修复重点：{diagnosis.get('repair_focus')}")
+            if diagnosis.get("suggested_action"):
+                lines.append(f"  - 建议动作：{diagnosis.get('suggested_action')}")
     lines.extend(["", "## 关键输出"])
     artifacts = report.get("artifacts") or {}
     for key, value in artifacts.items():

@@ -14,6 +14,14 @@ from pydantic import BaseModel
 from app.services.analyzer import apply_problem_selection, build_analysis
 from app.services.analysis_progress import AnalysisProgress, load_analysis_progress
 from app.services.auto_workflow import request_auto_workflow_cancel, run_auto_workflow
+from app.services.auto_workflow_jobs import (
+    cancel_queued_auto_workflow_job,
+    configure_auto_workflow_capacity,
+    get_auto_workflow_job,
+    get_project_auto_workflow_job,
+    list_auto_workflow_jobs,
+    start_auto_workflow_job,
+)
 from app.services.backend_skills import (
     list_backend_skills,
     list_model_method_routes,
@@ -25,9 +33,22 @@ from app.services.backend_skills import (
 )
 from app.services.code_solution import run_code_result_pipeline
 from app.services.code_graph import write_code_graph_report
+from app.services.capacity_autotune import list_capacity_autotune_events, record_capacity_autotune_event
+from app.services.capacity_settings import load_capacity_settings, save_capacity_settings
+from app.services.delivery_batch import build_batch_delivery_packages, list_delivery_package_batches
+from app.services.delivery_batch_jobs import (
+    configure_delivery_batch_job_capacity,
+    get_delivery_batch_job,
+    list_delivery_batch_jobs,
+    start_delivery_batch_job,
+)
+from app.services.delivery_package import DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE, write_delivery_package
+from app.services.delivery_readiness import DELIVERY_READINESS_JSON_RELATIVE, write_delivery_readiness_report
+from app.services.diagnostic_refresh import refresh_diagnostic_assets
 from app.services.executor import detect_environments
 from app.services.extractors import save_upload, unpack_upload, validate_upload_name
 from app.services.extractors import safe_folder_target
+from app.services.growth_metrics import build_growth_metrics, is_deliverable
 from app.services.llm_assistant import (
     MODEL_ASSISTANT_PROGRESS_RELATIVE,
     run_baseline_llm_review,
@@ -43,7 +64,10 @@ from app.services.llm_settings import clear_llm_settings, get_llm_settings, save
 from app.services.modeling import generate_modeling_script, run_modeling_script
 from app.services.paper import write_artifacts
 from app.services.paper_fill import fill_paper_with_results
+from app.services.performance_health import write_performance_health_report
 from app.services.parsers import extract_all_document_text, inventory_files
+from app.services.repair_campaign import list_repair_campaigns, start_repair_campaign
+from app.services.repair_center import REPAIR_BRIEFING_JSON_RELATIVE, write_repair_briefing
 from app.services.reviewer import review_paper
 from app.services.runner import compile_latex
 from app.services.specialized import generate_specialized_script, run_specialized_script
@@ -55,11 +79,20 @@ from app.services.templates import (
     list_templates,
     validate_template_id,
 )
+from app.services.trust_center import build_trust_center, has_package
+from app.services.trust_export import (
+    build_trust_report_export,
+    list_trust_report_exports,
+    resolve_trust_report_file,
+)
 
 
 app = FastAPI(title="ModelArk", version="0.1.0")
 static_dir = Path(__file__).resolve().parent / "static"
+next_static_dir = static_dir / "_next"
+next_static_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+app.mount("/_next", StaticFiles(directory=next_static_dir), name="next_static")
 
 MAX_FOLDER_UPLOAD_FILES = 1200
 MAX_FOLDER_UPLOAD_BYTES = 500 * 1024 * 1024
@@ -69,6 +102,7 @@ class LLMSettingsPayload(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
     model: str | None = None
+    workflow_strategy: str | None = None
 
 
 class PaperOptionsPayload(BaseModel):
@@ -86,6 +120,28 @@ class ProblemSelectionPayload(BaseModel):
     problem_id: str
 
 
+class BatchAutoWorkflowPayload(BaseModel):
+    project_ids: list[str]
+    mode: str | None = "auto"
+
+
+class BatchDeliveryPackagePayload(BaseModel):
+    force: bool = False
+    max_workers: int | None = None
+
+
+class CapacitySettingsPayload(BaseModel):
+    auto_workflow_workers: int | None = None
+    delivery_batch_job_workers: int | None = None
+    delivery_package_workers: int | None = None
+
+
+class RepairCampaignPayload(BaseModel):
+    queue_resumes: bool = True
+    refresh_diagnostics: bool = True
+    limit: int | None = 20
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(static_dir / "index.html")
@@ -99,6 +155,302 @@ def health() -> dict[str, str]:
 @app.get("/api/environments")
 def environments() -> dict:
     return detect_environments()
+
+
+@app.get("/api/product/capacity")
+def product_capacity_settings() -> dict:
+    return {
+        "capacity_settings": load_capacity_settings(),
+        "auto_jobs": list_auto_workflow_jobs(),
+        "delivery_batch_jobs": list_delivery_batch_jobs(),
+        "capacity_autotune": list_capacity_autotune_events(),
+    }
+
+
+@app.put("/api/product/capacity")
+def update_product_capacity_settings(payload: CapacitySettingsPayload) -> dict:
+    settings_payload = payload.model_dump(exclude_none=True) if hasattr(payload, "model_dump") else payload.dict(exclude_none=True)
+    settings = save_capacity_settings(settings_payload)
+    auto_update = None
+    delivery_update = None
+    if "auto_workflow_workers" in settings_payload:
+        auto_update = configure_auto_workflow_capacity(int(settings.get("auto_workflow_workers") or 2))
+    if "delivery_batch_job_workers" in settings_payload:
+        delivery_update = configure_delivery_batch_job_capacity(int(settings.get("delivery_batch_job_workers") or 1))
+    return {
+        "capacity_settings": load_capacity_settings(),
+        "auto_update": auto_update or {},
+        "delivery_update": delivery_update or {},
+        "auto_jobs": list_auto_workflow_jobs(),
+        "delivery_batch_jobs": list_delivery_batch_jobs(),
+    }
+
+
+@app.post("/api/product/capacity/autotune")
+def autotune_product_capacity() -> dict:
+    projects_snapshot = list_projects()
+    auto_jobs_before = list_auto_workflow_jobs()
+    delivery_jobs_before = list_delivery_batch_jobs()
+    settings_before = load_capacity_settings()
+    plan = build_capacity_autotune_plan(projects_snapshot, auto_jobs_before, delivery_jobs_before, settings_before)
+    updates = plan.get("updates", {}) if isinstance(plan.get("updates"), dict) else {}
+    if updates:
+        save_capacity_settings(updates)
+    auto_update = {}
+    delivery_update = {}
+    if "auto_workflow_workers" in updates:
+        auto_update = configure_auto_workflow_capacity(int(updates["auto_workflow_workers"]))
+    if "delivery_batch_job_workers" in updates:
+        delivery_update = configure_delivery_batch_job_capacity(int(updates["delivery_batch_job_workers"]))
+    settings_after = load_capacity_settings()
+    event = record_capacity_autotune_event(plan, settings_after)
+    history = list_capacity_autotune_events()
+    return {
+        "capacity_autotune": event,
+        "capacity_autotune_history": history,
+        "capacity_settings": settings_after,
+        "auto_update": auto_update,
+        "delivery_update": delivery_update,
+        "auto_jobs": list_auto_workflow_jobs(),
+        "delivery_batch_jobs": list_delivery_batch_jobs(),
+    }
+
+
+def build_capacity_autotune_plan(
+    projects_snapshot: list[dict],
+    auto_jobs: dict,
+    delivery_batch_jobs: dict,
+    settings: dict,
+) -> dict:
+    throughput = auto_jobs.get("throughput", {}) if isinstance(auto_jobs.get("throughput"), dict) else {}
+    updates: dict[str, int] = {}
+    reasons: list[str] = []
+
+    current_auto = int(settings.get("auto_workflow_workers") or auto_jobs.get("capacity") or 2)
+    max_auto = int(settings.get("max_auto_workflow_workers") or 8)
+    recommended_auto = int(throughput.get("recommended_workers") or current_auto)
+    queued_auto = int(auto_jobs.get("queued_count") or 0)
+    pressure = float(throughput.get("active_pressure") or 0)
+    target_auto = max(current_auto, min(max_auto, recommended_auto))
+    if queued_auto and target_auto == current_auto and current_auto < max_auto:
+        target_auto = min(max_auto, current_auto + 1)
+    if target_auto > current_auto:
+        updates["auto_workflow_workers"] = target_auto
+        reasons.append(f"自动流程队列压力建议调整到 {target_auto} 个槽位。")
+
+    current_delivery_jobs = int(settings.get("delivery_batch_job_workers") or delivery_batch_jobs.get("capacity") or 1)
+    max_delivery_jobs = int(settings.get("max_delivery_batch_job_workers") or 4)
+    active_delivery = int(delivery_batch_jobs.get("active_count") or 0)
+    queued_delivery = int(delivery_batch_jobs.get("queued_count") or 0)
+    target_delivery_jobs = current_delivery_jobs
+    if queued_delivery or active_delivery >= current_delivery_jobs:
+        target_delivery_jobs = min(max_delivery_jobs, max(current_delivery_jobs + 1, active_delivery + queued_delivery))
+    if target_delivery_jobs > current_delivery_jobs:
+        updates["delivery_batch_job_workers"] = target_delivery_jobs
+        reasons.append(f"交付批处理队列建议调整到 {target_delivery_jobs} 个任务槽。")
+
+    current_package_workers = int(settings.get("delivery_package_workers") or 4)
+    max_package_workers = int(settings.get("max_delivery_package_workers") or 8)
+    deliverable = [project for project in projects_snapshot if is_deliverable(project)]
+    packaged_deliverables = [project for project in deliverable if has_package(project)]
+    package_backlog = max(0, len(deliverable) - len(packaged_deliverables))
+    target_package_workers = current_package_workers
+    if package_backlog >= 8:
+        target_package_workers = min(max_package_workers, max(current_package_workers + 2, 6))
+    elif package_backlog > 0:
+        target_package_workers = min(max_package_workers, max(current_package_workers + 1, 4))
+    if target_package_workers > current_package_workers:
+        updates["delivery_package_workers"] = target_package_workers
+        reasons.append(f"{package_backlog} 个可交付项目正在等待生成交付包。")
+
+    status = "applied" if updates else "already_optimal"
+    summary = (
+        "容量推荐已应用：" + "；".join(reasons)
+        if updates
+        else "当前容量已匹配队列压力和打包积压。"
+    )
+    after = {
+        "auto_workflow_workers": updates.get("auto_workflow_workers", current_auto),
+        "delivery_batch_job_workers": updates.get("delivery_batch_job_workers", current_delivery_jobs),
+        "delivery_package_workers": updates.get("delivery_package_workers", current_package_workers),
+    }
+    return {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "status": status,
+        "summary": summary,
+        "updates": updates,
+        "reasons": reasons,
+        "signals": {
+            "auto_queue": queued_auto,
+            "active_pressure": pressure,
+            "delivery_queue": queued_delivery,
+            "delivery_active": active_delivery,
+            "package_backlog": package_backlog,
+        },
+        "before": {
+            "auto_workflow_workers": current_auto,
+            "delivery_batch_job_workers": current_delivery_jobs,
+            "delivery_package_workers": current_package_workers,
+        },
+        "after": after,
+    }
+
+
+@app.get("/api/product/growth")
+def product_growth_metrics() -> dict:
+    projects_snapshot = list_projects()
+    jobs_snapshot = list_auto_workflow_jobs()
+    delivery_batches = list_delivery_package_batches()
+    delivery_batch_jobs = list_delivery_batch_jobs()
+    growth = build_growth_metrics(projects_snapshot, jobs_snapshot, delivery_batches, delivery_batch_jobs)
+    trust = build_trust_center(projects_snapshot, jobs_snapshot, delivery_batch_jobs, delivery_batches)
+    growth["trust"] = compact_trust_snapshot(trust)
+    return {
+        "growth": growth,
+        "trust": trust,
+    }
+
+
+@app.get("/api/product/trust")
+def product_trust_center() -> dict:
+    projects_snapshot = list_projects()
+    jobs_snapshot = list_auto_workflow_jobs()
+    delivery_batch_jobs = list_delivery_batch_jobs()
+    delivery_batches = list_delivery_package_batches()
+    return {
+        "trust": build_trust_center(projects_snapshot, jobs_snapshot, delivery_batch_jobs, delivery_batches),
+        "trust_exports": list_trust_report_exports(),
+        "repair_campaigns": list_repair_campaigns(),
+    }
+
+
+def compact_trust_snapshot(trust: dict) -> dict:
+    return {
+        "generated_at": trust.get("generated_at", ""),
+        "status": trust.get("status", ""),
+        "label": trust.get("label", ""),
+        "score": trust.get("score", 0),
+        "summary": trust.get("summary", ""),
+        "repair_backlog_count": trust.get("repair_backlog_count", 0),
+        "failed_project_count": trust.get("failed_project_count", 0),
+        "queued_job_count": trust.get("queued_job_count", 0),
+        "hashed_package_count": trust.get("hashed_package_count", 0),
+    }
+
+
+@app.post("/api/product/trust/export")
+def product_trust_report_export() -> dict:
+    projects_snapshot = list_projects()
+    jobs_snapshot = list_auto_workflow_jobs()
+    delivery_batch_jobs = list_delivery_batch_jobs()
+    delivery_batches = list_delivery_package_batches()
+    trust_report = build_trust_report_export(projects_snapshot, jobs_snapshot, delivery_batch_jobs, delivery_batches)
+    return {
+        "trust_report": trust_report,
+        "trust": trust_report.get("trust") or build_trust_center(projects_snapshot, jobs_snapshot, delivery_batch_jobs, delivery_batches),
+        "trust_exports": list_trust_report_exports(),
+    }
+
+
+@app.get("/api/product/trust/export")
+def list_product_trust_report_exports() -> dict:
+    return {"trust_exports": list_trust_report_exports()}
+
+
+@app.get("/api/product/trust/export/download/{filename}")
+def download_product_trust_report(filename: str) -> FileResponse:
+    try:
+        target = resolve_trust_report_file(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="未找到信任审计导出文件。") from exc
+    return FileResponse(target, filename=target.name)
+
+
+@app.post("/api/product/trust/repair-campaign/start")
+def start_product_trust_repair_campaign(payload: RepairCampaignPayload | None = None) -> dict:
+    options = payload or RepairCampaignPayload()
+    projects_snapshot = list_projects()
+    campaign = start_repair_campaign(
+        projects_snapshot,
+        queue_resumes=bool(options.queue_resumes),
+        refresh_diagnostics=bool(options.refresh_diagnostics),
+        limit=options.limit or 20,
+    )
+    projects_after = list_projects()
+    jobs_snapshot = list_auto_workflow_jobs()
+    delivery_batch_jobs = list_delivery_batch_jobs()
+    delivery_batches = list_delivery_package_batches()
+    growth = build_growth_metrics(projects_after, jobs_snapshot, delivery_batches, delivery_batch_jobs)
+    return {
+        "repair_campaign": campaign,
+        "repair_campaigns": list_repair_campaigns(),
+        "trust": build_trust_center(projects_after, jobs_snapshot, delivery_batch_jobs, delivery_batches),
+        "growth": growth,
+        "auto_jobs": jobs_snapshot,
+        "delivery_batch_jobs": delivery_batch_jobs,
+    }
+
+
+@app.get("/api/product/trust/repair-campaigns")
+def list_product_trust_repair_campaigns() -> dict:
+    return {"repair_campaigns": list_repair_campaigns()}
+
+
+@app.post("/api/delivery/packages/batch")
+def batch_build_delivery_packages(payload: BatchDeliveryPackagePayload | None = None) -> dict:
+    options = payload or BatchDeliveryPackagePayload()
+    projects_snapshot = list_projects()
+    batch = build_batch_delivery_packages(
+        projects_snapshot,
+        force=bool(options.force),
+        max_workers=options.max_workers or int(load_capacity_settings().get("delivery_package_workers") or 4),
+    )
+    updated_projects = list_projects()
+    delivery_batches = list_delivery_package_batches()
+    growth = build_growth_metrics(updated_projects, list_auto_workflow_jobs(), delivery_batches, list_delivery_batch_jobs())
+    return {
+        "batch": batch,
+        "delivery_batches": delivery_batches,
+        "growth": growth,
+    }
+
+
+@app.get("/api/delivery/packages/batch")
+def list_batch_delivery_package_runs() -> dict:
+    return {"delivery_batches": list_delivery_package_batches()}
+
+
+@app.post("/api/delivery/packages/batch/start")
+def start_batch_delivery_package_job(payload: BatchDeliveryPackagePayload | None = None) -> dict:
+    options = payload or BatchDeliveryPackagePayload()
+    projects_snapshot = list_projects()
+    job = start_delivery_batch_job(
+        projects_snapshot,
+        force=bool(options.force),
+        max_workers=options.max_workers or int(load_capacity_settings().get("delivery_package_workers") or 4),
+    )
+    delivery_batches = list_delivery_package_batches()
+    delivery_batch_jobs = list_delivery_batch_jobs()
+    growth = build_growth_metrics(projects_snapshot, list_auto_workflow_jobs(), delivery_batches, delivery_batch_jobs)
+    return {
+        "delivery_batch_job": job,
+        "delivery_batch_jobs": delivery_batch_jobs,
+        "delivery_batches": delivery_batches,
+        "growth": growth,
+    }
+
+
+@app.get("/api/delivery/packages/batch/jobs")
+def list_batch_delivery_package_jobs() -> dict:
+    return {"delivery_batch_jobs": list_delivery_batch_jobs()}
+
+
+@app.get("/api/delivery/packages/batch/jobs/{job_id}")
+def batch_delivery_package_job(job_id: str) -> dict:
+    job = get_delivery_batch_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Delivery batch job not found.")
+    return {"delivery_batch_job": job}
 
 
 @app.get("/api/upload-analysis-progress/{progress_id}")
@@ -162,7 +514,7 @@ def read_llm_settings() -> dict:
 @app.put("/api/settings/llm")
 def update_llm_settings(payload: LLMSettingsPayload) -> dict:
     try:
-        return save_llm_settings(payload.api_key, payload.base_url, payload.model)
+        return save_llm_settings(payload.api_key, payload.base_url, payload.model, payload.workflow_strategy)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -450,7 +802,42 @@ def project_detail(project_id: str) -> dict:
     meta = load_json(root / "metadata.json")
     analysis_path = root / "artifacts" / "analysis.json"
     analysis = load_json(analysis_path) if analysis_path.exists() else None
-    return {"metadata": {k: v for k, v in meta.items() if k != "root"}, "analysis": analysis}
+    repair_path = root / REPAIR_BRIEFING_JSON_RELATIVE
+    repair = load_json(repair_path) if repair_path.exists() else None
+    delivery_path = root / DELIVERY_READINESS_JSON_RELATIVE
+    delivery = load_json(delivery_path) if delivery_path.exists() else None
+    package_path = root / DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE
+    package = load_json(package_path) if package_path.exists() else None
+    return {
+        "metadata": {k: v for k, v in meta.items() if k != "root"},
+        "analysis": analysis,
+        "repair": repair,
+        "delivery": delivery,
+        "package": package,
+    }
+
+
+@app.post("/api/projects/{project_id}/analyze")
+async def reanalyze_project(project_id: str) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    raw_dir = root / "raw"
+    if not raw_dir.exists() or count_files(raw_dir) == 0:
+        raise HTTPException(status_code=400, detail="项目缺少原始赛题材料，请重新上传后再分析。")
+    meta = load_json(root / "metadata.json")
+    try:
+        await asyncio.to_thread(analyze_project_materials, root, meta, None)
+        meta = load_json(root / "metadata.json")
+        attach_artifacts_safely(meta, write_delivery_readiness_report(root, meta))
+    except Exception as exc:
+        meta["status"] = "failed"
+        meta["analysis_error"] = f"{type(exc).__name__}: {exc}"
+        save_json(root / "metadata.json", meta)
+        raise HTTPException(status_code=500, detail=meta["analysis_error"]) from exc
+    save_json(root / "metadata.json", meta)
+    return {"project": project_detail(project_id)}
 
 
 @app.put("/api/projects/{project_id}/paper/options")
@@ -540,6 +927,7 @@ def compile_project(project_id: str) -> dict:
     if result.get("word_log"):
         meta["artifacts"]["word_export_log"] = result["word_log"]
     meta["compile_status"] = "success" if result["success"] else "failed"
+    attach_artifacts_safely(meta, write_delivery_readiness_report(root, meta))
     save_json(root / "metadata.json", meta)
     return {"compile": result, "project": project_detail(project_id)}
 
@@ -653,6 +1041,7 @@ def fill_paper(project_id: str) -> dict:
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
     meta.setdefault("artifacts", {}).update(artifacts)
     meta["paper_fill_status"] = "success"
+    attach_artifacts_safely(meta, write_delivery_readiness_report(root, meta))
     save_json(root / "metadata.json", meta)
     return {"artifacts": artifacts, "project": project_detail(project_id)}
 
@@ -678,6 +1067,8 @@ def run_project_computed_solution(project_id: str) -> dict:
     attach_artifacts_safely(meta, artifacts)
     meta["computed_solution_status"] = "success"
     meta["paper_fill_status"] = "success"
+    attach_artifacts_safely(meta, write_performance_health_report(root, meta))
+    attach_artifacts_safely(meta, write_delivery_readiness_report(root, meta))
     save_json(root / "metadata.json", meta)
     return {"artifacts": artifacts, "project": project_detail(project_id)}
 
@@ -695,8 +1086,102 @@ def review_project_paper(project_id: str) -> dict:
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
     meta.setdefault("artifacts", {}).update(artifacts)
     meta["paper_review_status"] = "success"
+    attach_artifacts_safely(meta, write_delivery_readiness_report(root, meta))
     save_json(root / "metadata.json", meta)
     return {"artifacts": artifacts, "project": project_detail(project_id)}
+
+
+@app.post("/api/projects/{project_id}/diagnostics/refresh")
+def refresh_project_diagnostics(project_id: str, force: bool = True) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    analysis_path = root / "artifacts" / "analysis.json"
+    if not analysis_path.exists():
+        raise HTTPException(status_code=400, detail="项目尚未完成赛题分析。")
+    meta = load_json(root / "metadata.json")
+    analysis = load_json(analysis_path)
+    settings = get_llm_settings()
+    strategy = meta.get("workflow_strategy") or settings.get("workflow_strategy")
+    try:
+        diagnostics = refresh_diagnostic_assets(
+            root,
+            meta,
+            analysis,
+            workflow_strategy=strategy,
+            force_attachment=force,
+        )
+    except ValueError as exc:
+        meta["diagnostics_refresh_status"] = "failed"
+        meta["diagnostics_refresh_error"] = str(exc)
+        save_json(root / "metadata.json", meta)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        meta["diagnostics_refresh_status"] = "failed"
+        meta["diagnostics_refresh_error"] = f"{type(exc).__name__}: {exc}"
+        save_json(root / "metadata.json", meta)
+        raise HTTPException(status_code=500, detail=meta["diagnostics_refresh_error"]) from exc
+    save_json(root / "metadata.json", meta)
+    return {"diagnostics": diagnostics, "project": project_detail(project_id)}
+
+
+@app.post("/api/projects/{project_id}/repair/briefing")
+def refresh_project_repair_briefing(project_id: str) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    meta = load_json(root / "metadata.json")
+    try:
+        artifacts = write_repair_briefing(root, meta)
+        repair = load_json(root / REPAIR_BRIEFING_JSON_RELATIVE)
+    except Exception as exc:
+        meta["repair_center_status"] = "failed"
+        meta["repair_center_summary"] = f"{type(exc).__name__}: {exc}"
+        save_json(root / "metadata.json", meta)
+        raise HTTPException(status_code=500, detail=meta["repair_center_summary"]) from exc
+    save_json(root / "metadata.json", meta)
+    return {"repair": repair, "artifacts": artifacts, "project": project_detail(project_id)}
+
+
+@app.post("/api/projects/{project_id}/delivery/readiness")
+def refresh_project_delivery_readiness(project_id: str) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    meta = load_json(root / "metadata.json")
+    try:
+        artifacts = write_delivery_readiness_report(root, meta)
+        delivery = load_json(root / DELIVERY_READINESS_JSON_RELATIVE)
+    except Exception as exc:
+        meta["delivery_readiness_status"] = "failed"
+        meta["delivery_readiness_summary"] = f"{type(exc).__name__}: {exc}"
+        save_json(root / "metadata.json", meta)
+        raise HTTPException(status_code=500, detail=meta["delivery_readiness_summary"]) from exc
+    save_json(root / "metadata.json", meta)
+    return {"delivery": delivery, "artifacts": artifacts, "project": project_detail(project_id)}
+
+
+@app.post("/api/projects/{project_id}/delivery/package")
+def build_project_delivery_package(project_id: str) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    meta = load_json(root / "metadata.json")
+    try:
+        artifacts = write_delivery_package(root, meta)
+        package = load_json(root / DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE)
+    except Exception as exc:
+        meta["delivery_package_status"] = "failed"
+        meta["delivery_package_summary"] = f"{type(exc).__name__}: {exc}"
+        save_json(root / "metadata.json", meta)
+        raise HTTPException(status_code=500, detail=meta["delivery_package_summary"]) from exc
+    attach_artifacts_safely(meta, artifacts)
+    save_json(root / "metadata.json", meta)
+    return {"package": package, "artifacts": artifacts, "project": project_detail(project_id)}
 
 
 @app.post("/api/projects/{project_id}/auto/run")
@@ -721,6 +1206,16 @@ def run_project_auto_workflow(project_id: str) -> dict:
     return {"auto_workflow": report, "project": project_detail(project_id)}
 
 
+@app.post("/api/projects/{project_id}/auto/start")
+def start_project_auto_workflow(project_id: str) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    job = start_auto_workflow_job(project_id, root, resume=False)
+    return {"auto_job": job, "project": project_detail(project_id)}
+
+
 @app.post("/api/projects/{project_id}/auto/resume")
 def resume_project_auto_workflow(project_id: str) -> dict:
     try:
@@ -743,15 +1238,129 @@ def resume_project_auto_workflow(project_id: str) -> dict:
     return {"auto_workflow": report, "project": project_detail(project_id)}
 
 
+@app.post("/api/projects/{project_id}/auto/resume/start")
+def start_project_auto_workflow_resume(project_id: str) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    job = start_auto_workflow_job(project_id, root, resume=True)
+    return {"auto_job": job, "project": project_detail(project_id)}
+
+
 @app.post("/api/projects/{project_id}/auto/cancel")
 def cancel_project_auto_workflow(project_id: str) -> dict:
     try:
         root = project_root(project_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    queued = cancel_queued_auto_workflow_job(project_id)
+    if queued.get("cancelled"):
+        return {"cancel": queued, "project": project_detail(project_id)}
     meta = load_json(root / "metadata.json")
     control = request_auto_workflow_cancel(root, meta)
-    return {"cancel": control, "project": project_detail(project_id)}
+    return {"cancel": {**control, "queued_job": queued}, "project": project_detail(project_id)}
+
+
+@app.get("/api/projects/{project_id}/auto/job")
+def project_auto_workflow_job(project_id: str) -> dict:
+    try:
+        project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    return {"auto_job": get_project_auto_workflow_job(project_id)}
+
+
+@app.get("/api/auto/jobs")
+def auto_workflow_jobs() -> dict:
+    return {
+        "auto_jobs": list_auto_workflow_jobs(),
+        "delivery_batch_jobs": list_delivery_batch_jobs(),
+        "capacity_settings": load_capacity_settings(),
+        "capacity_autotune": list_capacity_autotune_events(),
+    }
+
+
+@app.post("/api/auto/batch/start")
+def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
+    project_ids = dedupe_project_ids(payload.project_ids)
+    if not project_ids:
+        raise HTTPException(status_code=400, detail="请选择至少一个项目。")
+    if len(project_ids) > 40:
+        raise HTTPException(status_code=400, detail="单次最多批量提交 40 个项目。")
+    mode = normalize_batch_mode(payload.mode)
+    submitted: list[dict] = []
+    skipped: list[dict] = []
+    for project_id in project_ids:
+        try:
+            root = project_root(project_id)
+        except FileNotFoundError:
+            skipped.append({"project_id": project_id, "reason": "项目不存在。"})
+            continue
+        analysis_path = root / "artifacts" / "analysis.json"
+        if not analysis_path.exists():
+            skipped.append({"project_id": project_id, "reason": "项目尚未完成赛题分析。"})
+            continue
+        meta = load_json(root / "metadata.json")
+        resume = should_resume_batch_project(meta, mode)
+        try:
+            job = start_auto_workflow_job(project_id, root, resume=resume)
+        except Exception as exc:
+            skipped.append({"project_id": project_id, "reason": f"{type(exc).__name__}: {exc}"})
+            continue
+        submitted.append(job)
+    return {
+        "batch": {
+            "requested_count": len(project_ids),
+            "submitted_count": len(submitted),
+            "skipped_count": len(skipped),
+            "mode": mode,
+            "submitted": submitted,
+            "skipped": skipped,
+        },
+        "auto_jobs": list_auto_workflow_jobs(),
+    }
+
+
+def dedupe_project_ids(project_ids: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in project_ids or []:
+        project_id = str(raw or "").strip()
+        if not project_id or project_id in seen:
+            continue
+        seen.add(project_id)
+        result.append(project_id)
+    return result
+
+
+def normalize_batch_mode(value: str | None) -> str:
+    mode = str(value or "auto").strip().lower()
+    if mode in {"auto", "start", "resume"}:
+        return mode
+    raise HTTPException(status_code=400, detail="批量模式只能是 auto、start 或 resume。")
+
+
+def should_resume_batch_project(meta: dict, mode: str) -> bool:
+    if mode == "resume":
+        return True
+    if mode == "start":
+        return False
+    status = str(meta.get("auto_workflow_status") or "")
+    progress = meta.get("auto_workflow_progress", {}) if isinstance(meta.get("auto_workflow_progress"), dict) else {}
+    return bool(
+        status in {"failed", "cancelled", "completed_with_warnings", "interrupted"}
+        or progress.get("can_resume")
+        or meta.get("last_failure_diagnosis")
+    )
+
+
+@app.get("/api/auto/jobs/{job_id}")
+def auto_workflow_job(job_id: str) -> dict:
+    job = get_auto_workflow_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="自动流程任务不存在或已被清理。")
+    return {"auto_job": job}
 
 
 @app.get("/api/projects/{project_id}/progress")
@@ -763,19 +1372,29 @@ def project_progress(project_id: str) -> dict:
     meta = load_json(root / "metadata.json")
     progress_path = root / "artifacts" / "auto_workflow_progress.json"
     progress = load_json(progress_path) if progress_path.exists() else meta.get("auto_workflow_progress", {})
+    active_job = get_project_auto_workflow_job(project_id)
     response_status = meta.get("auto_workflow_status") or "idle"
+    if active_job.get("status") in {"queued", "running"}:
+        response_status = str(active_job.get("status") or response_status)
     if isinstance(progress, dict):
         progress = dict(progress)
         status = response_status or progress.get("status") or "idle"
-        stale_running = status == "running" and auto_progress_is_stale(progress)
+        stale_running = status == "running" and not active_job and auto_progress_is_stale(progress)
         progress["can_resume"] = bool(
             progress.get("can_resume")
             or status in {"failed", "cancelled", "completed_with_warnings", "cancel_requested"}
             or stale_running
         )
+        progress["last_failure_diagnosis"] = progress.get("last_failure_diagnosis") or meta.get("last_failure_diagnosis", {})
+        progress["resume_hint"] = progress.get("resume_hint") or meta.get("auto_workflow_repair_hint", "")
+        if active_job:
+            progress["auto_job"] = active_job
         progress["can_cancel"] = (
             not stale_running
-            and (status in {"running", "cancel_requested"} or progress.get("status") in {"running", "between_steps"})
+            and (
+                status in {"queued", "running", "cancel_requested"}
+                or progress.get("status") in {"queued", "running", "between_steps"}
+            )
         )
         if stale_running:
             progress["status"] = "interrupted"

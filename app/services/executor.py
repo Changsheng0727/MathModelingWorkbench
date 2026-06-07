@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -103,6 +104,7 @@ def run_python_script(root: Path, script_relative: str, log_relative: str, timeo
 
     log_path = root / log_relative
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    started = time.perf_counter()
     try:
         result = subprocess.run(
             python_script_command(script_path),
@@ -121,6 +123,7 @@ def run_python_script(root: Path, script_relative: str, log_relative: str, timeo
             stdout = stdout.decode("utf-8", errors="replace")
         if isinstance(stderr, bytes):
             stderr = stderr.decode("utf-8", errors="replace")
+        duration_seconds = round(time.perf_counter() - started, 3)
         log_path.write_text(
             "\n".join(
                 [
@@ -128,6 +131,7 @@ def run_python_script(root: Path, script_relative: str, log_relative: str, timeo
                     f"python={sys.executable}",
                     "returncode=timeout",
                     f"timeout_seconds={timeout}",
+                    f"duration_seconds={duration_seconds}",
                     "===== STDOUT =====",
                     stdout,
                     "===== STDERR =====",
@@ -142,13 +146,16 @@ def run_python_script(root: Path, script_relative: str, log_relative: str, timeo
             "executor": "local_python",
             "log": log_relative.replace("\\", "/"),
             "error": f"timeout after {timeout} seconds",
+            "duration_seconds": duration_seconds,
         }
+    duration_seconds = round(time.perf_counter() - started, 3)
     log_path.write_text(
         "\n".join(
             [
                 "executor=local_python",
                 f"python={sys.executable}",
                 f"returncode={result.returncode}",
+                f"duration_seconds={duration_seconds}",
                 "===== STDOUT =====",
                 result.stdout,
                 "===== STDERR =====",
@@ -162,4 +169,5 @@ def run_python_script(root: Path, script_relative: str, log_relative: str, timeo
         "returncode": result.returncode,
         "executor": "local_python",
         "log": log_relative.replace("\\", "/"),
+        "duration_seconds": duration_seconds,
     }

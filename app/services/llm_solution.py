@@ -2237,4 +2237,16 @@ def render_stage_markdown(title: str, payload: dict[str, Any]) -> str:
 
 
 def public_settings(settings: dict[str, Any]) -> dict[str, Any]:
-    return {key: settings.get(key) for key in ["provider", "configured", "source", "masked_api_key", "base_url", "model"]}
+    return {
+        key: settings.get(key)
+        for key in [
+            "provider",
+            "configured",
+            "source",
+            "masked_api_key",
+            "base_url",
+            "model",
+            "workflow_strategy",
+            "workflow_strategy_label",
+        ]
+    }

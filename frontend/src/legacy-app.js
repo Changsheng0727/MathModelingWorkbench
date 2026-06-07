@@ -2,8 +2,20 @@ const state = {
   currentProject: null,
   projects: [],
   projectQuery: "",
+  selectedProjectIds: new Set(),
   templates: [],
   llmSettings: null,
+  autoJobs: null,
+  deliveryBatchJobs: null,
+  capacitySettings: null,
+  capacityAutotune: null,
+  growthMetrics: null,
+  trustMetrics: null,
+  trustExports: null,
+  repairCampaigns: null,
+  repairBriefing: null,
+  deliveryReadiness: null,
+  deliveryPackage: null,
   uploadProgressStop: null,
 };
 
@@ -19,6 +31,10 @@ const els = {
   refresh: document.querySelector("#refresh-projects"),
   projectSearch: document.querySelector("#project-search"),
   projectCount: document.querySelector("#project-count"),
+  selectAnalyzedProjects: document.querySelector("#select-analyzed-projects"),
+  clearProjectSelection: document.querySelector("#clear-project-selection"),
+  batchStartProjects: document.querySelector("#batch-start-projects"),
+  batchProjectStatus: document.querySelector("#batch-project-status"),
   projectList: document.querySelector("#project-list"),
   health: document.querySelector("#health"),
   themeToggle: document.querySelector("#theme-toggle"),
@@ -27,6 +43,8 @@ const els = {
   apiKeyInput: document.querySelector("#api-key-input"),
   baseUrlInput: document.querySelector("#base-url-input"),
   modelInput: document.querySelector("#model-input"),
+  workflowStrategyInput: document.querySelector("#workflow-strategy-input"),
+  workflowStrategyHint: document.querySelector("#workflow-strategy-hint"),
   clearLlmSettings: document.querySelector("#clear-llm-settings"),
   llmSettingsStatus: document.querySelector("#llm-settings-status"),
   title: document.querySelector("#project-title"),
@@ -40,6 +58,20 @@ const els = {
   dataCount: document.querySelector("#data-count"),
   projectStatus: document.querySelector("#project-status"),
   statusCards: document.querySelector("#status-cards"),
+  growthCenter: document.querySelector("#growth-center"),
+  refreshGrowthMetrics: document.querySelector("#refresh-growth-metrics"),
+  growthCenterStatus: document.querySelector("#growth-center-status"),
+  trustCenter: document.querySelector("#trust-center"),
+  refreshTrustCenter: document.querySelector("#refresh-trust-center"),
+  trustCenterStatus: document.querySelector("#trust-center-status"),
+  refreshAutoJobs: document.querySelector("#refresh-auto-jobs"),
+  autoJobCenter: document.querySelector("#auto-job-center"),
+  repairCenter: document.querySelector("#repair-center"),
+  refreshRepairCenter: document.querySelector("#refresh-repair-center"),
+  repairCenterStatus: document.querySelector("#repair-center-status"),
+  deliveryCenter: document.querySelector("#delivery-center"),
+  refreshDeliveryReadiness: document.querySelector("#refresh-delivery-readiness"),
+  deliveryReadinessStatus: document.querySelector("#delivery-readiness-status"),
   problemCards: document.querySelector("#problem-cards"),
   workflow: document.querySelector("#workflow"),
   inventory: document.querySelector("#inventory"),
@@ -70,6 +102,8 @@ const els = {
   cancelAutoWorkflow: document.querySelector("#cancel-auto-workflow"),
   autoWorkflowStatus: document.querySelector("#auto-workflow-status"),
   autoWorkflowProgress: document.querySelector("#auto-workflow-progress"),
+  refreshDiagnostics: document.querySelector("#refresh-diagnostics"),
+  diagnosticsStatus: document.querySelector("#diagnostics-status"),
   generateSkillReport: document.querySelector("#generate-skill-report"),
   skillReportStatus: document.querySelector("#skill-report-status"),
   generateCodeGraph: document.querySelector("#generate-code-graph"),
@@ -191,6 +225,10 @@ async function api(path, options = {}) {
   return payload ?? {};
 }
 
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 async function checkHealth() {
   try {
     await api("/api/health");
@@ -281,17 +319,87 @@ function renderLlmSettings(settings) {
   els.apiKeyInput.value = "";
   els.baseUrlInput.value = settings.base_url || "https://api.chshapi.org/v1";
   els.modelInput.value = settings.model || "gpt-5.5";
+  if (els.workflowStrategyInput) {
+    const options = settings.workflow_strategy_options?.length
+      ? settings.workflow_strategy_options
+      : [
+          { id: "balanced", label: "均衡", summary: "速度和成功率兼顾" },
+          { id: "stable", label: "稳妥", summary: "更多校验和自动修复" },
+          { id: "turbo", label: "极速", summary: "并行读取附件和子问题" },
+        ];
+    els.workflowStrategyInput.innerHTML = options
+      .map((item) => {
+        const selected = item.id === (settings.workflow_strategy || "balanced") ? " selected" : "";
+        return `<option value="${escapeHtml(item.id)}"${selected}>${escapeHtml(item.label)}：${escapeHtml(item.summary)}</option>`;
+      })
+      .join("");
+  }
+  if (els.workflowStrategyHint) {
+    const label = settings.workflow_strategy_label || "均衡";
+    const summary = settings.workflow_strategy_summary || "速度和成功率兼顾。";
+    els.workflowStrategyHint.textContent = `当前策略：${label}。${summary}`;
+  }
   if (settings.configured) {
     const source = settings.source === "env" ? "环境变量" : "本地设置";
-    els.llmSettingsStatus.textContent = `已配置：${settings.masked_api_key} · ${source}`;
+    const strategy = settings.workflow_strategy_label ? ` · ${settings.workflow_strategy_label}` : "";
+    els.llmSettingsStatus.textContent = `已配置：${settings.masked_api_key} · ${source}${strategy}`;
   } else {
-    els.llmSettingsStatus.textContent = "尚未配置 API Key。";
+    els.llmSettingsStatus.textContent = "尚未配置 API 密钥。";
   }
 }
 
 async function loadProjects() {
   state.projects = await api("/api/projects");
+  pruneSelectedProjects();
   renderProjectList();
+}
+
+async function loadAutoJobs() {
+  if (!els.autoJobCenter) {
+    return;
+  }
+  try {
+    const payload = await api("/api/auto/jobs");
+    state.autoJobs = payload.auto_jobs || {};
+    state.deliveryBatchJobs = payload.delivery_batch_jobs || {};
+    state.capacitySettings = payload.capacity_settings || state.autoJobs.capacity_settings || state.deliveryBatchJobs.capacity_settings || null;
+    state.capacityAutotune = payload.capacity_autotune || state.capacityAutotune || null;
+    renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
+  } catch (error) {
+    els.autoJobCenter.innerHTML = `<p class="status">后台任务中心暂不可用：${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function loadGrowthMetrics() {
+  if (!els.growthCenter) {
+    return;
+  }
+  try {
+    const payload = await api("/api/product/growth");
+    state.growthMetrics = payload.growth || {};
+    renderGrowthCenter(state.growthMetrics);
+    if (payload.trust && els.trustCenter) {
+      state.trustMetrics = payload.trust;
+      renderTrustCenter(state.trustMetrics);
+    }
+  } catch (error) {
+    els.growthCenter.innerHTML = `<p class="status">解题进度中心暂不可用：${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function loadTrustCenter() {
+  if (!els.trustCenter) {
+    return;
+  }
+  try {
+    const payload = await api("/api/product/trust");
+    state.trustMetrics = payload.trust || {};
+    state.trustExports = payload.trust_exports || null;
+    state.repairCampaigns = payload.repair_campaigns || null;
+    renderTrustCenter(state.trustMetrics, state.trustExports);
+  } catch (error) {
+    els.trustCenter.innerHTML = `<p class="status">信任中心暂不可用：${escapeHtml(error.message)}</p>`;
+  }
 }
 
 function renderProjectList() {
@@ -300,21 +408,24 @@ function renderProjectList() {
   const filtered = query
     ? projects.filter((project) => projectSearchText(project).includes(query))
     : projects;
+  const selectedCount = state.selectedProjectIds.size;
 
   if (els.projectCount) {
     els.projectCount.textContent = projects.length
       ? query
-        ? `筛选出 ${filtered.length} / ${projects.length} 个项目`
-        : `${projects.length} 个项目`
+        ? `筛选出 ${filtered.length} / ${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}`
+        : `${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}`
       : "暂无项目";
   }
 
   if (!projects.length) {
     els.projectList.innerHTML = '<p class="status">暂无项目</p>';
+    updateProjectBatchControls();
     return;
   }
   if (!filtered.length) {
     els.projectList.innerHTML = '<p class="status">没有匹配的项目。</p>';
+    updateProjectBatchControls(filtered);
     return;
   }
 
@@ -324,20 +435,126 @@ function renderProjectList() {
         const active = state.currentProject?.metadata?.id === project.id ? " is-active" : "";
         const autoBadge = project.auto_workflow_status ? `<span class="project-badge">${escapeHtml(project.auto_workflow_status)}</span>` : "";
         const analysisBadge = project.analysis_available ? '<span class="project-badge project-badge-ok">已分析</span>' : '<span class="project-badge project-badge-muted">未分析</span>';
+        const deliveryBadge = renderProjectDeliveryBadge(project);
+        const diagnosis = project.last_failure_diagnosis || {};
+        const diagnosisBadge = diagnosis.category
+          ? `<span class="project-badge project-badge-error" title="${escapeHtml(diagnosis.suggested_action || diagnosis.repair_focus || diagnosis.evidence || "")}">${escapeHtml(diagnosis.label || diagnosis.category)}</span>`
+          : "";
         const status = project.status || "-";
+        const checked = state.selectedProjectIds.has(project.id) ? " checked" : "";
+        const disabled = project.analysis_available ? "" : " disabled";
         return `
-        <button class="project-button${active}" type="button" data-project-id="${escapeHtml(project.id)}">
-          <span class="project-name">${escapeHtml(project.name)}</span>
-          <span class="project-meta">${escapeHtml(formatProjectTime(project.created_at))} · ${escapeHtml(status)}</span>
-          <span class="project-badges">${analysisBadge}${autoBadge}</span>
-        </button>
+        <article class="project-row${active}">
+          <label class="project-select">
+            <input class="project-select-input" type="checkbox" data-project-id="${escapeHtml(project.id)}"${checked}${disabled} />
+            <span class="sr-only">选择${escapeHtml(project.name || project.id)}</span>
+          </label>
+          <button class="project-button project-open${active}" type="button" data-project-id="${escapeHtml(project.id)}">
+            <span class="project-name">${escapeHtml(project.name)}</span>
+            <span class="project-meta">${escapeHtml(formatProjectTime(project.created_at))} · ${escapeHtml(status)}</span>
+            <span class="project-badges">${analysisBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
+          </button>
+        </article>
       `;
       },
     )
     .join("");
-  els.projectList.querySelectorAll("button").forEach((button) => {
+  updateProjectBatchControls(filtered);
+  els.projectList.querySelectorAll(".project-open").forEach((button) => {
     button.addEventListener("click", () => openProject(button.dataset.projectId));
   });
+}
+
+function renderProjectDeliveryBadge(project = {}) {
+  const status = project.delivery_readiness_status || "";
+  if (!status) {
+    return "";
+  }
+  const label = project.delivery_readiness_label || statusLabel(status);
+  const score = Number(project.delivery_readiness_score);
+  const scoreText = Number.isFinite(score) ? ` ${score}分` : "";
+  const tone = statusTone(status);
+  const className = tone === "success" ? " project-badge-ok" : tone === "failed" ? " project-badge-error" : tone === "pending" ? " project-badge-muted" : "";
+  const title = project.delivery_readiness_summary || label;
+  return `<span class="project-badge${className}" title="${escapeHtml(title)}">${escapeHtml(label)}${escapeHtml(scoreText)}</span>`;
+}
+
+function pruneSelectedProjects() {
+  const validIds = new Set((state.projects || []).map((project) => project.id).filter(Boolean));
+  Array.from(state.selectedProjectIds).forEach((projectId) => {
+    if (!validIds.has(projectId)) {
+      state.selectedProjectIds.delete(projectId);
+    }
+  });
+}
+
+function updateProjectBatchControls(filteredProjects = null) {
+  const selectedCount = state.selectedProjectIds.size;
+  const visible = Array.isArray(filteredProjects) ? filteredProjects : currentFilteredProjects();
+  const analyzedVisibleCount = visible.filter((project) => project.analysis_available).length;
+  if (els.batchStartProjects) {
+    els.batchStartProjects.disabled = selectedCount === 0;
+    els.batchStartProjects.textContent = selectedCount ? `批量入队 ${selectedCount}` : "批量入队";
+  }
+  if (els.clearProjectSelection) {
+    els.clearProjectSelection.disabled = selectedCount === 0;
+  }
+  if (els.selectAnalyzedProjects) {
+    els.selectAnalyzedProjects.disabled = analyzedVisibleCount === 0;
+    els.selectAnalyzedProjects.textContent = analyzedVisibleCount ? `选择已分析 ${analyzedVisibleCount}` : "选择已分析";
+  }
+}
+
+function currentFilteredProjects() {
+  const projects = state.projects || [];
+  const query = normalizeSearch(state.projectQuery);
+  return query ? projects.filter((project) => projectSearchText(project).includes(query)) : projects;
+}
+
+async function startSelectedProjectsBatch() {
+  const projectIds = Array.from(state.selectedProjectIds);
+  if (!projectIds.length) {
+    els.batchProjectStatus.textContent = "请先选择已分析项目。";
+    return;
+  }
+  els.batchStartProjects.disabled = true;
+  els.selectAnalyzedProjects.disabled = true;
+  els.clearProjectSelection.disabled = true;
+  els.batchProjectStatus.textContent = `正在将 ${projectIds.length} 个项目加入后台任务池。`;
+  try {
+    const payload = await api("/api/auto/batch/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_ids: projectIds, mode: "auto" }),
+    });
+    const batch = payload.batch || {};
+    const submitted = Array.isArray(batch.submitted) ? batch.submitted : [];
+    submitted.forEach((job) => {
+      if (job.project_id) {
+        state.selectedProjectIds.delete(job.project_id);
+      }
+    });
+    if (payload.auto_jobs) {
+      state.autoJobs = payload.auto_jobs;
+      renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
+    } else {
+      await loadAutoJobs();
+    }
+    await loadProjects();
+    await loadGrowthMetrics();
+    await loadTrustCenter();
+    const skipped = Array.isArray(batch.skipped) ? batch.skipped : [];
+    const skippedText = skipped.length
+      ? `，跳过 ${skipped.length} 个：${skipped.slice(0, 2).map((item) => item.reason || item.project_id).join("；")}${skipped.length > 2 ? "…" : ""}`
+      : "";
+    els.batchProjectStatus.textContent = `批量入队完成：${batch.submitted_count || submitted.length} 个进入任务池${skippedText}。`;
+    showToast("批量任务已提交后台任务池", "success");
+  } catch (error) {
+    els.batchProjectStatus.textContent = `批量入队失败：${error.message}`;
+    showToast(`批量入队失败：${error.message}`, "error");
+  } finally {
+    updateProjectBatchControls();
+  }
 }
 
 function projectSearchText(project = {}) {
@@ -348,6 +565,20 @@ function projectSearchText(project = {}) {
     project.created_at,
     project.status,
     project.auto_workflow_status,
+    project.performance_health_label,
+    project.performance_health_summary,
+    project.repair_center_label,
+    project.repair_center_summary,
+    project.repair_center_action,
+    project.delivery_readiness_label,
+    project.delivery_readiness_summary,
+    project.delivery_readiness_action,
+    project.delivery_package_summary,
+    project.delivery_package_sha256,
+    project.last_failure_diagnosis?.label,
+    project.last_failure_diagnosis?.category,
+    project.last_failure_diagnosis?.repair_focus,
+    project.last_failure_diagnosis?.suggested_action,
     project.analysis_available ? "已分析" : "未分析",
   ].filter(Boolean).join(" "));
 }
@@ -359,6 +590,18 @@ function formatProjectTime(value) {
   return String(value).replace("T", " ").slice(0, 16);
 }
 
+function formatBytes(value) {
+  const units = ["B", "KB", "MB", "GB"];
+  let size = Number(value) || 0;
+  for (const unit of units) {
+    if (size < 1024 || unit === units[units.length - 1]) {
+      return unit === "B" ? `${Math.round(size)} B` : `${size.toFixed(1)} ${unit}`;
+    }
+    size /= 1024;
+  }
+  return `${size.toFixed(1)} GB`;
+}
+
 async function openProject(projectId) {
   const detail = await api(`/api/projects/${projectId}`);
   renderProject(detail);
@@ -367,6 +610,9 @@ async function openProject(projectId) {
 
 function renderProject(detail) {
   state.currentProject = detail;
+  state.repairBriefing = detail.repair || null;
+  state.deliveryReadiness = detail.delivery || null;
+  state.deliveryPackage = detail.package || null;
   syncProjectSelection();
   const { metadata, analysis } = detail;
   els.title.textContent = metadata.name || metadata.original_name || "项目";
@@ -374,9 +620,11 @@ function renderProject(detail) {
     els.openProjectRoot.classList.remove("hidden");
     els.openProjectRoot.disabled = false;
   }
+  const lastDiagnosis = metadata.last_failure_diagnosis || {};
+  const diagnosisText = lastDiagnosis.category ? ` · 诊断：${lastDiagnosis.label || lastDiagnosis.category}` : "";
   els.projectStatus.textContent = metadata.auto_workflow_status
-    ? `${metadata.status || "-"} · 自动流程：${metadata.auto_workflow_status}`
-    : metadata.status || "-";
+    ? `${metadata.status || "-"} · 自动流程：${metadata.auto_workflow_status}${diagnosisText}`
+    : `${metadata.status || "-"}${diagnosisText}`;
   if (!analysis) {
     els.empty.classList.remove("hidden");
     els.analysisView.classList.add("hidden");
@@ -398,6 +646,8 @@ function renderProject(detail) {
   renderStatusCards(metadata, analysis);
   renderPaperOptions(metadata);
   renderModelAssistantOptions(analysis, rec);
+  renderRepairCenter(metadata, analysis.project?.id || metadata.id, detail.repair || {});
+  renderDeliveryCenter(metadata, analysis.project?.id || metadata.id, detail.delivery || {});
   renderArtifacts(metadata, analysis.project?.id || metadata.id);
   renderAutoWorkflowProgress(metadata.auto_workflow_progress);
   updateAutoWorkflowButtons(metadata.auto_workflow_status, metadata.auto_workflow_progress || {});
@@ -438,10 +688,67 @@ function displayProblem(metadata, analysis) {
   return recommended;
 }
 
+function diagnosisSummary(diagnosis = {}) {
+  if (!diagnosis || typeof diagnosis !== "object" || !diagnosis.category) {
+    return "";
+  }
+  const label = diagnosis.label || diagnosis.category;
+  const focus = diagnosis.repair_focus || diagnosis.suggested_action || "可在自动流程进度中查看修复重点";
+  return `${label}：${focus}`;
+}
+
+function performanceHealthMetrics(metadata = {}) {
+  const scores = metadata.performance_health_scores || {};
+  const metrics = metadata.performance_health_metrics || {};
+  const items = [];
+  const overall = metadata.performance_health_score ?? scores.overall;
+  const speed = scores.speed ?? metrics.speed;
+  const reliability = scores.reliability ?? metrics.reliability;
+  if (Number.isFinite(Number(speed))) {
+    items.push(["速度", `${Number(speed)}`]);
+  }
+  if (Number.isFinite(Number(reliability))) {
+    items.push(["可靠", `${Number(reliability)}`]);
+  }
+  if (Number(metrics.attachment_workers) > 0) {
+    items.push(["线程", `${Number(metrics.attachment_workers)}`]);
+  }
+  if (Number(metrics.planned_task_count) > 0) {
+    items.push(["任务", `${Number(metrics.planned_task_count)}`]);
+  }
+  return {
+    badge: Number.isFinite(Number(overall)) ? `${Number(overall)} 分` : "",
+    items: items.slice(0, 4),
+  };
+}
+
+function renderStatusCardMetrics(items = []) {
+  if (!items.length) {
+    return "";
+  }
+  return `
+    <div class="status-card-metrics">
+      ${items
+        .map(
+          ([label, value]) => `
+            <span class="status-card-metric">
+              <b>${escapeHtml(label)}</b>
+              <strong>${escapeHtml(value)}</strong>
+            </span>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function renderStatusCards(metadata, analysis) {
   if (!els.statusCards) {
     return;
   }
+  const lastDiagnosis = metadata.last_failure_diagnosis || {};
+  const diagnosisDetail = diagnosisSummary(lastDiagnosis);
+  const health = performanceHealthMetrics(metadata);
   const cards = [
     {
       title: "赛题解析",
@@ -452,14 +759,20 @@ function renderStatusCards(metadata, analysis) {
     {
       title: "LLM 分析",
       value: statusLabel(metadata.llm_analysis_status),
-      detail: metadata.llm_analysis_status === "requires_api_key" ? "需要先填写 API Key" : "选题和建模建议",
+      detail: metadata.llm_analysis_status === "requires_api_key" ? "需要先填写 API 密钥" : "选题和建模建议",
       status: statusTone(metadata.llm_analysis_status),
     },
     {
       title: "自动解题",
       value: statusLabel(metadata.auto_workflow_status),
-      detail: metadata.auto_workflow_mode || "LLM+代码一键流程",
+      detail: diagnosisDetail || metadata.auto_workflow_mode || "LLM+代码一键流程",
       status: statusTone(metadata.auto_workflow_status),
+    },
+    {
+      title: "修复中心",
+      value: metadata.repair_center_label || statusLabel(metadata.repair_center_status),
+      detail: metadata.repair_center_summary || "失败诊断、证据和续跑入口",
+      status: statusTone(metadata.repair_center_status),
     },
     {
       title: "模型辅助",
@@ -470,8 +783,23 @@ function renderStatusCards(metadata, analysis) {
     {
       title: "代码求解",
       value: statusLabel(metadata.computed_solution_status),
-      detail: "结果表、图片和 manifest",
+      detail: diagnosisDetail && metadata.computed_solution_status === "failed" ? diagnosisDetail : "结果表、图片和 manifest",
       status: statusTone(metadata.computed_solution_status),
+    },
+    {
+      title: "性能健康",
+      value: metadata.performance_health_label || statusLabel(metadata.performance_health_status),
+      detail: metadata.performance_health_summary || "速度、并发和自动修复指标",
+      status: statusTone(metadata.performance_health_status),
+      badge: health.badge,
+      metrics: health.items,
+    },
+    {
+      title: "交付就绪",
+      value: metadata.delivery_readiness_label || statusLabel(metadata.delivery_readiness_status),
+      detail: metadata.delivery_readiness_summary || "论文、结果、审查和支撑包",
+      status: statusTone(metadata.delivery_readiness_status),
+      badge: Number.isFinite(Number(metadata.delivery_readiness_score)) ? `${Number(metadata.delivery_readiness_score)} 分` : "",
     },
     {
       title: "LaTeX 编译",
@@ -492,9 +820,13 @@ function renderStatusCards(metadata, analysis) {
         <article class="status-card" data-status="${card.status}">
           <span class="status-dot"></span>
           <div>
-            <h3>${escapeHtml(card.title)}</h3>
+            <div class="status-card-head">
+              <h3>${escapeHtml(card.title)}</h3>
+              ${card.badge ? `<span class="status-card-badge">${escapeHtml(card.badge)}</span>` : ""}
+            </div>
             <strong>${escapeHtml(card.value)}</strong>
             <p>${escapeHtml(card.detail)}</p>
+            ${renderStatusCardMetrics(card.metrics || [])}
           </div>
         </article>
       `,
@@ -502,11 +834,789 @@ function renderStatusCards(metadata, analysis) {
     .join("");
 }
 
+function renderRepairCenter(metadata = {}, projectId = "", repair = {}) {
+  if (!els.repairCenter) {
+    return;
+  }
+  const payload = repair && typeof repair === "object" ? repair : {};
+  const status = payload.status || metadata.repair_center_status || "";
+  const label = payload.label || metadata.repair_center_label || statusLabel(status);
+  const summary = payload.summary || metadata.repair_center_summary || "尚未生成修复简报。";
+  const diagnosis = payload.latest_failure_diagnosis || metadata.last_failure_diagnosis || {};
+  const primaryAction = repairPrimaryAction(metadata, payload);
+  const actionButton = renderRepairActionButton(primaryAction, projectId, metadata);
+  const evidence = Array.isArray(payload.evidence) && payload.evidence.length
+    ? payload.evidence
+    : repairEvidenceFromMetadata(metadata, diagnosis);
+  const evidenceHtml = evidence.length
+    ? evidence.slice(0, 8).map(renderRepairEvidenceRow).join("")
+    : '<p class="status">暂无阻断证据。</p>';
+  const reportLinks = renderRepairReportLinks(metadata, projectId);
+  const generatedAt = payload.generated_at ? `<span>更新 ${escapeHtml(formatProjectTime(payload.generated_at))}</span>` : "";
+  const resumeText = metadata.repair_center_can_resume
+    ? "可继续生成"
+    : status
+      ? "当前无需续跑"
+      : "需先刷新诊断";
+
+  els.repairCenter.innerHTML = `
+    <div class="repair-head" data-status="${escapeHtml(statusTone(status))}">
+      <span class="repair-status-dot"></span>
+      <div>
+        <strong>${escapeHtml(label || "未开始")}</strong>
+        <p>${escapeHtml(summary)}</p>
+      </div>
+      ${actionButton}
+    </div>
+    <div class="repair-meta">
+      <span>${escapeHtml(resumeText)}</span>
+      ${primaryAction?.label ? `<span>${escapeHtml(primaryAction.label)}</span>` : ""}
+      ${generatedAt}
+    </div>
+    <div class="repair-evidence">
+      ${evidenceHtml}
+    </div>
+    ${reportLinks}
+  `;
+}
+
+function repairPrimaryAction(metadata = {}, payload = {}) {
+  const action = payload.primary_action && typeof payload.primary_action === "object" ? payload.primary_action : {};
+  if (action.id) {
+    return action;
+  }
+  const actions = Array.isArray(payload.actions) ? payload.actions : [];
+  if (actions[0]?.id) {
+    return actions[0];
+  }
+  const id = metadata.repair_center_action || "";
+  const labels = {
+    resume_auto_workflow: "继续生成并自动修复",
+    inspect_failure_evidence: "查看失败证据",
+    refresh_diagnostics: "刷新诊断与并行计划",
+    start_auto_workflow: "启动一键自动流程",
+    fix_completeness_gate: "补齐完整性门禁",
+    continue_review: "继续编译和审查",
+  };
+  return id ? { id, label: labels[id] || id, priority: "medium" } : {};
+}
+
+function renderRepairActionButton(action = {}, projectId = "", metadata = {}) {
+  const command = repairActionCommand(action.id);
+  if (!command || !projectId) {
+    return "";
+  }
+  const artifacts = metadata.artifacts || {};
+  if (command === "open_report" && !artifacts.repair_briefing && !artifacts.repair_briefing_json && !artifacts.computed_solver_repair) {
+    return "";
+  }
+  return `<button class="repair-action" type="button" data-repair-action="${escapeHtml(command)}">${escapeHtml(action.label || "处理")}</button>`;
+}
+
+function repairActionCommand(actionId = "") {
+  if (actionId === "resume_auto_workflow" || actionId === "fix_completeness_gate") {
+    return "resume";
+  }
+  if (actionId === "start_auto_workflow") {
+    return "start";
+  }
+  if (actionId === "refresh_diagnostics") {
+    return "diagnostics";
+  }
+  if (actionId === "inspect_failure_evidence" || actionId === "continue_review") {
+    return "open_report";
+  }
+  return "";
+}
+
+function repairEvidenceFromMetadata(metadata = {}, diagnosis = {}) {
+  const rows = [];
+  if (diagnosis?.category) {
+    rows.push({
+      label: diagnosis.label || diagnosis.category,
+      detail: diagnosis.repair_focus || diagnosis.suggested_action || diagnosis.evidence || "",
+      source: "last_failure_diagnosis",
+    });
+  }
+  [
+    ["自动流程", metadata.auto_workflow_status],
+    ["代码求解", metadata.computed_solution_status],
+    ["性能健康", metadata.performance_health_label || metadata.performance_health_status],
+    ["论文回填", metadata.paper_fill_status],
+    ["LaTeX", metadata.compile_status],
+  ].forEach(([label, detail]) => {
+    if (detail) {
+      rows.push({ label, detail, source: "metadata/status" });
+    }
+  });
+  return rows;
+}
+
+function renderRepairEvidenceRow(item = {}) {
+  return `
+    <div class="repair-evidence-row">
+      <b>${escapeHtml(item.label || item.source || "证据")}</b>
+      <span>${escapeHtml(item.detail || "-")}</span>
+    </div>
+  `;
+}
+
+function renderRepairReportLinks(metadata = {}, projectId = "") {
+  const artifacts = metadata.artifacts || {};
+  const links = [
+    ["repair_briefing", "修复简报"],
+    ["repair_briefing_json", "修复 JSON"],
+    ["performance_health", "性能健康"],
+    ["computed_solver_repair", "自动修复记录"],
+    ["computed_solver_log", "代码日志"],
+  ]
+    .filter(([key]) => projectId && artifacts[key])
+    .map(([key, label]) => {
+      const path = artifacts[key];
+      return `<a href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(path)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
+    });
+  return links.length ? `<div class="repair-links">${links.join("")}</div>` : "";
+}
+
+function renderDeliveryCenter(metadata = {}, projectId = "", delivery = {}) {
+  if (!els.deliveryCenter) {
+    return;
+  }
+  const payload = delivery && typeof delivery === "object" ? delivery : {};
+  const status = payload.status || metadata.delivery_readiness_status || "";
+  const label = payload.label || metadata.delivery_readiness_label || statusLabel(status);
+  const score = payload.score ?? metadata.delivery_readiness_score;
+  const summary = payload.summary || metadata.delivery_readiness_summary || "尚未生成交付就绪报告。";
+  const checks = Array.isArray(payload.checks) ? payload.checks : deliveryChecksFromMetadata(metadata);
+  const primaryAction = deliveryPrimaryAction(metadata, payload, checks);
+  const actionButton = renderDeliveryActionButton(primaryAction, projectId);
+  const checkHtml = checks.length
+    ? checks.slice(0, 10).map(renderDeliveryCheckRow).join("")
+    : '<p class="status">暂无交付检查项。</p>';
+  const missing = Array.isArray(payload.required_missing) ? payload.required_missing : checks.filter((item) => item.required && item.status === "fail");
+  const missingText = missing.length ? `${missing.length} 个必需项缺失` : payload.can_submit || metadata.delivery_readiness_can_submit ? "可提交" : "等待检查";
+  const reportLinks = renderDeliveryReportLinks(metadata, projectId);
+  const generatedAt = payload.generated_at ? `<span>更新 ${escapeHtml(formatProjectTime(payload.generated_at))}</span>` : "";
+
+  els.deliveryCenter.innerHTML = `
+    <div class="delivery-head" data-status="${escapeHtml(statusTone(status))}">
+      <span class="delivery-score">${Number.isFinite(Number(score)) ? escapeHtml(Number(score)) : "--"}</span>
+      <div>
+        <strong>${escapeHtml(label || "未检查")}</strong>
+        <p>${escapeHtml(summary)}</p>
+      </div>
+      ${actionButton}
+    </div>
+    <div class="delivery-meta">
+      <span>${escapeHtml(missingText)}</span>
+      ${primaryAction?.label ? `<span>${escapeHtml(primaryAction.label)}</span>` : ""}
+      ${generatedAt}
+    </div>
+    <div class="delivery-checks">
+      ${checkHtml}
+    </div>
+    ${reportLinks}
+  `;
+}
+
+function deliveryChecksFromMetadata(metadata = {}) {
+  return [
+    { label: "代码结果", status: metadata.computed_solution_status === "success" ? "pass" : "fail", detail: statusLabel(metadata.computed_solution_status), required: true },
+    { label: "论文回填", status: metadata.paper_fill_status === "success" ? "pass" : "warning", detail: statusLabel(metadata.paper_fill_status), required: false },
+    { label: "LaTeX 编译", status: metadata.compile_status === "success" ? "pass" : "fail", detail: statusLabel(metadata.compile_status), required: true },
+    { label: "论文审查", status: metadata.paper_review_status === "success" ? "pass" : "warning", detail: statusLabel(metadata.paper_review_status), required: false },
+  ];
+}
+
+function deliveryPrimaryAction(metadata = {}, payload = {}, checks = []) {
+  const action = payload.primary_action && typeof payload.primary_action === "object" ? payload.primary_action : {};
+  if (action.id) {
+    return action;
+  }
+  const actions = Array.isArray(payload.actions) ? payload.actions : [];
+  if (actions[0]?.id) {
+    return actions[0];
+  }
+  const id = metadata.delivery_readiness_action || "";
+  const labels = {
+    resume_auto_workflow: "继续生成并自动修复",
+    analyze_project: "重建赛题分析",
+    run_auto_workflow: "启动一键自动流程",
+    compile_latex: "编译 PDF/Word",
+    review_paper: "审查论文",
+    refresh_diagnostics: "刷新诊断/性能",
+    refresh_repair: "刷新修复中心",
+    build_delivery_package: "生成正式交付包",
+    download_support_zip: "下载支撑材料包",
+  };
+  if (id) {
+    return { id, label: labels[id] || id, priority: "medium" };
+  }
+  const failed = checks.find((item) => item.status === "fail" || item.status === "warning");
+  return failed?.action ? { id: failed.action, label: labels[failed.action] || failed.action, priority: failed.required ? "high" : "medium" } : {};
+}
+
+function renderDeliveryActionButton(action = {}, projectId = "") {
+  const command = deliveryActionCommand(action.id);
+  if (!command || !projectId) {
+    return "";
+  }
+  return `<button class="delivery-action" type="button" data-delivery-action="${escapeHtml(command)}">${escapeHtml(action.label || "处理")}</button>`;
+}
+
+function deliveryActionCommand(actionId = "") {
+  const commands = {
+    resume_auto_workflow: "resume",
+    analyze_project: "analyze",
+    run_auto_workflow: "start",
+    compile_latex: "compile",
+    review_paper: "review",
+    refresh_diagnostics: "diagnostics",
+    refresh_repair: "repair",
+    build_delivery_package: "package",
+    download_support_zip: "support_zip",
+  };
+  return commands[actionId] || "";
+}
+
+function renderDeliveryCheckRow(item = {}) {
+  return `
+    <div class="delivery-check-row" data-status="${escapeHtml(statusTone(item.status))}">
+      <span></span>
+      <div>
+        <b>${escapeHtml(item.label || item.id || "检查项")}</b>
+        <small>${escapeHtml(item.required ? "必需" : "建议")} · ${escapeHtml(statusLabel(item.status))}</small>
+        <p>${escapeHtml(item.detail || "-")}</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderDeliveryReportLinks(metadata = {}, projectId = "") {
+  const artifacts = metadata.artifacts || {};
+  const links = [
+    ["delivery_readiness", "交付报告"],
+    ["delivery_readiness_json", "交付 JSON"],
+    ["delivery_package", "正式交付包"],
+    ["delivery_package_manifest", "交付包清单"],
+    ["delivery_package_manifest_json", "交付包 JSON"],
+    ["paper_pdf", "论文 PDF"],
+    ["paper_docx", "论文 Word"],
+    ["paper_review", "审查报告"],
+    ["support_zip", "支撑材料包"],
+  ]
+    .filter(([key]) => projectId && (key === "support_zip" || artifacts[key]))
+    .map(([key, label]) => {
+      const path = key === "support_zip" ? "support.zip" : artifacts[key];
+      return `<a href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(path)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
+    });
+  return links.length ? `<div class="delivery-links">${links.join("")}</div>` : "";
+}
+
+function renderGrowthCenter(growth = {}) {
+  if (!els.growthCenter) {
+    return;
+  }
+  const metrics = Array.isArray(growth.metrics) ? growth.metrics : [];
+  const funnel = Array.isArray(growth.funnel) ? growth.funnel : [];
+  const signals = Array.isArray(growth.signals) ? growth.signals : [];
+  const action = growth.recommended_action || {};
+  const actionCommand = growthActionCommand(action);
+  const deliveryBatch = growth.delivery_batch || {};
+  const workflow = growth.workflow || {};
+  const generatedAt = growth.generated_at ? `<span>更新 ${escapeHtml(formatProjectTime(growth.generated_at))}</span>` : "";
+  els.growthCenter.innerHTML = `
+    <section class="growth-hero" data-status="${escapeHtml(statusTone(growth.status))}">
+      <div>
+        <strong>${escapeHtml(growth.label || "解题待命")}</strong>
+        <p>${escapeHtml(growth.summary || "上传赛题后会汇总分析、求解、交付和打包进度。")}</p>
+      </div>
+      ${generatedAt}
+    </section>
+    <div class="growth-metrics">
+      ${metrics.length ? metrics.map(renderGrowthMetric).join("") : '<p class="status">暂无解题指标。</p>'}
+    </div>
+    <div class="growth-funnel">
+      ${funnel.length ? funnel.map(renderGrowthFunnelRow).join("") : ""}
+    </div>
+    ${renderGrowthDeliveryBatch(deliveryBatch)}
+    ${renderGrowthWorkflow(workflow)}
+    <div class="growth-footer">
+      ${action.label ? `
+        <div class="growth-action">
+          <div>
+            <b>${escapeHtml(action.label)}</b>
+            <span>${escapeHtml(action.detail || "")}</span>
+          </div>
+          ${actionCommand ? `<button class="growth-action-button" type="button" data-growth-action="${escapeHtml(actionCommand)}">${escapeHtml(action.label)}</button>` : ""}
+        </div>
+      ` : ""}
+      ${signals.length ? `<div class="growth-signals">${signals.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+    </div>
+  `;
+}
+
+function growthActionCommand(action = {}) {
+  const command = action.command || "";
+  if (command === "batch_delivery_packages" || action.id === "build_packages") {
+    return "batch_packages";
+  }
+  return "";
+}
+
+function renderGrowthDeliveryBatch(batch = {}) {
+  if (!batch.id) {
+    return "";
+  }
+  const packaged = Number(batch.packaged_count) || 0;
+  const skipped = Number(batch.skipped_count) || 0;
+  const failed = Number(batch.failed_count) || 0;
+  const requested = Number(batch.requested_count) || 0;
+  const duration = formatDuration(batch.duration_seconds || 0);
+  const size = Number(batch.total_package_bytes) || 0;
+  const sizeText = size ? ` · ${formatBytes(size)}` : "";
+  const generatedAt = batch.generated_at ? ` · ${formatProjectTime(batch.generated_at)}` : "";
+  const tone = failed ? "failed" : packaged ? "success" : "warning";
+  return `
+    <article class="growth-batch" data-status="${escapeHtml(tone)}">
+      <div>
+        <b>最近批量交付包</b>
+        <span>${escapeHtml(`请求 ${requested} · 生成 ${packaged} · 跳过 ${skipped} · 失败 ${failed}`)}</span>
+      </div>
+      <p>${escapeHtml(`并发 ${batch.max_workers || 0} · 耗时 ${duration}${sizeText}${generatedAt}`)}</p>
+    </article>
+  `;
+}
+
+function renderGrowthWorkflow(workflow = {}) {
+  if (!workflow || !workflow.stage) {
+    return "";
+  }
+  const proofPoints = Array.isArray(workflow.proof_points) ? workflow.proof_points : [];
+  const risks = Array.isArray(workflow.risks) ? workflow.risks : [];
+  const actions = Array.isArray(workflow.actions) ? workflow.actions : [];
+  const solutionAssets = Number(workflow.solution_assets) || 0;
+  const packages = Number(workflow.package_count) || 0;
+  const hoursSaved = Number(workflow.estimated_hours_saved) || 0;
+  return `
+    <section class="growth-workflow" data-status="${escapeHtml(statusTone(workflow.stage))}">
+      <div class="growth-workflow-head">
+        <div>
+          <b>${escapeHtml(workflow.label || "解题准备度")}</b>
+          <p>${escapeHtml(workflow.summary || "")}</p>
+        </div>
+        <strong>${escapeHtml(workflow.score ?? 0)}/100</strong>
+      </div>
+      <div class="growth-workflow-metrics">
+        <span><b>解题资产</b><strong>${escapeHtml(solutionAssets)}</strong></span>
+        <span><b>正式交付包</b><strong>${escapeHtml(packages)}</strong></span>
+        <span><b>节省工时</b><strong>${escapeHtml(hoursSaved ? `${hoursSaved.toFixed(1)}h` : "-")}</strong></span>
+      </div>
+      ${proofPoints.length ? `<div class="growth-workflow-proof">${proofPoints.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+      ${risks.length ? `<ul class="growth-workflow-risks">${risks.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+      ${actions.length ? `<div class="growth-workflow-actions">${actions.map((item) => `
+        <article>
+          <b>${escapeHtml(item.label || item.id || "动作")}</b>
+          <p>${escapeHtml(item.detail || "")}</p>
+        </article>
+      `).join("")}</div>` : ""}
+    </section>
+  `;
+}
+
+function renderGrowthMetric(item = {}) {
+  return `
+    <article class="growth-metric" data-status="${escapeHtml(statusTone(item.status))}">
+      <span></span>
+      <div>
+        <b>${escapeHtml(item.label || item.id || "指标")}</b>
+        <strong>${escapeHtml(item.value ?? "-")}</strong>
+        <p>${escapeHtml(item.detail || "")}</p>
+      </div>
+    </article>
+  `;
+}
+
+function renderGrowthFunnelRow(row = {}) {
+  const conversion = Math.max(0, Math.min(100, Number(row.conversion) || 0));
+  return `
+    <article class="growth-funnel-row">
+      <div>
+        <b>${escapeHtml(row.label || row.id || "阶段")}</b>
+        <span>${escapeHtml(row.count ?? 0)} · ${conversion}%</span>
+      </div>
+      <div class="growth-funnel-track"><i style="width: ${conversion}%"></i></div>
+      <p>${escapeHtml(row.detail || "")}</p>
+    </article>
+  `;
+}
+
+function renderTrustCenter(trust = {}, trustExports = null) {
+  if (!els.trustCenter) {
+    return;
+  }
+  const exportsPayload = trustExports || state.trustExports || {};
+  const latestExport = exportsPayload.latest || {};
+  const latestCampaign = (state.repairCampaigns || {}).latest || {};
+  const metrics = Array.isArray(trust.metrics) ? trust.metrics : [];
+  const sla = Array.isArray(trust.sla) ? trust.sla : [];
+  const evidence = Array.isArray(trust.evidence) ? trust.evidence : [];
+  const incidents = Array.isArray(trust.incidents) ? trust.incidents : [];
+  const actions = Array.isArray(trust.actions) ? trust.actions : [];
+  const generatedAt = trust.generated_at ? `<span>${escapeHtml(formatProjectTime(trust.generated_at))}</span>` : "";
+  els.trustCenter.innerHTML = `
+    <section class="trust-hero" data-status="${escapeHtml(statusTone(trust.status))}">
+      <div>
+        <b>${escapeHtml(trust.label || "信任中心")}</b>
+        <p>${escapeHtml(trust.summary || "项目运行后会在这里汇总质量、交付和可审计证据。")}</p>
+      </div>
+      <strong>${escapeHtml(trust.score ?? 0)}/100</strong>
+      ${generatedAt}
+    </section>
+    ${renderTrustExportPanel(latestExport)}
+    ${renderRepairCampaignPanel(latestCampaign)}
+    <div class="trust-metrics">
+      ${metrics.length ? metrics.map(renderTrustMetric).join("") : '<p class="status">暂无信任指标。</p>'}
+    </div>
+    <div class="trust-sla">
+      ${sla.length ? sla.map(renderTrustSlaRow).join("") : ""}
+    </div>
+    <div class="trust-grid">
+      ${renderTrustList("证据", evidence, "evidence")}
+      ${renderTrustList("异常", incidents, "incident")}
+    </div>
+    ${actions.length ? `<div class="trust-actions">${actions.map(renderTrustAction).join("")}</div>` : ""}
+  `;
+}
+
+function renderRepairCampaignPanel(latest = {}) {
+  const hasLatest = Boolean(latest && latest.id);
+  const latestText = hasLatest
+    ? `最近 ${formatProjectTime(latest.generated_at)} · ${latest.summary || `${latest.queued || 0} 个已入队，${latest.briefed || 0} 个已重建简报`}`
+    : "尚未运行修复行动。";
+  return `
+    <section class="trust-campaign">
+      <div>
+        <b>修复行动</b>
+        <p>${escapeHtml(latestText)}</p>
+      </div>
+      <div class="trust-campaign-actions">
+        <button class="trust-campaign-button" type="button" data-trust-action="repair_campaign">运行修复行动</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderTrustExportPanel(latest = {}) {
+  const hasLatest = Boolean(latest && latest.download_url);
+  const sizeText = latest.size ? ` · ${latest.size}` : "";
+  const hashText = latest.sha256 ? ` · SHA256 ${String(latest.sha256).slice(0, 12)}` : "";
+  const latestText = hasLatest
+    ? `最近 ${formatProjectTime(latest.generated_at)} · 评分 ${latest.trust_score ?? "-"}${sizeText}${hashText}`
+    : "尚未导出审计包。";
+  return `
+    <section class="trust-export">
+      <div>
+        <b>审计包</b>
+        <p>${escapeHtml(latestText)}</p>
+      </div>
+      <div class="trust-export-actions">
+        <button class="trust-export-button" type="button" data-trust-action="export_audit">导出审计包</button>
+        ${hasLatest ? `<a class="trust-export-link" href="${escapeHtml(latest.download_url)}" target="_blank" rel="noreferrer">下载最新包</a>` : ""}
+      </div>
+    </section>
+  `;
+}
+
+function renderTrustMetric(item = {}) {
+  return `
+    <article class="trust-metric" data-status="${escapeHtml(statusTone(item.status))}">
+      <b>${escapeHtml(item.label || item.id || "指标")}</b>
+      <strong>${escapeHtml(item.value ?? "-")}</strong>
+      <p>${escapeHtml(item.detail || "")}</p>
+    </article>
+  `;
+}
+
+function renderTrustSlaRow(row = {}) {
+  const value = Number.isFinite(Number(row.value)) ? Math.max(0, Math.min(100, Number(row.value))) : 0;
+  const labelValue = Number.isFinite(Number(row.value)) ? `${Math.round(value)}%` : "-";
+  return `
+    <article class="trust-sla-row" data-status="${escapeHtml(statusTone(row.status))}">
+      <div>
+        <b>${escapeHtml(row.label || row.id || "SLA")}</b>
+        <span>${escapeHtml(labelValue)} / 目标 ${escapeHtml(row.target ?? "-")}%</span>
+      </div>
+      <div class="trust-sla-track"><i style="width: ${value}%"></i></div>
+      <p>${escapeHtml(row.detail || "")}</p>
+    </article>
+  `;
+}
+
+function renderTrustList(title, rows = [], kind = "evidence") {
+  return `
+    <section class="trust-list trust-list-${escapeHtml(kind)}">
+      <b>${escapeHtml(title)}</b>
+      ${
+        rows.length
+          ? rows.map((item) => `
+            <article data-status="${escapeHtml(statusTone(item.status))}">
+              <strong>${escapeHtml(item.label || item.id || "-")}</strong>
+              <p>${escapeHtml(item.detail || "")}</p>
+            </article>
+          `).join("")
+          : `<p class="status">${kind === "incident" ? "暂无活跃异常。" : "暂无证据。"}</p>`
+      }
+    </section>
+  `;
+}
+
+function renderTrustAction(action = {}) {
+  return `
+    <article>
+      <b>${escapeHtml(action.label || action.id || "动作")}</b>
+      <p>${escapeHtml(action.detail || "")}</p>
+    </article>
+  `;
+}
+
+function renderAutoJobCenter(snapshot = {}, deliverySnapshot = {}) {
+  if (!els.autoJobCenter) {
+    return;
+  }
+  const autoJobs = Array.isArray(snapshot.jobs) ? snapshot.jobs.map((job) => ({ ...job, kind: job.kind || "auto_workflow" })) : [];
+  const deliveryJobs = Array.isArray(deliverySnapshot.jobs) ? deliverySnapshot.jobs.map((job) => ({ ...job, kind: "delivery_batch" })) : [];
+  const jobs = [...deliveryJobs, ...autoJobs].sort((a, b) => String(b.submitted_at || "").localeCompare(String(a.submitted_at || "")));
+  const throughput = snapshot.throughput || {};
+  const capacitySettings = state.capacitySettings || snapshot.capacity_settings || deliverySnapshot.capacity_settings || {};
+  const metrics = [
+    ["并发槽", snapshot.capacity ?? 0],
+    ["运行", snapshot.running_count ?? 0],
+    ["排队", snapshot.queued_count ?? 0],
+    ["可用", snapshot.available_slots ?? 0],
+    ["历史", snapshot.finished_count ?? 0],
+  ];
+  const metricHtml = metrics
+    .map(
+      ([label, value]) => `
+        <span class="job-metric">
+          <b>${escapeHtml(label)}</b>
+          <strong>${escapeHtml(value)}</strong>
+        </span>
+      `,
+    )
+    .join("");
+  const jobsHtml = jobs.length
+    ? jobs.map(renderAutoJobRow).join("")
+    : '<p class="status">当前没有后台自动流程任务。</p>';
+  els.autoJobCenter.innerHTML = `
+    <div class="job-center-summary">
+      ${metricHtml}
+    </div>
+    ${renderThroughputPanel(throughput)}
+    ${renderCapacityAutotunePanel(state.capacityAutotune)}
+    ${renderCapacitySettingsPanel(capacitySettings, snapshot, deliverySnapshot)}
+    <div class="job-list">
+      ${jobsHtml}
+    </div>
+  `;
+}
+
+function renderCapacitySettingsPanel(settings = {}, snapshot = {}, deliverySnapshot = {}) {
+  const autoWorkers = Number(settings.auto_workflow_workers || snapshot.capacity || 2);
+  const deliveryJobWorkers = Number(settings.delivery_batch_job_workers || deliverySnapshot.capacity || 1);
+  const packageWorkers = Number(settings.delivery_package_workers || 4);
+  const maxAuto = Number(settings.max_auto_workflow_workers || 8);
+  const maxDeliveryJobs = Number(settings.max_delivery_batch_job_workers || 4);
+  const maxPackage = Number(settings.max_delivery_package_workers || 8);
+  const source = settings.source ? ` · ${settings.source}` : "";
+  return `
+    <form class="capacity-panel" data-capacity-form>
+      <div>
+        <b>容量设置</b>
+        <p>调整运行时并发上限，用于提升求解、打包和结果查看响应速度${escapeHtml(source)}。</p>
+      </div>
+      <label>
+        <span>自动流程槽</span>
+        <input class="text-input" name="auto_workflow_workers" type="number" min="1" max="${escapeHtml(maxAuto)}" value="${escapeHtml(autoWorkers)}" />
+      </label>
+      <label>
+        <span>批量任务</span>
+        <input class="text-input" name="delivery_batch_job_workers" type="number" min="1" max="${escapeHtml(maxDeliveryJobs)}" value="${escapeHtml(deliveryJobWorkers)}" />
+      </label>
+      <label>
+        <span>打包线程</span>
+        <input class="text-input" name="delivery_package_workers" type="number" min="1" max="${escapeHtml(maxPackage)}" value="${escapeHtml(packageWorkers)}" />
+      </label>
+      <button class="capacity-save" type="submit">应用</button>
+    </form>
+  `;
+}
+
+function renderCapacityAutotunePanel(autotune = {}) {
+  const latest = autotune?.latest || (autotune?.status ? autotune : null);
+  if (!latest) {
+    return "";
+  }
+  const updates = latest.updates && typeof latest.updates === "object" ? latest.updates : {};
+  const signals = latest.signals && typeof latest.signals === "object" ? latest.signals : {};
+  const updateText = Object.entries(updates).length
+    ? Object.entries(updates)
+      .map(([key, value]) => `${capacitySettingLabel(key)} -> ${value}`)
+      .join(" | ")
+    : "无需调整容量";
+  const signalText = [
+    ["自动队列", signals.auto_queue],
+    ["压力", signals.active_pressure],
+    ["交付队列", signals.delivery_queue],
+    ["打包积压", signals.package_backlog],
+  ]
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([label, value]) => `<span><b>${escapeHtml(label)}</b><strong>${escapeHtml(value)}</strong></span>`)
+    .join("");
+  return `
+    <section class="capacity-autotune" data-status="${escapeHtml(statusTone(latest.status === "applied" ? "success" : "idle"))}">
+      <div>
+        <b>自动调优审计</b>
+        <p>${escapeHtml(latest.summary || "尚未运行容量推荐。")}</p>
+      </div>
+      <strong>${escapeHtml(updateText)}</strong>
+      ${signalText ? `<div class="capacity-autotune-signals">${signalText}</div>` : ""}
+    </section>
+  `;
+}
+
+function capacitySettingLabel(key = "") {
+  const labels = {
+    auto_workflow_workers: "自动流程槽",
+    delivery_batch_job_workers: "批量任务槽",
+    delivery_package_workers: "打包线程",
+  };
+  return labels[key] || String(key || "").replaceAll("_", " ");
+}
+
+function renderThroughputPanel(throughput = {}) {
+  if (!throughput || typeof throughput !== "object" || !Object.keys(throughput).length) {
+    return "";
+  }
+  const utilization = Number(throughput.utilization || 0);
+  const pressure = Number(throughput.active_pressure || 0);
+  const metrics = [
+    ["推荐槽", `${throughput.recommended_workers ?? throughput.capacity ?? 0}/${throughput.max_configurable_workers ?? 8}`],
+    ["利用率", `${Math.round(utilization * 100)}%`],
+    ["压力", `${pressure.toFixed(2)}x`],
+    ["下个启动", formatDuration(throughput.eta_next_start_seconds)],
+    ["队列清空", formatDuration(throughput.eta_queue_clear_seconds)],
+    ["成功率", Number.isFinite(Number(throughput.recent_success_rate)) ? `${throughput.recent_success_rate}%` : "-"],
+  ];
+  const signals = Array.isArray(throughput.signals) ? throughput.signals : [];
+  const currentCapacity = Number(throughput.capacity || 0);
+  const maxWorkers = Number(throughput.max_configurable_workers || 0);
+  const recommendedWorkers = Number(throughput.recommended_workers || currentCapacity || 0);
+  const boundedRecommendation = Math.max(
+    1,
+    Math.min(maxWorkers || recommendedWorkers || 1, Number.isFinite(recommendedWorkers) ? Math.round(recommendedWorkers) : currentCapacity || 1),
+  );
+  const canAutotune = throughput.runtime_configurable === true;
+  const autotuneLabel = boundedRecommendation > currentCapacity ? `应用 ${boundedRecommendation} 个槽位` : "应用推荐";
+  return `
+    <section class="throughput-panel" data-status="${escapeHtml(statusTone(throughput.status))}">
+      <div class="throughput-head">
+        <span class="throughput-dot"></span>
+        <div>
+          <strong>${escapeHtml(throughput.label || "吞吐状态")}</strong>
+          <p>${escapeHtml(throughput.summary || "后台任务池处于待命状态。")}</p>
+        </div>
+      </div>
+      <div class="throughput-metrics">
+        ${metrics.map(([label, value]) => `
+          <span>
+            <b>${escapeHtml(label)}</b>
+            <strong>${escapeHtml(value)}</strong>
+          </span>
+        `).join("")}
+      </div>
+      ${throughput.scaling_action ? `<p class="throughput-action">${escapeHtml(throughput.scaling_action)}</p>` : ""}
+      ${signals.length ? `<div class="throughput-signals">${signals.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+      ${canAutotune ? `
+        <div class="throughput-tools">
+          <button class="throughput-apply" type="button" data-capacity-action="autotune" title="应用容量推荐">${escapeHtml(autotuneLabel)}</button>
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
+function renderAutoJobRow(job = {}) {
+  if (job.kind === "delivery_batch") {
+    return renderDeliveryBatchJobRow(job);
+  }
+  const currentId = state.currentProject?.metadata?.id || "";
+  const projectName = job.project_name || job.project_id || "项目";
+  const isCurrent = currentId && job.project_id === currentId;
+  const timing = job.status === "queued"
+    ? `等待 ${formatDuration(job.wait_seconds)}`
+    : job.status === "running"
+      ? `运行 ${formatDuration(job.run_seconds)}`
+      : `耗时 ${formatDuration(job.run_seconds)}`;
+  const mode = job.resume ? "继续生成" : "一键流程";
+  const error = job.error ? `<p>${escapeHtml(job.error)}</p>` : "";
+  return `
+    <article class="job-row${isCurrent ? " is-current" : ""}" data-status="${escapeHtml(statusTone(job.status))}">
+      <span class="job-status-dot"></span>
+      <div class="job-main">
+        <strong>${escapeHtml(projectName)}</strong>
+        <small>${escapeHtml(mode)} · ${escapeHtml(statusLabel(job.status))} · ${escapeHtml(timing)}</small>
+        ${error}
+      </div>
+      <button class="job-open" type="button" data-project-id="${escapeHtml(job.project_id || "")}">打开</button>
+    </article>
+  `;
+}
+
+function renderDeliveryBatchJobRow(job = {}) {
+  const timing = job.status === "queued"
+    ? `等待 ${formatDuration(job.wait_seconds)}`
+    : job.status === "running"
+      ? `运行 ${formatDuration(job.run_seconds)}`
+      : `耗时 ${formatDuration(job.run_seconds)}`;
+  const counts = `请求 ${job.requested_count || 0} · 生成 ${job.packaged_count || 0} · 跳过 ${job.skipped_count || 0} · 失败 ${job.failed_count || 0}`;
+  const detail = job.summary || counts;
+  const error = job.error ? `<p>${escapeHtml(job.error)}</p>` : "";
+  return `
+    <article class="job-row job-row-delivery" data-status="${escapeHtml(statusTone(job.status))}">
+      <span class="job-status-dot"></span>
+      <div class="job-main">
+        <strong>批量交付包</strong>
+        <small>${escapeHtml(statusLabel(job.status))} · ${escapeHtml(timing)} · ${escapeHtml(counts)}</small>
+        <p>${escapeHtml(detail)}</p>
+        ${error}
+      </div>
+      <span class="job-open job-open-static">交付</span>
+    </article>
+  `;
+}
+
+function formatDuration(value) {
+  const seconds = Math.max(0, Number(value) || 0);
+  if (seconds < 60) {
+    return `${Math.round(seconds)}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  if (minutes < 60) {
+    return `${minutes}m ${rest}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
 function statusLabel(value) {
   const labels = {
     success: "已完成",
     analyzed: "已分析",
     running: "运行中",
+    queued: "排队中",
     failed: "失败",
     completed_with_warnings: "需复核",
     requires_api_key: "待配置",
@@ -517,21 +1627,51 @@ function statusLabel(value) {
     interrupted: "可继续",
     idle: "未开始",
     warning: "需注意",
+    action_required: "需修复",
+    repairable: "可继续",
+    optimize: "可优化",
+    ready: "可启动",
+    clear: "无阻断",
+    healthy: "稳定",
+    busy: "高负载",
+    saturated: "拥堵",
+    growth_ready: "解题就绪",
+    delivery_ready: "待打包",
+    operating: "运行中",
+    building: "建设中",
+    empty: "等待项目",
+    deliverable: "可提交",
+    blocked: "不可提交",
+    needs_work: "需补齐",
+    review: "需复核",
+    pass: "通过",
+    fail: "失败",
+    submission_ready: "提交就绪",
+    solution_ready: "求解就绪",
+    incubating: "培育中",
+    trusted: "可信",
+    watch: "观察中",
+    at_risk: "存在风险",
+    hot: "高意向",
+    warm: "跟进中",
+    nurture: "培育中",
+    packaged: "已打包",
+    skipped: "已跳过",
   };
   return labels[value] || value || "未开始";
 }
 
 function statusTone(value) {
-  if (value === "success" || value === "analyzed" || value === "script_generated") {
+  if (value === "success" || value === "analyzed" || value === "script_generated" || value === "clear" || value === "healthy" || value === "ready" || value === "growth_ready" || value === "deliverable" || value === "pass" || value === "submission_ready" || value === "trusted") {
     return "success";
   }
-  if (value === "running" || value === "cancel_requested") {
+  if (value === "running" || value === "queued" || value === "cancel_requested" || value === "operating") {
     return "running";
   }
-  if (value === "failed" || value === "interrupted") {
+  if (value === "failed" || value === "interrupted" || value === "action_required" || value === "saturated" || value === "blocked" || value === "fail" || value === "at_risk") {
     return "failed";
   }
-  if (value === "completed_with_warnings" || value === "requires_api_key" || value === "cancelled") {
+  if (value === "completed_with_warnings" || value === "requires_api_key" || value === "cancelled" || value === "repairable" || value === "optimize" || value === "busy" || value === "delivery_ready" || value === "building" || value === "needs_work" || value === "review" || value === "solution_ready" || value === "incubating" || value === "watch") {
     return "warning";
   }
   return "pending";
@@ -769,6 +1909,10 @@ function renderArtifacts(metadata, projectId) {
     ["specialized_manifest", "专项结果清单"],
     ["specialized_summary", "专项结果摘要"],
     ["material_passport", "材料护照"],
+    ["attachment_profile", "并发附件画像"],
+    ["attachment_profile_json", "并发附件画像 JSON"],
+    ["parallel_task_plan", "并行求解任务计划"],
+    ["parallel_task_plan_json", "并行求解任务计划 JSON"],
     ["llm_problem_structure", "LLM 赛题结构增强"],
     ["llm_problem_analysis", "LLM 赛题分析"],
     ["llm_baseline_review", "LLM 基线复盘"],
@@ -786,6 +1930,11 @@ function renderArtifacts(metadata, projectId) {
     ["computed_manifest", "代码计算结果清单"],
     ["computed_summary", "代码计算结果摘要"],
     ["computed_result_prose", "结果整合说明"],
+    ["performance_health", "性能与修复健康报告"],
+    ["repair_briefing", "自动修复中心"],
+    ["delivery_readiness", "交付就绪报告"],
+    ["delivery_package", "正式交付包"],
+    ["delivery_package_manifest", "交付包清单"],
     ["paper_result_filled", "结果整合论文 LaTeX"],
     ["auto_workflow_report", "自动解题报告"],
     ["auto_workflow_report_json", "自动解题 JSON"],
@@ -817,6 +1966,10 @@ function renderArtifacts(metadata, projectId) {
     ["computed_solver_repair_json", "代码求解自动修复 JSON"],
     ["computed_completeness_json", "代码求解完整性检查 JSON"],
     ["computed_result_prose_json", "结果整合说明 JSON"],
+    ["performance_health_json", "性能与修复健康 JSON"],
+    ["repair_briefing_json", "自动修复中心 JSON"],
+    ["delivery_readiness_json", "交付就绪 JSON"],
+    ["delivery_package_manifest_json", "交付包 JSON"],
   ]
     .filter(([key]) => artifacts[key])
     .map(([key, label]) => [key, label, artifacts[key]]);
@@ -901,13 +2054,19 @@ function artifactGroup(key, path) {
   if (value.includes("paper") || value.includes("latex") || value.endsWith(".pdf") || value.endsWith(".tex") || value.endsWith(".docx")) {
     return "论文文件";
   }
-  if (value.includes("report") || value.includes("analysis") || value.includes("review") || value.includes("skill")) {
+  if (value.includes("report") || value.includes("analysis") || value.includes("review") || value.includes("skill") || value.includes("health")) {
     return "分析报告";
   }
-  if (value.includes("passport")) {
+  if (value.includes("repair_briefing")) {
     return "分析报告";
   }
-  if (value.includes("script") || value.includes("solver") || value.endsWith(".py")) {
+  if (value.includes("delivery_readiness")) {
+    return "分析报告";
+  }
+  if (value.includes("passport") || value.includes("attachment_profile")) {
+    return "分析报告";
+  }
+  if (value.includes("script") || value.includes("solver") || value.includes("parallel_task_plan") || value.endsWith(".py")) {
     return "代码与求解";
   }
   if (value.includes("manifest") || value.includes("summary") || value.endsWith(".json") || value.endsWith(".csv") || value.endsWith(".xlsx")) {
@@ -1099,11 +2258,252 @@ els.refresh.addEventListener("click", async () => {
   els.refresh.disabled = true;
   try {
     await loadProjects();
+    await loadAutoJobs();
+    await loadGrowthMetrics();
+    await loadTrustCenter();
     showToast("项目列表已刷新", "success");
   } catch (error) {
     showToast(`刷新项目失败：${error.message}`, "error");
   } finally {
     els.refresh.disabled = false;
+  }
+});
+
+els.refreshAutoJobs?.addEventListener("click", async () => {
+  els.refreshAutoJobs.disabled = true;
+  try {
+    await loadAutoJobs();
+    await loadGrowthMetrics();
+    await loadTrustCenter();
+    showToast("后台任务中心已刷新", "success");
+  } catch (error) {
+    showToast(`后台任务刷新失败：${error.message}`, "error");
+  } finally {
+    els.refreshAutoJobs.disabled = false;
+  }
+});
+
+els.refreshGrowthMetrics?.addEventListener("click", async () => {
+  els.refreshGrowthMetrics.disabled = true;
+  if (els.growthCenterStatus) {
+    els.growthCenterStatus.textContent = "正在刷新项目漏斗、交付产出和任务吞吐指标。";
+  }
+  try {
+    await loadGrowthMetrics();
+    await loadTrustCenter();
+    if (els.growthCenterStatus) {
+      els.growthCenterStatus.textContent = "解题进度中心已刷新。";
+    }
+    showToast("解题进度中心已刷新", "success");
+  } catch (error) {
+    if (els.growthCenterStatus) {
+      els.growthCenterStatus.textContent = `解题进度刷新失败：${error.message}`;
+    }
+    showToast(`解题进度刷新失败：${error.message}`, "error");
+  } finally {
+    els.refreshGrowthMetrics.disabled = false;
+  }
+});
+
+els.refreshTrustCenter?.addEventListener("click", async () => {
+  els.refreshTrustCenter.disabled = true;
+  if (els.trustCenterStatus) {
+    els.trustCenterStatus.textContent = "正在刷新质量与交付信任证据。";
+  }
+  try {
+    await loadTrustCenter();
+    if (els.trustCenterStatus) {
+      els.trustCenterStatus.textContent = "信任中心已刷新。";
+    }
+    showToast("信任中心已刷新", "success");
+  } catch (error) {
+    if (els.trustCenterStatus) {
+      els.trustCenterStatus.textContent = `信任中心刷新失败：${error.message}`;
+    }
+    showToast(`信任中心刷新失败：${error.message}`, "error");
+  } finally {
+    els.refreshTrustCenter.disabled = false;
+  }
+});
+
+els.trustCenter?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-trust-action]");
+  if (!button) {
+    return;
+  }
+  const command = button.dataset.trustAction;
+  if (!["export_audit", "repair_campaign"].includes(command)) {
+    return;
+  }
+  button.disabled = true;
+  if (els.trustCenterStatus) {
+    els.trustCenterStatus.textContent = command === "repair_campaign" ? "正在运行修复行动。" : "正在导出信任审计包。";
+  }
+  try {
+    if (command === "repair_campaign") {
+      const payload = await api("/api/product/trust/repair-campaign/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ queue_resumes: true, refresh_diagnostics: true, limit: 20 }),
+      });
+      state.trustMetrics = payload.trust || state.trustMetrics || {};
+      state.repairCampaigns = payload.repair_campaigns || state.repairCampaigns || null;
+      state.growthMetrics = payload.growth || state.growthMetrics;
+      state.autoJobs = payload.auto_jobs || state.autoJobs;
+      state.deliveryBatchJobs = payload.delivery_batch_jobs || state.deliveryBatchJobs;
+      renderTrustCenter(state.trustMetrics, state.trustExports);
+      renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
+      if (state.growthMetrics) {
+        renderGrowthCenter(state.growthMetrics);
+      }
+      const campaign = payload.repair_campaign || {};
+      if (els.trustCenterStatus) {
+        els.trustCenterStatus.textContent = campaign.summary || "修复行动已完成。";
+      }
+      showToast("修复行动已完成", "success");
+      return;
+    }
+    const payload = await api("/api/product/trust/export", { method: "POST" });
+    state.trustMetrics = payload.trust || payload.trust_report?.trust || state.trustMetrics || {};
+    state.trustExports = payload.trust_exports || state.trustExports || null;
+    renderTrustCenter(state.trustMetrics, state.trustExports);
+    const report = payload.trust_report || {};
+    if (els.trustCenterStatus) {
+      const sizeText = report.size ? ` · ${report.size}` : "";
+      els.trustCenterStatus.textContent = `信任审计包已导出：${report.filename || report.id || "压缩包"}${sizeText}`;
+    }
+    if (report.download_url) {
+      window.open(report.download_url, "_blank", "noopener");
+    }
+    showToast("信任审计包已就绪", "success");
+  } catch (error) {
+    if (els.trustCenterStatus) {
+      els.trustCenterStatus.textContent = `信任审计包导出失败：${error.message}`;
+    }
+    showToast(`信任审计包导出失败：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+els.growthCenter?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-growth-action]");
+  if (!button) {
+    return;
+  }
+  const command = button.dataset.growthAction;
+  button.disabled = true;
+  try {
+    if (command === "batch_packages") {
+      if (els.growthCenterStatus) {
+        els.growthCenterStatus.textContent = "正在并发生成所有可交付项目的正式交付包。";
+      }
+      const payload = await api("/api/delivery/packages/batch/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: false, max_workers: Number(state.capacitySettings?.delivery_package_workers || 4) }),
+      });
+      const job = payload.delivery_batch_job || {};
+      if (payload.delivery_batch_jobs) {
+        state.deliveryBatchJobs = payload.delivery_batch_jobs;
+      }
+      if (payload.growth) {
+        state.growthMetrics = payload.growth;
+        renderGrowthCenter(state.growthMetrics);
+      } else {
+        await loadGrowthMetrics();
+      }
+      await loadAutoJobs();
+      await loadProjects();
+      await loadTrustCenter();
+      if (els.growthCenterStatus) {
+        els.growthCenterStatus.textContent = job.summary || "批量交付包任务已入队。";
+      }
+      showToast(`批量交付包任务已入队：${job.requested_count || 0} 个项目`, "success");
+    }
+  } catch (error) {
+    if (els.growthCenterStatus) {
+      els.growthCenterStatus.textContent = `批量交付包失败：${error.message}`;
+    }
+    showToast(`批量交付包失败：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+els.autoJobCenter?.addEventListener("click", async (event) => {
+  const capacityButton = event.target.closest("[data-capacity-action='autotune']");
+  if (capacityButton) {
+    capacityButton.disabled = true;
+    try {
+      const response = await api("/api/product/capacity/autotune", { method: "POST" });
+      state.capacitySettings = response.capacity_settings || state.capacitySettings;
+      state.capacityAutotune = response.capacity_autotune_history || { latest: response.capacity_autotune, items: [response.capacity_autotune].filter(Boolean) };
+      state.autoJobs = response.auto_jobs || state.autoJobs;
+      state.deliveryBatchJobs = response.delivery_batch_jobs || state.deliveryBatchJobs;
+      renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
+      await loadGrowthMetrics();
+      await loadTrustCenter();
+      const plan = response.capacity_autotune || {};
+      showToast(plan.status === "already_optimal" ? "容量已经最优" : "容量推荐已应用", "success");
+    } catch (error) {
+      showToast(`容量推荐失败：${error.message}`, "error");
+    } finally {
+      capacityButton.disabled = false;
+    }
+    return;
+  }
+  const button = event.target.closest(".job-open");
+  if (!button) {
+    return;
+  }
+  const projectId = button.dataset.projectId;
+  if (!projectId) {
+    return;
+  }
+  button.disabled = true;
+  try {
+    await openProject(projectId);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+els.autoJobCenter?.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-capacity-form]");
+  if (!form) {
+    return;
+  }
+  event.preventDefault();
+  const button = form.querySelector("button[type='submit']");
+  if (button) {
+    button.disabled = true;
+  }
+  try {
+    const formData = new FormData(form);
+    const payload = {
+      auto_workflow_workers: Number(formData.get("auto_workflow_workers") || 0),
+      delivery_batch_job_workers: Number(formData.get("delivery_batch_job_workers") || 0),
+      delivery_package_workers: Number(formData.get("delivery_package_workers") || 0),
+    };
+    const response = await api("/api/product/capacity", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    state.capacitySettings = response.capacity_settings || state.capacitySettings;
+    state.autoJobs = response.auto_jobs || state.autoJobs;
+    state.deliveryBatchJobs = response.delivery_batch_jobs || state.deliveryBatchJobs;
+    renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
+    await loadGrowthMetrics();
+    await loadTrustCenter();
+    showToast("容量设置已应用", "success");
+  } catch (error) {
+    showToast(`容量设置失败：${error.message}`, "error");
+  } finally {
+    if (button) {
+      button.disabled = false;
+    }
   }
 });
 
@@ -1113,6 +2513,43 @@ if (els.projectSearch) {
     renderProjectList();
   });
 }
+
+els.projectList?.addEventListener("change", (event) => {
+  const input = event.target.closest(".project-select-input");
+  if (!input) {
+    return;
+  }
+  const projectId = input.dataset.projectId;
+  if (!projectId) {
+    return;
+  }
+  if (input.checked) {
+    state.selectedProjectIds.add(projectId);
+  } else {
+    state.selectedProjectIds.delete(projectId);
+  }
+  renderProjectList();
+});
+
+els.selectAnalyzedProjects?.addEventListener("click", () => {
+  currentFilteredProjects().forEach((project) => {
+    if (project.analysis_available && project.id) {
+      state.selectedProjectIds.add(project.id);
+    }
+  });
+  renderProjectList();
+  els.batchProjectStatus.textContent = `已选择 ${state.selectedProjectIds.size} 个已分析项目。`;
+});
+
+els.clearProjectSelection?.addEventListener("click", () => {
+  state.selectedProjectIds.clear();
+  renderProjectList();
+  els.batchProjectStatus.textContent = "已清空批量选择。";
+});
+
+els.batchStartProjects?.addEventListener("click", async () => {
+  await startSelectedProjectsBatch();
+});
 
 if (els.openProjectRoot) {
   els.openProjectRoot.addEventListener("click", async () => {
@@ -1142,6 +2579,17 @@ if (els.openProjectRoot) {
   });
 }
 
+els.workflowStrategyInput?.addEventListener("change", () => {
+  const selected = els.workflowStrategyInput.value || "balanced";
+  const options = state.llmSettings?.workflow_strategy_options || [];
+  const option = options.find((item) => item.id === selected);
+  if (els.workflowStrategyHint) {
+    els.workflowStrategyHint.textContent = option
+      ? `当前策略：${option.label}。${option.summary}`
+      : "当前策略：均衡。速度和成功率兼顾。";
+  }
+});
+
 els.llmSettingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = els.llmSettingsForm.querySelector("button[type='submit']");
@@ -1152,6 +2600,7 @@ els.llmSettingsForm.addEventListener("submit", async (event) => {
       api_key: els.apiKeyInput.value,
       base_url: els.baseUrlInput.value,
       model: els.modelInput.value,
+      workflow_strategy: els.workflowStrategyInput?.value || "balanced",
     };
     const settings = await api("/api/settings/llm", {
       method: "PUT",
@@ -1419,7 +2868,7 @@ async function runAutoWorkflow(
   const settings = state.llmSettings || (await api("/api/settings/llm"));
   state.llmSettings = settings;
   if (!settings.configured) {
-    els.autoWorkflowStatus.textContent = "请先在左侧 AI 设置中填写 API Key；LLM+代码自动解题不提供本地降级模式。";
+    els.autoWorkflowStatus.textContent = "请先在左侧 AI 设置中填写 API 密钥；LLM+代码自动解题不提供本地降级模式。";
     return;
   }
   const selectedId = selectedProblemId(state.currentProject?.metadata || {});
@@ -1430,22 +2879,37 @@ async function runAutoWorkflow(
   els.runAutoWorkflow.disabled = true;
   if (els.resumeAutoWorkflow) els.resumeAutoWorkflow.disabled = true;
   if (els.cancelAutoWorkflow) els.cancelAutoWorkflow.disabled = false;
-  els.autoWorkflowStatus.textContent = resume ? "正在从上次成功阶段继续生成论文。" : initialMessage;
-  const stopProgressPolling = startAutoProgressPolling(projectId);
+  els.autoWorkflowStatus.textContent = resume ? "正在提交后台继续生成任务。" : "正在提交后台自动流程任务。";
   try {
-    const endpoint = resume ? "resume" : "run";
+    const endpoint = resume ? "resume/start" : "start";
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/${endpoint}`, { method: "POST" });
     renderProject(payload.project);
-    const workflow = payload.auto_workflow || {};
-    const steps = workflow.steps || [];
+    const job = payload.auto_job || {};
+    await loadAutoJobs();
+    await loadTrustCenter();
+    const workerText = job.max_workers ? `，任务池并发 ${job.max_workers}` : "";
+    els.autoWorkflowStatus.textContent = job.existing
+      ? `已有自动流程后台任务正在执行${workerText}，正在接管进度。`
+      : `${initialMessage} 已进入后台任务池${workerText}。`;
+    showToast(job.existing ? "已接管正在运行的自动流程" : "自动流程已提交后台任务", "success");
+    await refreshAutoProgress(projectId);
+    const finalPayload = await waitForAutoWorkflowCompletion(projectId);
+    const finalStatus = finalPayload.status || finalPayload.progress?.status || "";
+    const steps = finalPayload.progress?.steps || [];
     const warningCount = steps.filter((step) => step.status === "warning").length;
     const failedCount = steps.filter((step) => step.status === "failed").length;
-    if (workflow.overall_status === "success") {
+    const detail = await api(`/api/projects/${encodeURIComponent(projectId)}`);
+    renderProject(detail);
+    if (finalStatus === "success") {
       els.autoWorkflowStatus.textContent = "LLM+代码自动流程完成：已生成题解方案、运行代码得到结果、回填论文、审查报告和支撑材料。";
       showToast("自动流程已完成", "success");
-    } else if (workflow.overall_status === "cancelled") {
+    } else if (finalStatus === "cancelled") {
       els.autoWorkflowStatus.textContent = "自动流程已中断：当前阶段已安全结束，可点击“继续生成”从断点恢复。";
       showToast("自动流程已中断，可继续生成", "warning");
+    } else if (finalStatus === "failed" || finalStatus === "requires_api_key") {
+      const hint = finalPayload.progress?.resume_hint || finalPayload.progress?.last_failure_diagnosis?.suggested_action || "请查看进度诊断后继续生成。";
+      els.autoWorkflowStatus.textContent = `自动流程失败：${hint}`;
+      showToast("自动流程失败，可查看诊断后继续生成", "error");
     } else {
       els.autoWorkflowStatus.textContent = `自动流程完成但需复核：${warningCount} 个警告，${failedCount} 个失败项。请查看自动解题报告。`;
       showToast("自动流程完成但需要复核", "warning");
@@ -1454,26 +2918,47 @@ async function runAutoWorkflow(
   } catch (error) {
     els.autoWorkflowStatus.textContent = `自动流程失败：${error.message}`;
     showToast(`自动流程失败：${error.message}`, "error");
+    try {
+      const detail = await api(`/api/projects/${encodeURIComponent(projectId)}`);
+      renderProject(detail);
+      await loadProjects();
+    } catch {
+      // Keep the visible error if the follow-up refresh also fails.
+    }
   } finally {
-    stopProgressPolling();
     await refreshAutoProgress(projectId);
+    await loadAutoJobs();
+    await loadGrowthMetrics();
+    await loadTrustCenter();
     els.runAutoWorkflow.disabled = false;
     if (els.cancelAutoWorkflow) els.cancelAutoWorkflow.disabled = true;
   }
 }
 
-function startAutoProgressPolling(projectId) {
-  let stopped = false;
-  refreshAutoProgress(projectId);
-  const timer = window.setInterval(() => {
-    if (!stopped) {
-      refreshAutoProgress(projectId);
+async function waitForAutoWorkflowCompletion(projectId) {
+  let latest = null;
+  let ticks = 0;
+  for (;;) {
+    await delay(900);
+    latest = await api(`/api/projects/${encodeURIComponent(projectId)}/progress`);
+    renderAutoWorkflowProgress(latest.progress);
+    updateAutoWorkflowButtons(latest.status, latest.progress || {});
+    ticks += 1;
+    if (ticks % 4 === 0) {
+      await loadAutoJobs();
     }
-  }, 700);
-  return () => {
-    stopped = true;
-    window.clearInterval(timer);
-  };
+    if (!isAutoWorkflowActive(latest.status, latest.progress || {})) {
+      await loadAutoJobs();
+      return latest;
+    }
+  }
+}
+
+function isAutoWorkflowActive(status = "", progress = {}) {
+  return (
+    ["queued", "running", "cancel_requested"].includes(status) ||
+    ["queued", "running", "between_steps"].includes(progress.status)
+  );
 }
 
 async function refreshAutoProgress(projectId) {
@@ -1494,13 +2979,16 @@ function renderAutoWorkflowProgress(progress = {}) {
 }
 
 function updateAutoWorkflowButtons(status = "", progress = {}) {
-  const running = status === "running" || status === "cancel_requested" || progress.status === "running" || progress.status === "between_steps";
+  const running = isAutoWorkflowActive(status, progress);
   const canResume = Boolean(progress.can_resume) || ["failed", "cancelled", "completed_with_warnings", "cancel_requested", "interrupted"].includes(status);
   if (els.runAutoWorkflow) {
     els.runAutoWorkflow.disabled = running;
   }
   if (els.resumeAutoWorkflow) {
     els.resumeAutoWorkflow.disabled = running || !canResume;
+    els.resumeAutoWorkflow.title = canResume
+      ? progress.resume_hint || progress.last_failure_diagnosis?.suggested_action || "从上次成功阶段继续生成"
+      : "当前没有可继续的自动流程";
   }
   if (els.cancelAutoWorkflow) {
     els.cancelAutoWorkflow.disabled = !running || Boolean(progress.cancel_requested);
@@ -1535,7 +3023,7 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
     </div>
     <div class="progress-bar"><i style="width: ${percent}%"></i></div>
     <div class="progress-steps">
-      ${allSteps.map(renderProgressStep).join("")}
+      ${allSteps.map((step) => renderProgressStep(step, progress)).join("")}
     </div>
     ${renderLlmLiveStream(liveStream)}
   `;
@@ -1588,10 +3076,14 @@ function renderLiveEvent(event) {
   `;
 }
 
-function renderProgressStep(step) {
+function renderProgressStep(step, progress = {}) {
   const status = step.status || "pending";
   const duration = step.duration_seconds ? ` · ${step.duration_seconds}s` : "";
   const detail = step.detail ? `<p>${escapeHtml(step.detail)}</p>` : "";
+  const diagnosis = renderFailureDiagnosis(step.failure_diagnosis, {
+    canResume: Boolean(progress.can_resume),
+    resumeHint: progress.resume_hint,
+  });
   const projectId = state.currentProject?.metadata?.id;
   const errorLog = projectId && step.error_log
     ? `<a class="progress-link" href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(step.error_log)}">查看错误日志</a>`
@@ -1603,11 +3095,55 @@ function renderProgressStep(step) {
         <strong>${escapeHtml(step.title || step.id || "阶段")}</strong>
         <small>${escapeHtml(statusLabel(status))}${escapeHtml(duration)}</small>
         ${detail}
+        ${diagnosis}
         ${errorLog}
       </div>
     </div>
   `;
 }
+
+function renderFailureDiagnosis(diagnosis = {}, options = {}) {
+  if (!diagnosis || typeof diagnosis !== "object" || !diagnosis.category) {
+    return "";
+  }
+  const label = diagnosis.label || diagnosis.category || "失败诊断";
+  const focus = diagnosis.repair_focus || diagnosis.evidence || "";
+  const category = diagnosis.category ? `<b>${escapeHtml(diagnosis.category)}</b>` : "";
+  const action = diagnosis.suggested_action || options.resumeHint || (options.canResume ? "点击继续生成，系统会带着本次诊断继续自动修复。" : "");
+  const resumeButton = options.canResume && state.currentProject?.metadata?.id
+    ? '<button class="diagnosis-resume" type="button" data-auto-action="resume">继续生成</button>'
+    : "";
+  return `
+    <div class="failure-diagnosis">
+      <div>
+        <span>诊断</span>
+        <strong>${escapeHtml(label)}</strong>
+        ${category}
+      </div>
+      ${focus ? `<p>${escapeHtml(focus)}</p>` : ""}
+      ${action || resumeButton ? `
+        <div class="failure-diagnosis-actions">
+          ${action ? `<p>建议动作：${escapeHtml(action)}</p>` : ""}
+          ${resumeButton}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+els.autoWorkflowProgress?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-auto-action='resume']");
+  if (!button) {
+    return;
+  }
+  const projectId = state.currentProject?.metadata?.id;
+  if (!projectId) {
+    els.autoWorkflowStatus.textContent = "请先打开一个项目。";
+    return;
+  }
+  button.disabled = true;
+  await runAutoWorkflow(projectId, { resume: true });
+});
 
 els.runAutoWorkflow.addEventListener("click", async () => {
   const projectId = state.currentProject?.metadata?.id;
@@ -1634,12 +3170,243 @@ if (els.cancelAutoWorkflow) {
       const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/cancel`, { method: "POST" });
       renderProject(payload.project);
       await refreshAutoProgress(projectId);
+      await loadAutoJobs();
+      await loadProjects();
+      await loadTrustCenter();
     } catch (error) {
       els.autoWorkflowStatus.textContent = `中断请求失败：${error.message}`;
       els.cancelAutoWorkflow.disabled = false;
     }
   });
 }
+
+async function refreshDiagnosticsForProject(projectId) {
+  els.refreshDiagnostics.disabled = true;
+  els.diagnosticsStatus.textContent = "正在刷新附件画像、并行计划、性能健康和修复中心。";
+  try {
+    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/diagnostics/refresh`, { method: "POST" });
+    renderProject(payload.project);
+    const health = payload.diagnostics?.health || {};
+    const score = health.scores?.overall;
+    const scoreText = Number.isFinite(Number(score)) ? `，综合 ${Number(score)} 分` : "";
+    const repair = payload.diagnostics?.repair || {};
+    const repairText = repair.label ? `，修复中心：${repair.label}` : "";
+    els.diagnosticsStatus.textContent = `诊断资产已刷新：${health.label || "已完成"}${scoreText}${repairText}。`;
+    showToast("诊断与性能报告已刷新", "success");
+    await loadProjects();
+    await loadTrustCenter();
+  } catch (error) {
+    els.diagnosticsStatus.textContent = `诊断刷新失败：${error.message}`;
+    showToast(`诊断刷新失败：${error.message}`, "error");
+  } finally {
+    els.refreshDiagnostics.disabled = false;
+  }
+}
+
+els.refreshDiagnostics?.addEventListener("click", async () => {
+  const projectId = state.currentProject?.metadata?.id;
+  if (!projectId) {
+    els.diagnosticsStatus.textContent = "请先打开一个项目。";
+    return;
+  }
+  await refreshDiagnosticsForProject(projectId);
+});
+
+async function refreshRepairCenterForProject(projectId) {
+  if (els.refreshRepairCenter) {
+    els.refreshRepairCenter.disabled = true;
+  }
+  if (els.repairCenterStatus) {
+    els.repairCenterStatus.textContent = "正在重建自动修复简报。";
+  }
+  try {
+    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/repair/briefing`, { method: "POST" });
+    renderProject(payload.project);
+    const label = payload.repair?.label || payload.project?.metadata?.repair_center_label || "已完成";
+    if (els.repairCenterStatus) {
+      els.repairCenterStatus.textContent = `修复中心已刷新：${label}。`;
+    }
+    showToast("自动修复中心已刷新", "success");
+    await loadProjects();
+    await loadTrustCenter();
+  } catch (error) {
+    if (els.repairCenterStatus) {
+      els.repairCenterStatus.textContent = `修复中心刷新失败：${error.message}`;
+    }
+    showToast(`修复中心刷新失败：${error.message}`, "error");
+  } finally {
+    if (els.refreshRepairCenter) {
+      els.refreshRepairCenter.disabled = false;
+    }
+  }
+}
+
+els.refreshRepairCenter?.addEventListener("click", async () => {
+  const projectId = state.currentProject?.metadata?.id;
+  if (!projectId) {
+    els.repairCenterStatus.textContent = "请先打开一个项目。";
+    return;
+  }
+  await refreshRepairCenterForProject(projectId);
+});
+
+async function refreshDeliveryReadinessForProject(projectId) {
+  if (els.refreshDeliveryReadiness) {
+    els.refreshDeliveryReadiness.disabled = true;
+  }
+  if (els.deliveryReadinessStatus) {
+    els.deliveryReadinessStatus.textContent = "正在检查论文、结果、审查和支撑材料交付状态。";
+  }
+  try {
+    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/delivery/readiness`, { method: "POST" });
+    renderProject(payload.project);
+    const label = payload.delivery?.label || payload.project?.metadata?.delivery_readiness_label || "已完成";
+    const score = payload.delivery?.score ?? payload.project?.metadata?.delivery_readiness_score;
+    const scoreText = Number.isFinite(Number(score)) ? `，交付分 ${Number(score)}` : "";
+    if (els.deliveryReadinessStatus) {
+      els.deliveryReadinessStatus.textContent = `交付就绪已刷新：${label}${scoreText}。`;
+    }
+    showToast("交付就绪中心已刷新", "success");
+    await loadProjects();
+    await loadGrowthMetrics();
+    await loadTrustCenter();
+  } catch (error) {
+    if (els.deliveryReadinessStatus) {
+      els.deliveryReadinessStatus.textContent = `交付就绪刷新失败：${error.message}`;
+    }
+    showToast(`交付就绪刷新失败：${error.message}`, "error");
+  } finally {
+    if (els.refreshDeliveryReadiness) {
+      els.refreshDeliveryReadiness.disabled = false;
+    }
+  }
+}
+
+els.refreshDeliveryReadiness?.addEventListener("click", async () => {
+  const projectId = state.currentProject?.metadata?.id;
+  if (!projectId) {
+    els.deliveryReadinessStatus.textContent = "请先打开一个项目。";
+    return;
+  }
+  await refreshDeliveryReadinessForProject(projectId);
+});
+
+els.repairCenter?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-repair-action]");
+  if (!button) {
+    return;
+  }
+  const projectId = state.currentProject?.metadata?.id;
+  if (!projectId) {
+    return;
+  }
+  const command = button.dataset.repairAction;
+  if (command === "resume") {
+    await runAutoWorkflow(projectId, { resume: true });
+    return;
+  }
+  if (command === "start") {
+    await runAutoWorkflow(projectId, { resume: false });
+    return;
+  }
+  if (command === "diagnostics") {
+    await refreshDiagnosticsForProject(projectId);
+    return;
+  }
+  if (command === "open_report") {
+    const artifacts = state.currentProject?.metadata?.artifacts || {};
+    const path = artifacts.repair_briefing || artifacts.repair_briefing_json || artifacts.computed_solver_repair;
+    if (path) {
+      window.open(`/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(path)}`, "_blank", "noopener");
+    }
+  }
+});
+
+els.deliveryCenter?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-delivery-action]");
+  if (!button) {
+    return;
+  }
+  const projectId = state.currentProject?.metadata?.id;
+  if (!projectId) {
+    return;
+  }
+  const command = button.dataset.deliveryAction;
+  button.disabled = true;
+  try {
+    if (command === "resume") {
+      await runAutoWorkflow(projectId, { resume: true });
+      return;
+    }
+    if (command === "start") {
+      await runAutoWorkflow(projectId, { resume: false });
+      return;
+    }
+    if (command === "analyze") {
+      if (els.deliveryReadinessStatus) {
+        els.deliveryReadinessStatus.textContent = "正在重建赛题分析并刷新交付门禁。";
+      }
+      const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/analyze`, { method: "POST" });
+      renderProject(payload.project);
+      await refreshDeliveryReadinessForProject(projectId);
+      await loadProjects();
+      return;
+    }
+    if (command === "diagnostics") {
+      await refreshDiagnosticsForProject(projectId);
+      await refreshDeliveryReadinessForProject(projectId);
+      return;
+    }
+    if (command === "repair") {
+      await refreshRepairCenterForProject(projectId);
+      await refreshDeliveryReadinessForProject(projectId);
+      return;
+    }
+    if (command === "package") {
+      if (els.deliveryReadinessStatus) {
+        els.deliveryReadinessStatus.textContent = "正在生成正式交付包、清单和文件哈希。";
+      }
+      const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/delivery/package`, { method: "POST" });
+      renderProject(payload.project);
+      const size = payload.package?.package?.size_bytes;
+      const sizeText = Number.isFinite(Number(size)) ? `，大小 ${formatBytes(Number(size))}` : "";
+      if (els.deliveryReadinessStatus) {
+        els.deliveryReadinessStatus.textContent = `正式交付包已生成${sizeText}。`;
+      }
+      showToast("正式交付包已生成", "success");
+      await loadProjects();
+      await loadGrowthMetrics();
+      await loadTrustCenter();
+      return;
+    }
+    if (command === "compile") {
+      els.compileStatus.textContent = "正在编译 PDF 并导出 Word。";
+      const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/compile`, { method: "POST" });
+      renderProject(payload.project);
+      els.compileStatus.textContent = payload.compile.success ? "编译完成：已生成 PDF，并导出 Word 文档。" : "编译失败，请查看编译日志和 Word 导出日志。";
+      await loadProjects();
+      return;
+    }
+    if (command === "review") {
+      els.paperReviewStatus.textContent = "正在审查论文结构、图表、编译日志和结果可追溯性。";
+      const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/paper/review`, { method: "POST" });
+      renderProject(payload.project);
+      els.paperReviewStatus.textContent = "论文审查完成，可查看审查报告。";
+      await loadProjects();
+      return;
+    }
+    if (command === "support_zip") {
+      window.open(`/api/projects/${encodeURIComponent(projectId)}/download/support.zip`, "_blank", "noopener");
+    }
+  } catch (error) {
+    if (els.deliveryReadinessStatus) {
+      els.deliveryReadinessStatus.textContent = `交付动作失败：${error.message}`;
+    }
+    showToast(`交付动作失败：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+  }
+});
 
 els.generateSkillReport.addEventListener("click", async () => {
   const projectId = state.currentProject?.metadata?.id;
@@ -1817,3 +3584,6 @@ initThemeToggle();
 initModuleTabs();
 checkHealth();
 loadProjects();
+loadAutoJobs();
+loadGrowthMetrics();
+loadTrustCenter();

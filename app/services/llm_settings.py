@@ -6,6 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from app.config import SETTINGS_ROOT
+from app.services.workflow_strategy import (
+    DEFAULT_WORKFLOW_STRATEGY,
+    get_workflow_strategy,
+    normalize_workflow_strategy,
+    workflow_strategy_options,
+)
 
 
 SETTINGS_PATH = SETTINGS_ROOT / "llm.json"
@@ -18,6 +24,7 @@ def get_llm_settings() -> dict[str, Any]:
     env_key = os.getenv("OPENAI_API_KEY", "")
     api_key = stored.get("api_key") or env_key
     source = "local" if stored.get("api_key") else "env" if env_key else ""
+    strategy = get_workflow_strategy(stored.get("workflow_strategy"))
     return {
         "provider": "openai",
         "configured": bool(api_key),
@@ -25,6 +32,10 @@ def get_llm_settings() -> dict[str, Any]:
         "masked_api_key": mask_api_key(api_key),
         "base_url": stored.get("base_url") or DEFAULT_BASE_URL,
         "model": stored.get("model") or DEFAULT_MODEL,
+        "workflow_strategy": strategy["id"],
+        "workflow_strategy_label": strategy["label"],
+        "workflow_strategy_summary": strategy["summary"],
+        "workflow_strategy_options": workflow_strategy_options(),
     }
 
 
@@ -35,14 +46,23 @@ def get_private_llm_config() -> dict[str, str]:
         "api_key": stored.get("api_key") or env_key,
         "base_url": stored.get("base_url") or DEFAULT_BASE_URL,
         "model": stored.get("model") or DEFAULT_MODEL,
+        "workflow_strategy": normalize_workflow_strategy(stored.get("workflow_strategy")),
     }
 
 
-def save_llm_settings(api_key: str | None, base_url: str | None, model: str | None) -> dict[str, Any]:
+def save_llm_settings(
+    api_key: str | None,
+    base_url: str | None,
+    model: str | None,
+    workflow_strategy: str | None = None,
+) -> dict[str, Any]:
     current = load_settings()
     normalized_key = normalize_api_key(api_key)
     normalized_base_url = normalize_base_url(base_url)
     normalized_model = normalize_model(model)
+    normalized_strategy = normalize_workflow_strategy(
+        workflow_strategy if workflow_strategy is not None else current.get("workflow_strategy", DEFAULT_WORKFLOW_STRATEGY)
+    )
 
     if normalized_key:
         current["api_key"] = normalized_key
@@ -51,6 +71,7 @@ def save_llm_settings(api_key: str | None, base_url: str | None, model: str | No
         current["base_url"] = normalized_base_url
     if normalized_model:
         current["model"] = normalized_model
+    current["workflow_strategy"] = normalized_strategy
 
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_PATH.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")

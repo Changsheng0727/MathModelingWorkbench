@@ -384,7 +384,7 @@ BACKEND_SKILLS: list[dict[str, Any]] = [
         "category": "math_modeling_agent",
         "source": "jihe520/MathModelAgent",
         "source_url": "https://github.com/jihe520/MathModelAgent",
-        "license_note": "项目 README 写明个人免费使用、商业用途需联系作者；后端仅总结公开工作流，不复制实现。",
+        "license_note": "项目 README 写明个人免费使用、非个人用途需联系作者；后端仅总结公开工作流，不复制实现。",
         "why_selected": "该项目专门针对数学建模竞赛，包含上传赛题、配置 API Key、自动建模、生成论文和支撑文件等产品化思路。",
         "backend_guidance": [
             "保持 BYOK：没有 API Key 时禁止 LLM 自动解题和代码求解流程。",
@@ -474,7 +474,7 @@ BACKEND_SKILLS: list[dict[str, Any]] = [
         "backend_guidance": [
             "优化类题目必须在求解规范中显式写出决策变量、目标函数、约束、数据到参数的映射和可行性检查。",
             "代码生成后必须输出约束满足表、目标函数值、关键变量表和求解状态，不能只写一段文字结论。",
-            "若缺少商业求解器，优先使用 scipy、PuLP/HiGHS 可用能力或启发式算法，并在论文中说明最优性边界。",
+            "若缺少专有求解器，优先使用 scipy、PuLP/HiGHS 可用能力或启发式算法，并在论文中说明最优性边界。",
         ],
     },
     {

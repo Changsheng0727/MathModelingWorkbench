@@ -10,6 +10,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from app.services.attachment_profile import (
+    ATTACHMENT_PROFILE_MD_RELATIVE,
+    ATTACHMENT_PROFILE_RELATIVE,
+    build_attachment_profile,
+    compact_attachment_profile_for_prompt,
+)
 from app.services.executor import run_python_script
 from app.services.backend_skills import render_model_method_routes, render_modeling_process_gates, render_standard_paper_rules
 from app.services.llm_assistant import call_chat_completion, compact_analysis
@@ -21,7 +27,15 @@ from app.services.llm_solution import (
     require_llm_configured,
 )
 from app.services.paper import latex_escape
+from app.services.parallel_task_plan import (
+    PARALLEL_TASK_PLAN_MD_RELATIVE,
+    PARALLEL_TASK_PLAN_RELATIVE,
+    build_parallel_task_plan,
+    compact_parallel_task_plan_for_prompt,
+)
+from app.services.performance_health import write_performance_health_report
 from app.services.store import load_json, save_json
+from app.services.workflow_strategy import get_workflow_strategy, public_workflow_strategy
 
 
 SCRIPT_RELATIVE = "code/run_computed_solution.py"
@@ -47,22 +61,44 @@ def run_code_result_pipeline(
     integrate_paper: bool = True,
     resume: bool = False,
     repair_context: dict[str, Any] | None = None,
+    workflow_strategy: str | None = None,
 ) -> dict[str, str]:
     """Generate a solver plan, run project-local code, and insert computed results."""
     settings = require_llm_configured()
+    strategy = get_workflow_strategy(workflow_strategy or settings.get("workflow_strategy"))
     paper_options = paper_options or {}
     failure_context = collect_solver_repair_context(root, repair_context)
     should_reuse = bool(resume or failure_context.get("has_failure"))
     artifacts: dict[str, str] = {}
+    artifacts.update(build_attachment_profile(root, analysis))
+    script_written = False
 
     spec = load_existing_solver_spec(root) if should_reuse else {}
     if spec:
         spec = normalize_solver_spec(spec, analysis)
         artifacts.update(existing_solver_artifacts(root))
     else:
-        spec = generate_solver_spec(root, analysis, paper_options, repair_context=failure_context if should_reuse else None)
-        artifacts.update(write_computed_solver_script(root, analysis, spec, settings, repair_context=failure_context if should_reuse else None))
+        spec = generate_solver_spec(
+            root,
+            analysis,
+            paper_options,
+            repair_context=failure_context if should_reuse else None,
+            workflow_strategy=strategy,
+        )
+        artifacts.update(build_parallel_task_plan(root, analysis, spec, workflow_strategy=strategy))
+        artifacts.update(
+            write_computed_solver_script(
+                root,
+                analysis,
+                spec,
+                settings,
+                repair_context=failure_context if should_reuse else None,
+                workflow_strategy=strategy,
+            )
+        )
+        script_written = True
         should_reuse = False
+    artifacts.update(build_parallel_task_plan(root, analysis, spec, workflow_strategy=strategy))
 
     script_path = root / SCRIPT_RELATIVE
     if should_reuse and script_path.exists():
@@ -76,13 +112,24 @@ def run_code_result_pipeline(
                 synthetic_run_result_from_repair_context(root, failure_context),
                 next_repair_attempt(root),
                 repair_context=failure_context,
+                workflow_strategy=strategy,
             )
             artifacts.update(repair_artifacts)
-    else:
-        artifacts.update(write_computed_solver_script(root, analysis, spec, settings, repair_context=failure_context if should_reuse else None))
+    elif not script_written:
+        artifacts.update(
+            write_computed_solver_script(
+                root,
+                analysis,
+                spec,
+                settings,
+                repair_context=failure_context if should_reuse else None,
+                workflow_strategy=strategy,
+            )
+        )
 
-    run_result = run_solver_with_repair_loop(root, analysis, spec, settings, artifacts, failure_context)
+    run_result = run_solver_with_repair_loop(root, analysis, spec, settings, artifacts, failure_context, workflow_strategy=strategy)
     artifacts.update(artifacts_from_run_result(run_result))
+    artifacts.update(write_performance_health_report(root))
     if not run_result.get("success"):
         raise RuntimeError(
             run_result.get("error")
@@ -134,19 +181,24 @@ def generate_solver_spec(
     analysis: dict[str, Any],
     paper_options: dict[str, Any],
     repair_context: dict[str, Any] | None = None,
+    workflow_strategy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Ask the LLM for a task-specific computational specification, not executable code."""
     settings = require_llm_configured()
+    strategy = get_workflow_strategy(workflow_strategy if workflow_strategy is not None else settings.get("workflow_strategy"))
     llm_solution = load_json_if_exists(root / "artifacts" / "llm_full_solution.json")
     context = {
         "analysis": compact_analysis(analysis),
         "inventory": compact_inventory(analysis.get("inventory", [])),
+        "attachment_profile": compact_attachment_profile_for_prompt(root, analysis),
         "llm_solution_selection": (llm_solution.get("sections") or {}).get("selection", {}),
         "llm_solution_model_chain": (llm_solution.get("sections") or {}).get("model", {}),
         "paper_options": paper_options,
         "model_method_routes": render_model_method_routes(max_chars=5000),
         "modeling_process_gates": render_modeling_process_gates(max_chars=5000),
         "standard_paper_rules": render_standard_paper_rules(),
+        "workflow_strategy": public_workflow_strategy(strategy["id"]),
+        "workflow_strategy_prompt": strategy["prompt"],
     }
     if repair_context:
         context["repair_context"] = compact_for_prompt(repair_context, max_chars=14000)
@@ -198,6 +250,7 @@ missing validation tables/figures. Preserve useful existing solver decisions whe
 5. 选择模型时参考输入中的 model_method_routes：每个子问题都要匹配题型、候选模型、应输出图表和检验方式；若不匹配，说明原因并选择更简单可复现的方法。
 6. process_gates 和 freeze_rules 必须体现输入中的 modeling_process_gates：先 PoC/基线，再完整求解；先冻结关键结果，再回填摘要、结论和模型检验。
 7. traceability_rules 必须体现输入中的 standard_paper_rules：主张-证据对齐、数值来源、图表解释、引用真实性、支撑材料和人工复核点。
+8. workflow_strategy 控制本次执行风格：{strategy["prompt"]}
 
 输入 JSON：
 ```json
@@ -211,6 +264,7 @@ missing validation tables/figures. Preserve useful existing solver decisions whe
         "stage": "computed_solver_spec",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "settings": public_settings(settings),
+        "workflow_strategy": public_workflow_strategy(strategy["id"]),
         "success": True,
         "generation_attempts": spec_attempts,
         "spec": spec,
@@ -319,6 +373,10 @@ def load_existing_solver_spec(root: Path) -> dict[str, Any]:
 
 def existing_solver_artifacts(root: Path) -> dict[str, str]:
     candidates = {
+        "attachment_profile": ATTACHMENT_PROFILE_MD_RELATIVE,
+        "attachment_profile_json": ATTACHMENT_PROFILE_RELATIVE,
+        "parallel_task_plan": PARALLEL_TASK_PLAN_MD_RELATIVE,
+        "parallel_task_plan_json": PARALLEL_TASK_PLAN_RELATIVE,
         "computed_solver_spec": SPEC_MD_RELATIVE,
         "computed_solver_spec_json": SPEC_RELATIVE,
         "computed_solver_script": SCRIPT_RELATIVE,
@@ -384,6 +442,8 @@ def collect_solver_repair_context(root: Path, explicit: dict[str, Any] | None = 
         "computed_solver_script_record": "artifacts/computed_solver_script.json",
         "auto_workflow_progress": "artifacts/auto_workflow_progress.json",
         "auto_workflow_report": "artifacts/auto_workflow_report.json",
+        "attachment_profile": ATTACHMENT_PROFILE_RELATIVE,
+        "parallel_task_plan": PARALLEL_TASK_PLAN_RELATIVE,
         "llm_live_stream": "artifacts/llm_live_stream.json",
     }
     loaded_json: dict[str, Any] = {}
@@ -410,6 +470,16 @@ def collect_solver_repair_context(root: Path, explicit: dict[str, Any] | None = 
         failure_signals.append(f"auto_workflow_report_{report_payload.get('overall_status')}")
     if isinstance(progress_payload, dict) and progress_payload.get("status") in {"failed", "cancelled", "completed_with_warnings"}:
         failure_signals.append(f"auto_workflow_progress_{progress_payload.get('status')}")
+    existing_diagnosis = first_failure_diagnosis(status_payload, completeness_payload, report_payload, progress_payload)
+    if existing_diagnosis:
+        context["failure_diagnosis"] = compact_for_prompt(existing_diagnosis, max_chars=8000)
+    elif failure_signals:
+        context["failure_diagnosis"] = diagnose_solver_failure(
+            root,
+            status_payload if isinstance(status_payload, dict) else {},
+            completeness_report=completeness_payload if isinstance(completeness_payload, dict) else None,
+            stage="repair_context",
+        )
 
     spec = load_existing_solver_spec(root)
     if spec:
@@ -468,7 +538,7 @@ def collect_solver_repair_context(root: Path, explicit: dict[str, Any] | None = 
 def synthetic_run_result_from_repair_context(root: Path, context: dict[str, Any]) -> dict[str, Any]:
     manifest_exists = (root / MANIFEST_RELATIVE).exists()
     status = load_json_if_exists(root / STATUS_RELATIVE)
-    return {
+    payload = {
         "stage": "computed_solution_resume_repair",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "success": False,
@@ -482,6 +552,11 @@ def synthetic_run_result_from_repair_context(root: Path, context: dict[str, Any]
         "error": sanitize_for_prompt(context.get("latest_error") or "Previous code-solution workflow failed; repair from saved project context."),
         "repair_context_available": True,
     }
+    if isinstance(context.get("failure_diagnosis"), dict):
+        payload["failure_diagnosis"] = context["failure_diagnosis"]
+    else:
+        payload["failure_diagnosis"] = diagnose_solver_failure(root, payload, stage="resume_repair")
+    return payload
 
 
 def next_repair_attempt(root: Path) -> int:
@@ -499,10 +574,13 @@ def run_solver_with_repair_loop(
     settings: dict[str, Any],
     artifacts: dict[str, str],
     failure_context: dict[str, Any] | None = None,
-    max_repairs: int = 2,
+    max_repairs: int | None = None,
+    workflow_strategy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    strategy = get_workflow_strategy(workflow_strategy if workflow_strategy is not None else settings.get("workflow_strategy"))
+    max_repairs = int(max_repairs if max_repairs is not None else strategy["max_repairs"])
     clear_computed_outputs(root)
-    run_result = run_solver_once_with_gate(root, analysis, spec, failure_context or {})
+    run_result = run_solver_once_with_gate(root, analysis, spec, failure_context or {}, workflow_strategy=strategy)
     attempt = next_repair_attempt(root)
     for _ in range(max_repairs):
         if run_result.get("success"):
@@ -523,10 +601,11 @@ def run_solver_with_repair_loop(
             run_result,
             attempt,
             repair_context=repair_context,
+            workflow_strategy=strategy,
         )
         artifacts.update(repair_artifacts)
         clear_computed_outputs(root)
-        run_result = run_solver_once_with_gate(root, analysis, spec, repair_context)
+        run_result = run_solver_once_with_gate(root, analysis, spec, repair_context, workflow_strategy=strategy)
         attempt += 1
     return run_result
 
@@ -536,9 +615,10 @@ def run_solver_once_with_gate(
     analysis: dict[str, Any],
     spec: dict[str, Any],
     failure_context: dict[str, Any],
+    workflow_strategy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     try:
-        run_result = run_computed_solver(root)
+        run_result = run_computed_solver(root, workflow_strategy=workflow_strategy)
     except Exception as exc:
         return backend_exception_run_result(root, exc, "script_execution", failure_context)
     try:
@@ -579,6 +659,12 @@ def backend_exception_run_result(
         "traceback_tail": sanitize_for_prompt(trace[-8000:]),
         "repair_context": compact_for_prompt(context or {}, max_chars=8000),
     }
+    payload["failure_diagnosis"] = diagnose_solver_failure(
+        root,
+        payload,
+        stage=stage,
+        exception_text=trace,
+    )
     if previous_result:
         payload["previous_run_result"] = compact_for_prompt(previous_result, max_chars=8000)
     save_json(root / STATUS_RELATIVE, payload)
@@ -606,6 +692,186 @@ def latest_context_log_path(context: dict[str, Any]) -> str:
     if logs and isinstance(logs[-1], dict):
         return str(logs[-1].get("path") or "")
     return ""
+
+
+def first_failure_diagnosis(*payloads: Any) -> dict[str, Any]:
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        diagnosis = payload.get("failure_diagnosis")
+        if isinstance(diagnosis, dict) and diagnosis.get("category"):
+            return diagnosis
+        latest = payload.get("latest_attempt")
+        if isinstance(latest, dict):
+            diagnosis = latest.get("failure_diagnosis")
+            if isinstance(diagnosis, dict) and diagnosis.get("category"):
+                return diagnosis
+    return {}
+
+
+def diagnose_solver_failure(
+    root: Path | None,
+    run_result: dict[str, Any] | None = None,
+    completeness_report: dict[str, Any] | None = None,
+    stage: str = "",
+    validation_error: str = "",
+    exception_text: str = "",
+) -> dict[str, Any]:
+    """Classify solver failures so the next LLM repair pass can focus on the real fault."""
+    run_result = run_result if isinstance(run_result, dict) else {}
+    if isinstance(completeness_report, dict) and completeness_report and not completeness_report.get("success"):
+        return diagnose_completeness_failure(completeness_report, stage or "completeness_gate")
+
+    evidence_parts: list[str] = []
+    for value in [stage, validation_error, exception_text, run_result.get("error"), run_result.get("traceback_tail")]:
+        text = str(value or "").strip()
+        if text:
+            evidence_parts.append(text)
+    log_relative = str(run_result.get("log") or "")
+    if root is not None and log_relative:
+        log_path = root / log_relative
+        if log_path.exists():
+            evidence_parts.append(read_text_tail(log_path, 4000))
+    text = "\n".join(evidence_parts)
+    category, label, focus = classify_failure_text(text, stage=stage, returncode=run_result.get("returncode"))
+    evidence = summarize_evidence(text, max_chars=1400)
+    return {
+        "category": category,
+        "label": label,
+        "stage": stage or run_result.get("stage") or "",
+        "severity": "high",
+        "repair_focus": focus,
+        "suggested_action": suggested_failure_action(category, stage or run_result.get("stage") or ""),
+        "evidence": evidence,
+    }
+
+
+def diagnose_completeness_failure(report: dict[str, Any], stage: str) -> dict[str, Any]:
+    failures = [item for item in report.get("checks", []) or [] if isinstance(item, dict) and item.get("status") != "pass"]
+    ids = [str(item.get("id") or "") for item in failures]
+    details = [str(item.get("detail") or item.get("id") or "") for item in failures[:8]]
+    if any("_tables" in item or "_figures" in item or "_computed_values" in item for item in ids):
+        focus = (
+            "Regenerate the solver outputs so every expected subproblem has real tables, figures, metrics, "
+            "and validation evidence. Do not satisfy the gate with verbal limitations only."
+        )
+    elif any("_result" in item for item in ids):
+        focus = "Add missing per_problem_results entries for every expected subproblem and link them to concrete outputs."
+    elif any("_limitation" in item for item in ids):
+        focus = (
+            "The solver still reports blocking data-insufficient limitations. Re-read raw attachments with robust schema matching, "
+            "docx compact-text extraction, and fallback column detection before declaring a subproblem unsolved."
+        )
+    elif any("artifact_files" in item for item in ids):
+        focus = "Fix manifest paths so every listed table and figure exists under the project results/artifacts directories."
+    elif any("manifest" in item for item in ids):
+        focus = "Write a valid results/computed_manifest.json with the required output contract before paper backfill."
+    else:
+        focus = "Repair the computed manifest and generated artifacts until the completeness gate passes."
+    return {
+        "category": "completeness_gate",
+        "label": "代码求解完整性门禁未通过",
+        "stage": stage,
+        "severity": "high",
+        "repair_focus": focus,
+        "suggested_action": suggested_failure_action("completeness_gate", stage),
+        "failed_check_ids": ids[:12],
+        "evidence": "；".join(details)[:1400],
+    }
+
+
+def suggested_failure_action(category: str, stage: str = "") -> str:
+    if category == "script_validation":
+        return "点击继续生成，让系统带着安全/策略诊断重新生成求解脚本。"
+    if category == "completeness_gate":
+        return "点击继续生成，系统会要求脚本补齐缺失的分问题结果、表格、图片和检验证据。"
+    if category in {"syntax_error", "json_format_error"}:
+        return "点击继续生成，系统会收紧输出格式并重写上一轮生成内容。"
+    if category in {"dependency_error", "timeout"}:
+        return "点击继续生成，系统会改用更轻量、依赖更少的可复现算法。"
+    if category in {"data_file_error", "data_schema_error"}:
+        return "点击继续生成，系统会重新盘点附件路径、工作表和字段映射后再求解。"
+    if category == "output_contract":
+        return "点击继续生成，系统会优先修复 manifest、结果摘要和冻结数值等输出契约。"
+    return "点击继续生成，系统会基于错误日志和诊断信息继续自动修复。"
+
+
+def classify_failure_text(text: str, stage: str = "", returncode: Any = None) -> tuple[str, str, str]:
+    lower = str(text or "").lower()
+    normalized_returncode = str(returncode or "").strip()
+    if "turbo workflow requires" in lower or "forbidden" in lower or "absolute path" in lower or "environment variables" in lower:
+        return (
+            "script_validation",
+            "生成脚本未通过安全/策略校验",
+            "Regenerate the full solver script while preserving the required strategy, security constraints, output contract, and project-local paths.",
+        )
+    if "syntaxerror" in lower or "invalid python syntax" in lower or "invalid syntax" in lower:
+        return (
+            "syntax_error",
+            "生成脚本存在 Python 语法错误",
+            "Return a complete executable Python script, remove Markdown or stray text, and run only syntax-safe constructs.",
+        )
+    if "computed_manifest.json" in lower or "manifest" in lower and ("missing" in lower or "缺少" in lower or "未生成" in lower):
+        return (
+            "output_contract",
+            "求解脚本未满足结果输出契约",
+            "Ensure the script always writes results/computed_manifest.json, computed_summary.md, tables, figures, and frozen numbers when available.",
+        )
+    if "timeout" in lower or normalized_returncode == "-1":
+        return (
+            "timeout",
+            "求解脚本运行超时",
+            "Reduce repeated full-file reads, cache parsed data, use safe ThreadPoolExecutor concurrency for independent work, and add bounded fallback algorithms.",
+        )
+    if "modulenotfounderror" in lower or "importerror" in lower or "no module named" in lower:
+        return (
+            "dependency_error",
+            "求解脚本依赖不可用",
+            "Guard optional imports with try/except and provide pandas/numpy/matplotlib/openpyxl fallbacks instead of requiring unavailable packages.",
+        )
+    if "filenotfounderror" in lower or "no such file" in lower or "系统找不到指定的文件" in lower:
+        return (
+            "data_file_error",
+            "求解脚本找不到项目文件或附件",
+            "Read only under RAW_DIR, enumerate available files at runtime, and map attachment names from the inventory instead of hard-coding paths.",
+        )
+    if any(term in lower for term in ["keyerror", "usecols", "worksheet", "sheet", "not in index", "column", "columns", "字段", "列名", "工作表"]):
+        return (
+            "data_schema_error",
+            "附件字段或工作表识别失败",
+            "Profile every CSV/Excel sheet first, normalize Chinese/English column names, use fuzzy fallback mapping, and avoid hard-coded schema assumptions.",
+        )
+    if "jsondecodeerror" in lower or "expecting value" in lower:
+        return (
+            "json_format_error",
+            "生成的 JSON 结果格式无效",
+            "Write manifest files through json.dumps with ensure_ascii=False and avoid hand-written JSON strings.",
+        )
+    if "completeness_gate" in stage or "完整性检查" in text:
+        return (
+            "completeness_gate",
+            "代码求解完整性门禁未通过",
+            "Repair missing per-subproblem results, tables, figures, metrics, and validation outputs until the gate passes.",
+        )
+    if "traceback" in lower or "exception" in lower or "error" in lower:
+        return (
+            "runtime_exception",
+            "求解脚本运行异常",
+            "Use the traceback and run log to fix the specific failing branch while preserving already-correct parsing and outputs.",
+        )
+    return (
+        "unknown_failure",
+        "求解失败原因未明确分类",
+        "Inspect saved status, logs, manifest, and completeness report; then repair the smallest failing assumption before regenerating outputs.",
+    )
+
+
+def summarize_evidence(text: str, max_chars: int = 1400) -> str:
+    clean = str(sanitize_for_prompt(text or ""))
+    clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
+    if len(clean) <= max_chars:
+        return clean
+    return clean[:500] + "\n...[truncated]...\n" + clean[-800:]
 
 
 def compact_for_prompt(value: Any, max_chars: int = 12000) -> Any:
@@ -657,19 +923,29 @@ def write_computed_solver_script(
     spec: dict[str, Any],
     settings: dict[str, Any],
     repair_context: dict[str, Any] | None = None,
+    workflow_strategy: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     script_path = root / SCRIPT_RELATIVE
     script_path.parent.mkdir(parents=True, exist_ok=True)
+    strategy = get_workflow_strategy(workflow_strategy if workflow_strategy is not None else settings.get("workflow_strategy"))
     context = build_solver_script_context(root, analysis, spec)
+    context["workflow_strategy"] = public_workflow_strategy(strategy["id"])
+    context["workflow_strategy_prompt"] = strategy["prompt"]
     if repair_context:
         context["repair_context"] = compact_for_prompt(repair_context, max_chars=16000)
     prompt = build_solver_script_prompt(context)
-    script, attempts = generate_validated_solver_script(prompt, label_prefix="生成项目求解脚本")
+    script, attempts = generate_validated_solver_script(
+        prompt,
+        max_attempts=int(strategy["script_validation_attempts"]),
+        workflow_strategy=strategy,
+        label_prefix="生成项目求解脚本",
+    )
     script_path.write_text(script, encoding="utf-8")
     payload = {
         "stage": "computed_solver_script",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "settings": public_settings(settings),
+        "workflow_strategy": public_workflow_strategy(strategy["id"]),
         "generation_mode": "llm_generated_per_project",
         "script": SCRIPT_RELATIVE,
         "spec": SPEC_RELATIVE,
@@ -687,8 +963,14 @@ def write_computed_solver_script(
     }
 
 
-def generate_validated_solver_script(prompt: str, max_attempts: int = 3, label_prefix: str = "生成项目求解脚本") -> tuple[str, list[dict[str, Any]]]:
+def generate_validated_solver_script(
+    prompt: str,
+    max_attempts: int = 3,
+    label_prefix: str = "生成项目求解脚本",
+    workflow_strategy: dict[str, Any] | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
     attempts: list[dict[str, Any]] = []
+    strategy = get_workflow_strategy(workflow_strategy)
     repair_hint = ""
     for attempt in range(1, max_attempts + 1):
         token_budget = 6500 if attempt == 1 else 4800 if attempt == 2 else 3600
@@ -732,14 +1014,23 @@ Prefer a compact, robust script over a long advanced implementation. Return only
             "max_tokens": token_budget,
         }
         try:
-            validate_generated_solver_code(script)
+            concurrency_evidence = validate_generated_solver_code(script, workflow_strategy=strategy)
         except Exception as exc:
             record["status"] = "validation_failed"
             record["error"] = f"{type(exc).__name__}: {exc}"
+            record["failure_diagnosis"] = diagnose_solver_failure(
+                None,
+                {"error": record["error"]},
+                stage="script_validation",
+                validation_error=record["error"],
+            )
             attempts.append(record)
-            repair_hint = record["error"]
+            diagnosis = record.get("failure_diagnosis") if isinstance(record.get("failure_diagnosis"), dict) else {}
+            repair_focus = str(diagnosis.get("repair_focus") or "").strip()
+            repair_hint = record["error"] if not repair_focus else f"{record['error']}\nRepair focus: {repair_focus}"
             continue
         record["status"] = "validated"
+        record["concurrency_evidence"] = concurrency_evidence
         attempts.append(record)
         return script, attempts
     last_error = attempts[-1].get("error") if attempts else "未生成脚本"
@@ -754,19 +1045,33 @@ def repair_computed_solver_after_run(
     run_result: dict[str, Any],
     attempt: int,
     repair_context: dict[str, Any] | None = None,
+    workflow_strategy: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     script_path = root / SCRIPT_RELATIVE
+    strategy = get_workflow_strategy(workflow_strategy if workflow_strategy is not None else settings.get("workflow_strategy"))
     context = build_solver_script_context(root, analysis, spec)
+    context["workflow_strategy"] = public_workflow_strategy(strategy["id"])
+    context["workflow_strategy_prompt"] = strategy["prompt"]
     if repair_context:
         context["repair_context"] = compact_for_prompt(repair_context, max_chars=18000)
     current_script = script_path.read_text(encoding="utf-8", errors="replace") if script_path.exists() else ""
     log_text = read_text(root / LOG_RELATIVE, 5000) if (root / LOG_RELATIVE).exists() else ""
+    failure_diagnosis = first_failure_diagnosis(run_result, repair_context or {})
+    if not failure_diagnosis:
+        failure_diagnosis = diagnose_solver_failure(root, run_result, stage="repair_prompt")
+    context["failure_diagnosis"] = compact_for_prompt(failure_diagnosis, max_chars=8000)
     safe_run_result = compact_for_prompt(run_result, max_chars=12000)
+    safe_diagnosis = compact_for_prompt(failure_diagnosis, max_chars=6000)
     safe_log_text = sanitize_for_prompt(log_text[-5000:])
     safe_current_script = sanitize_for_prompt(current_script[:18000])
     prompt = f"""The project-specific solver script failed when executed.
 
 Repair the full Python script. Return only executable Python code.
+
+Failure diagnosis JSON:
+```json
+{json.dumps(safe_diagnosis, ensure_ascii=False, indent=2)}
+```
 
 Failure status JSON:
 ```json
@@ -795,15 +1100,25 @@ Keep all original security constraints:
   at least one existing result/validation table, at least one existing result/validation figure, and computed metrics
   or table values; do not mark a required subproblem as solved with only a limitation;
 - if data is insufficient, emit a clear limitation instead of failing.
+
+Workflow strategy:
+{strategy["prompt"]}
 """
-    script, validation_attempts = generate_validated_solver_script(prompt, max_attempts=2, label_prefix=f"修复项目求解脚本（第 {attempt} 轮）")
+    script, validation_attempts = generate_validated_solver_script(
+        prompt,
+        max_attempts=int(strategy["repair_validation_attempts"]),
+        workflow_strategy=strategy,
+        label_prefix=f"修复项目求解脚本（第 {attempt} 轮）",
+    )
     script_path.write_text(script, encoding="utf-8")
     latest = {
         "attempt": attempt,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "settings": public_settings(settings),
+        "workflow_strategy": public_workflow_strategy(strategy["id"]),
         "previous_returncode": run_result.get("returncode"),
         "previous_error": run_result.get("error", ""),
+        "failure_diagnosis": failure_diagnosis,
         "previous_log": run_result.get("log") or LOG_RELATIVE,
         "validation_attempts": validation_attempts,
         "script_chars": len(script),
@@ -826,12 +1141,16 @@ def render_repair_markdown(history: list[dict[str, Any]]) -> str:
         lines.append("暂无修复记录。")
         return "\n".join(lines)
     for item in history:
+        diagnosis = item.get("failure_diagnosis") if isinstance(item.get("failure_diagnosis"), dict) else {}
         lines.extend(
             [
                 f"## 第 {item.get('attempt')} 次运行后修复",
                 f"- 时间：{item.get('generated_at')}",
                 f"- 上次返回码：{item.get('previous_returncode')}",
                 f"- 上次错误：{item.get('previous_error') or '-'}",
+                f"- 失败类型：{diagnosis.get('label') or diagnosis.get('category') or '-'}",
+                f"- 修复重点：{diagnosis.get('repair_focus') or '-'}",
+                f"- 建议动作：{diagnosis.get('suggested_action') or '-'}",
                 f"- 上次日志：`{item.get('previous_log')}`",
                 f"- 新脚本长度：{item.get('script_chars')} 字符",
                 "",
@@ -858,6 +1177,8 @@ def build_solver_script_context(root: Path, analysis: dict[str, Any], spec: dict
     return {
         "analysis": compact_analysis(analysis),
         "inventory": compact_inventory(analysis.get("inventory", [])),
+        "attachment_profile": compact_attachment_profile_for_prompt(root, analysis),
+        "parallel_task_plan": compact_parallel_task_plan_for_prompt(root, analysis, spec),
         "raw_files": compact_raw_files(root),
         "solver_spec": spec,
         "llm_solution_selection": (sections or {}).get("selection", {}),
@@ -874,6 +1195,11 @@ def build_solver_script_context(root: Path, analysis: dict[str, Any], spec: dict
 
 
 def build_solver_script_prompt(context: dict[str, Any]) -> str:
+    workflow_strategy_prompt = str(context.get("workflow_strategy_prompt") or "").strip()
+    strategy_block = f"""
+Workflow strategy:
+- {workflow_strategy_prompt}
+""" if workflow_strategy_prompt else ""
     return f"""You are writing the actual Python solver for a mathematical modeling contest project.
 
 This code must be generated specifically for the current problem statement, attachments, and solver spec. Do not output a generic prewritten topic solver.
@@ -892,6 +1218,8 @@ Runtime contract:
    tables_overview, tables, figures, metrics, per_problem_results,
    narrative_findings, limitations, method_basis, references_used, summary_markdown,
    validation_checks, process_gates, poc_results, model_comparison, frozen_numbers.
+   Also include execution_profile when feasible: elapsed seconds, workflow strategy, and ThreadPoolExecutor
+   evidence such as max_workers and submitted task counts.
 7. Each per_problem_results item must include:
    problem_index, title, metrics, tables, figures, description, analysis,
    conclusion, limitations, method_basis, validation_summary.
@@ -900,6 +1228,7 @@ Runtime contract:
 10. For every expected subproblem, write at least one result/validation table file and at least one result/validation figure file.
 11. If a subproblem cannot be solved from available data after robust parsing and fallback schema matching, write a clear limitation and still emit a per_problem_results item. Never invent numerical results.
     However, required subproblems with only limitations will fail the completeness gate and the script will be repaired before paper writing starts.
+{strategy_block}
 
 Mandatory figure/font setup:
 - If matplotlib is imported, configure Chinese fonts before creating figures. Use font_manager candidates
@@ -908,7 +1237,10 @@ Mandatory figure/font setup:
   must render Chinese text correctly.
 
 Modeling guidance:
-- Inspect the available files and schemas at runtime. Use the solver spec to choose columns, objectives, and algorithms.
+- Inspect the available files and schemas at runtime. First use attachment_profile for cached sheet/column/text signals,
+  then verify against the raw files before final computation. Use the solver spec to choose columns, objectives, and algorithms.
+- Use parallel_task_plan as the implementation map: run parallel-safe groups with ThreadPoolExecutor, collect futures,
+  then write manifest/frozen outputs in the deterministic finalization task only.
 - Treat the solver as a gated delivery workflow:
   G1 parse the problem and available schemas; G2 run a small PoC or simple baseline on real attachment data; G3 run the
   final solver; G4 freeze the key results used by the paper; G5 leave tables/figures ready for paper backfill; G6 expose
@@ -1063,14 +1395,16 @@ configure_chinese_fonts()
     return script.replace("import matplotlib.pyplot as plt", "import matplotlib.pyplot as plt\n" + snippet, 1)
 
 
-def validate_generated_solver_code(script: str) -> None:
+def validate_generated_solver_code(script: str, workflow_strategy: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
         tree = ast.parse(script)
     except SyntaxError as exc:
         raise ValueError(f"LLM generated invalid Python syntax: {exc}") from exc
+    strategy = get_workflow_strategy(workflow_strategy)
 
     forbidden_import_roots = {
         "subprocess",
+        "multiprocessing",
         "socket",
         "requests",
         "urllib",
@@ -1098,7 +1432,18 @@ def validate_generated_solver_code(script: str) -> None:
         "shutil.copytree",
         "Path.unlink",
         "Path.rmdir",
+        "ProcessPoolExecutor",
+        "concurrent.futures.ProcessPoolExecutor",
     }
+    parallel_evidence = {
+        "thread_pool": False,
+        "dispatch": False,
+        "max_workers": [],
+        "submit_calls": 0,
+        "map_calls": 0,
+        "as_completed_calls": 0,
+    }
+    thread_pool_vars: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -1109,12 +1454,48 @@ def validate_generated_solver_code(script: str) -> None:
             root = (node.module or "").split(".", 1)[0]
             if root in forbidden_import_roots:
                 raise ValueError(f"Generated solver imports forbidden module: {node.module}")
+            if node.module == "concurrent.futures":
+                imported = {alias.name for alias in node.names}
+                if "ProcessPoolExecutor" in imported:
+                    raise ValueError("Generated solver must not use ProcessPoolExecutor; use ThreadPoolExecutor for safe local concurrency")
+        elif isinstance(node, ast.With):
+            for item in node.items:
+                if isinstance(item.context_expr, ast.Call) and ast_call_name(item.context_expr.func).endswith("ThreadPoolExecutor"):
+                    parallel_evidence["thread_pool"] = True
+                    if isinstance(item.optional_vars, ast.Name):
+                        thread_pool_vars.add(item.optional_vars.id)
+        elif isinstance(node, ast.Assign):
+            if isinstance(node.value, ast.Call) and ast_call_name(node.value.func).endswith("ThreadPoolExecutor"):
+                parallel_evidence["thread_pool"] = True
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        thread_pool_vars.add(target.id)
         elif isinstance(node, ast.Call):
             name = ast_call_name(node.func)
             if name in forbidden_calls:
                 raise ValueError(f"Generated solver uses forbidden call: {name}")
             if name in {"unlink", "rmdir"} or name.endswith(".unlink") or name.endswith(".rmdir"):
                 raise ValueError(f"Generated solver uses forbidden deletion call: {name}")
+            if name.endswith("ProcessPoolExecutor"):
+                raise ValueError("Generated solver must not spawn process pools; use ThreadPoolExecutor for safe local concurrency")
+            if name.endswith("ThreadPoolExecutor"):
+                parallel_evidence["thread_pool"] = True
+                for keyword in node.keywords:
+                    if keyword.arg == "max_workers" and isinstance(keyword.value, ast.Constant) and keyword.value.value == 1:
+                        raise ValueError("Turbo workflow requires useful concurrency; ThreadPoolExecutor max_workers must be greater than 1")
+                    if keyword.arg == "max_workers" and isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, int):
+                        parallel_evidence["max_workers"].append(keyword.value.value)
+            if name in {"as_completed", "concurrent.futures.as_completed"} or name.endswith(".as_completed"):
+                parallel_evidence["dispatch"] = True
+                parallel_evidence["as_completed_calls"] += 1
+            elif name.endswith(".submit") or name.endswith(".map"):
+                receiver = name.rsplit(".", 1)[0]
+                if receiver in thread_pool_vars:
+                    parallel_evidence["dispatch"] = True
+                    if name.endswith(".submit"):
+                        parallel_evidence["submit_calls"] += 1
+                    else:
+                        parallel_evidence["map_calls"] += 1
         elif isinstance(node, ast.Attribute):
             if ast_call_name(node) == "os.environ":
                 raise ValueError("Generated solver must not read environment variables")
@@ -1129,6 +1510,30 @@ def validate_generated_solver_code(script: str) -> None:
             raise ValueError("Generated solver contains a literal absolute path read")
     if "computed_manifest.json" not in script:
         raise ValueError("Generated solver must write results/computed_manifest.json")
+    if strategy.get("requires_parallel"):
+        missing: list[str] = []
+        if not parallel_evidence["thread_pool"]:
+            missing.append("ThreadPoolExecutor")
+        if not parallel_evidence["dispatch"]:
+            missing.append("executor.submit/executor.map/as_completed")
+        if missing:
+            raise ValueError(
+                "Turbo workflow requires real safe concurrency in the generated solver: "
+                + ", ".join(missing)
+                + ". Use concurrent.futures.ThreadPoolExecutor for independent raw-file parsing, sheet profiling, "
+                "validation table generation, or independent subproblem branches while preserving deterministic output order."
+            )
+    return {
+        "valid": True,
+        "thread_pool": bool(parallel_evidence["thread_pool"]),
+        "dispatch": bool(parallel_evidence["dispatch"]),
+        "max_workers": sorted(set(parallel_evidence["max_workers"]))[:8],
+        "submit_calls": int(parallel_evidence["submit_calls"]),
+        "map_calls": int(parallel_evidence["map_calls"]),
+        "as_completed_calls": int(parallel_evidence["as_completed_calls"]),
+        "thread_pool_variables": sorted(thread_pool_vars)[:8],
+        "requires_parallel": bool(strategy.get("requires_parallel")),
+    }
 
 
 def ast_call_name(func: ast.AST) -> str:
@@ -1142,25 +1547,86 @@ def ast_call_name(func: ast.AST) -> str:
     return ""
 
 
-def run_computed_solver(root: Path, timeout: int = 360) -> dict[str, Any]:
+def load_solver_static_evidence(root: Path, workflow_strategy: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = load_json_if_exists(root / "artifacts" / "computed_solver_script.json")
+    attempts = payload.get("validation_attempts", []) if isinstance(payload, dict) else []
+    if isinstance(attempts, list):
+        for attempt in reversed(attempts):
+            if not isinstance(attempt, dict):
+                continue
+            evidence = attempt.get("concurrency_evidence")
+            if isinstance(evidence, dict) and evidence:
+                return {**evidence, "source": "script_generation_validation"}
+    script_path = root / SCRIPT_RELATIVE
+    if not script_path.exists():
+        return {"valid": False, "source": "script_static_analysis", "error": f"{SCRIPT_RELATIVE} 不存在"}
+    try:
+        evidence = validate_generated_solver_code(
+            script_path.read_text(encoding="utf-8", errors="replace"),
+            workflow_strategy=workflow_strategy,
+        )
+    except Exception as exc:
+        return {"valid": False, "source": "script_static_analysis", "error": f"{type(exc).__name__}: {exc}"}
+    return {**evidence, "source": "script_static_analysis"}
+
+
+def annotate_manifest_execution_profile(
+    root: Path,
+    manifest: dict[str, Any],
+    run_result: dict[str, Any],
+    concurrency_evidence: dict[str, Any],
+    workflow_strategy: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(manifest, dict):
+        return manifest
+    profile = manifest.get("execution_profile") if isinstance(manifest.get("execution_profile"), dict) else {}
+    profile = dict(profile)
+    existing_concurrency = profile.get("concurrency_evidence") if isinstance(profile.get("concurrency_evidence"), dict) else {}
+    merged_concurrency = {**existing_concurrency, **(concurrency_evidence or {})}
+    profile.update(
+        {
+            "workflow_strategy": public_workflow_strategy(workflow_strategy["id"]),
+            "executor": run_result.get("executor"),
+            "returncode": run_result.get("returncode"),
+            "duration_seconds": run_result.get("duration_seconds"),
+            "concurrency_evidence": {key: value for key, value in merged_concurrency.items() if value not in (None, "", [])},
+            "backend_annotated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+    )
+    manifest["execution_profile"] = {key: value for key, value in profile.items() if value not in (None, "", [])}
+    save_json(root / MANIFEST_RELATIVE, manifest)
+    return manifest
+
+
+def run_computed_solver(root: Path, timeout: int = 360, workflow_strategy: dict[str, Any] | None = None) -> dict[str, Any]:
+    strategy = get_workflow_strategy(workflow_strategy)
+    concurrency_evidence = load_solver_static_evidence(root, strategy)
     result = run_python_script(root, SCRIPT_RELATIVE, LOG_RELATIVE, timeout=timeout)
     manifest_path = root / MANIFEST_RELATIVE
     manifest = load_json_if_exists(manifest_path)
+    if manifest_path.exists() and isinstance(manifest, dict):
+        manifest = annotate_manifest_execution_profile(root, manifest, result, concurrency_evidence, strategy)
     payload = {
         "stage": "computed_solution_run",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "success": bool(result.get("success")) and manifest_path.exists(),
         "returncode": result.get("returncode"),
         "executor": result.get("executor"),
+        "duration_seconds": result.get("duration_seconds"),
+        "workflow_strategy": public_workflow_strategy(strategy["id"]),
+        "concurrency_evidence": concurrency_evidence,
         "log": result.get("log"),
         "manifest": MANIFEST_RELATIVE if manifest_path.exists() else "",
         "summary": SUMMARY_RELATIVE if (root / SUMMARY_RELATIVE).exists() else "",
         "frozen_numbers": FROZEN_NUMBERS_RELATIVE if (root / FROZEN_NUMBERS_RELATIVE).exists() else "",
         "outputs": compact_manifest(manifest),
     }
+    if not payload["success"]:
+        payload["failure_diagnosis"] = diagnose_solver_failure(root, payload, stage="script_execution")
     if result.get("success") and not manifest_path.exists():
         payload["success"] = False
         payload["error"] = "求解脚本已结束，但未生成 results/computed_manifest.json。"
+        payload["failure_diagnosis"] = diagnose_solver_failure(root, payload, stage="output_contract")
     save_json(root / STATUS_RELATIVE, payload)
     return payload
 
@@ -1180,6 +1646,12 @@ def enforce_computed_solution_completeness(
     if not report.get("success"):
         run_result["success"] = False
         run_result["error"] = completeness_failure_message(report)
+        run_result["failure_diagnosis"] = diagnose_solver_failure(
+            root,
+            run_result,
+            completeness_report=report,
+            stage="completeness_gate",
+        )
     save_json(root / STATUS_RELATIVE, run_result)
     return run_result
 
@@ -1244,7 +1716,7 @@ def build_computed_solution_completeness_report(
         checks.append(make_completeness_check("artifact_files", True, "manifest 记录的表格和图片文件均可定位。"))
 
     success = all(item["status"] == "pass" for item in checks)
-    return {
+    report = {
         "stage": "computed_solution_completeness",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "success": success,
@@ -1252,6 +1724,9 @@ def build_computed_solution_completeness_report(
         "checks": checks,
         "policy": "所有子问题必须先完成代码求解，并且每个子问题至少生成可定位的结果表和结果图，才允许进入论文撰写与回填。",
     }
+    if not success:
+        report["failure_diagnosis"] = diagnose_completeness_failure(report, "completeness_gate")
+    return report
 
 
 def make_completeness_check(
@@ -1280,10 +1755,17 @@ def write_completeness_report(root: Path, report: dict[str, Any]) -> None:
         f"- 生成时间：{report.get('generated_at')}",
         f"- 状态：{'通过' if report.get('success') else '未通过'}",
         f"- 策略：{report.get('policy')}",
-        "",
-        "| 检查项 | 状态 | 说明 |",
-        "|---|---|---|",
     ]
+    diagnosis = report.get("failure_diagnosis") if isinstance(report.get("failure_diagnosis"), dict) else {}
+    if diagnosis:
+        lines.extend(
+            [
+                f"- 失败类型：{diagnosis.get('label') or diagnosis.get('category')}",
+                f"- 修复重点：{diagnosis.get('repair_focus')}",
+                f"- 建议动作：{diagnosis.get('suggested_action')}",
+            ]
+        )
+    lines.extend(["", "| 检查项 | 状态 | 说明 |", "|---|---|---|"])
     for item in report.get("checks", []) or []:
         status = "通过" if item.get("status") == "pass" else "失败"
         detail = str(item.get("detail") or "").replace("|", "/")
@@ -4358,6 +4840,32 @@ def compact_inventory(inventory: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return compact
 
 
+def compact_execution_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(profile, dict):
+        return {}
+    concurrency = profile.get("concurrency_evidence") if isinstance(profile.get("concurrency_evidence"), dict) else {}
+    compact_concurrency = {
+        "valid": concurrency.get("valid"),
+        "thread_pool": concurrency.get("thread_pool"),
+        "dispatch": concurrency.get("dispatch"),
+        "max_workers": concurrency.get("max_workers", [])[:8] if isinstance(concurrency.get("max_workers"), list) else concurrency.get("max_workers"),
+        "submit_calls": concurrency.get("submit_calls"),
+        "map_calls": concurrency.get("map_calls"),
+        "as_completed_calls": concurrency.get("as_completed_calls"),
+        "requires_parallel": concurrency.get("requires_parallel"),
+        "source": concurrency.get("source"),
+        "error": concurrency.get("error"),
+    }
+    compact = {
+        "workflow_strategy": profile.get("workflow_strategy"),
+        "executor": profile.get("executor"),
+        "returncode": profile.get("returncode"),
+        "duration_seconds": profile.get("duration_seconds"),
+        "concurrency_evidence": {key: value for key, value in compact_concurrency.items() if value not in (None, "", [])},
+    }
+    return {key: value for key, value in compact.items() if value not in (None, "", [], {})}
+
+
 def compact_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(manifest, dict):
         return {}
@@ -4372,6 +4880,7 @@ def compact_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         "process_gates": manifest.get("process_gates", [])[:8] if isinstance(manifest.get("process_gates"), list) else manifest.get("process_gates", {}),
         "poc_results": manifest.get("poc_results", [])[:8] if isinstance(manifest.get("poc_results"), list) else manifest.get("poc_results", {}),
         "model_comparison": manifest.get("model_comparison", [])[:8] if isinstance(manifest.get("model_comparison"), list) else manifest.get("model_comparison", {}),
+        "execution_profile": compact_execution_profile(manifest.get("execution_profile", {})),
         "frozen_numbers": manifest.get("frozen_numbers", {}) if isinstance(manifest.get("frozen_numbers"), dict) else manifest.get("frozen_numbers", []),
         "per_problem_results": [],
         "narrative_findings": manifest.get("narrative_findings", [])[:12],
