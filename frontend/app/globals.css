@@ -3649,7 +3649,7 @@ ul.problem-meta {
   gap: 12px;
 }
 
-.artifact-group {
+.artifact-folder {
   min-width: 0;
   border: 1px solid var(--clay-border);
   border-radius: 8px;
@@ -3658,15 +3658,100 @@ ul.problem-meta {
   box-shadow: var(--shadow-inset);
 }
 
-.artifact-group h3 {
+.artifact-folder-button {
+  width: 100%;
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.artifact-folder-button:hover {
+  background: var(--primary-soft);
+}
+
+.artifact-folder-button:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus);
+}
+
+.artifact-folder-mark {
+  width: 38px;
+  height: 30px;
+  border: 1px solid rgba(185, 200, 216, 0.78);
+  border-radius: 5px;
+  background: linear-gradient(145deg, var(--amber-soft), #ffffff);
+  position: relative;
+  box-shadow: 4px 5px 10px rgba(42, 55, 74, 0.08), inset 1px 1px 1px rgba(255, 255, 255, 0.88);
+}
+
+.artifact-folder-mark::before {
+  content: "";
+  width: 18px;
+  height: 8px;
+  border: 1px solid rgba(185, 200, 216, 0.78);
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  background: var(--amber-soft);
+  position: absolute;
+  top: -7px;
+  left: 4px;
+}
+
+.artifact-folder-mark::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--amber);
+  border-bottom: 2px solid var(--amber);
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  transform: rotate(-45deg);
+  transition: transform 0.16s ease;
+}
+
+.artifact-folder-button[aria-expanded="true"] .artifact-folder-mark::after {
+  transform: rotate(45deg);
+}
+
+.artifact-folder-copy {
+  min-width: 0;
+}
+
+.artifact-folder-copy strong,
+.artifact-folder-copy small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.artifact-folder-copy strong {
   font-size: 14px;
   line-height: 1.35;
-  margin-bottom: 10px;
+}
+
+.artifact-folder-copy small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .artifact-list {
   display: grid;
   gap: 8px;
+  margin-top: 10px;
+}
+
+.artifact-list[hidden] {
+  display: none;
 }
 
 .artifact-row {
@@ -3789,7 +3874,7 @@ ul.problem-meta {
 :root[data-theme="dark"] .llm-live-stream,
 :root[data-theme="dark"] .problem-card,
 :root[data-theme="dark"] .workflow-step,
-:root[data-theme="dark"] .artifact-group,
+:root[data-theme="dark"] .artifact-folder,
 :root[data-theme="dark"] .toast {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent 48%),

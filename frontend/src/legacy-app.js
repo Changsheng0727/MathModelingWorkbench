@@ -1987,18 +1987,45 @@ function renderArtifacts(metadata, projectId) {
     grouped.get(group).push([key, label, path]);
   });
   els.artifacts.innerHTML = Array.from(grouped.entries())
-    .map(([group, groupItems]) => {
+    .map(([group, groupItems], groupIndex) => {
       const links = groupItems
         .map(([key, label, path]) => renderArtifactItem(projectId, key, label, path))
         .join("");
+      const folderId = `artifact-folder-${groupIndex}`;
+      const kinds = artifactFolderKinds(groupItems);
       return `
-        <section class="artifact-group">
-          <h3>${escapeHtml(group)}</h3>
-          <div class="artifact-list">${links}</div>
+        <section class="artifact-folder">
+          <button class="artifact-folder-button" type="button" data-artifact-folder="${escapeHtml(folderId)}" aria-expanded="false" aria-controls="${escapeHtml(folderId)}">
+            <span class="artifact-folder-mark" aria-hidden="true"></span>
+            <span class="artifact-folder-copy">
+              <strong>${escapeHtml(group)}</strong>
+              <small>${escapeHtml(`${groupItems.length} 个文件${kinds ? ` · ${kinds}` : ""}`)}</small>
+            </span>
+          </button>
+          <div id="${escapeHtml(folderId)}" class="artifact-list" hidden>${links}</div>
         </section>
       `;
     })
     .join("");
+}
+
+function artifactFolderKinds(items = []) {
+  const labels = {
+    pdf: "PDF",
+    docx: "Word",
+    tex: "LaTeX",
+    code: "代码",
+    data: "数据",
+    file: "文件",
+  };
+  const kinds = [];
+  items.forEach(([key, , path]) => {
+    const kind = artifactKind(key, path);
+    if (!kinds.includes(kind)) {
+      kinds.push(kind);
+    }
+  });
+  return kinds.slice(0, 4).map((kind) => labels[kind] || kind).join(" / ");
 }
 
 function renderArtifactItem(projectId, key, label, path) {
@@ -2015,6 +2042,18 @@ function renderArtifactItem(projectId, key, label, path) {
 }
 
 els.artifacts.addEventListener("click", async (event) => {
+  const folderButton = event.target.closest("[data-artifact-folder]");
+  if (folderButton) {
+    const folderId = folderButton.dataset.artifactFolder;
+    const folder = folderId ? document.getElementById(folderId) : null;
+    if (!folder) {
+      return;
+    }
+    const expanded = folderButton.getAttribute("aria-expanded") === "true";
+    folderButton.setAttribute("aria-expanded", expanded ? "false" : "true");
+    folder.hidden = expanded;
+    return;
+  }
   const button = event.target.closest(".artifact-open");
   if (!button) {
     return;
