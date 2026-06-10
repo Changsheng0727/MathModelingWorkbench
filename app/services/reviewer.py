@@ -135,10 +135,13 @@ def build_review(root: Path) -> dict[str, Any]:
 
     if tex:
         checks.extend(check_structure(tex, analysis))
-        checks.extend(check_abstract(tex, analysis))
+        checks.extend(check_abstract(tex, analysis, metadata, computed))
         checks.extend(check_model_building(tex))
         checks.extend(check_formula_numbering(tex))
         checks.extend(check_figures_and_tables(root, tex))
+        checks.extend(check_submission_surface(tex))
+        checks.extend(check_figure_image_quality(root, tex))
+        checks.extend(check_solver_figure_generation_rules(root))
         checks.extend(check_references_and_appendix(tex))
         checks.extend(check_academic_integrity_gate(root, tex, specialized, baseline, computed))
         checks.extend(check_identity_risk(tex))
@@ -286,7 +289,12 @@ def check_structure(tex: str, analysis: dict[str, Any]) -> list[Check]:
     return checks
 
 
-def check_abstract(tex: str, analysis: dict[str, Any] | None = None) -> list[Check]:
+def check_abstract(
+    tex: str,
+    analysis: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    computed: dict[str, Any] | None = None,
+) -> list[Check]:
     abstract = extract_abstract(tex)
     if not abstract:
         return [make_check("abstract_content", "fail", "摘要内容", "未检测到摘要正文。", "high")]
@@ -348,7 +356,48 @@ def check_abstract(tex: str, analysis: dict[str, Any] | None = None) -> list[Che
             abstract_pattern_severity,
         )
     )
+    workflow_mode = str((metadata or {}).get("auto_workflow_mode") or "")
+    if workflow_mode.startswith("llm_code_results") or computed:
+        computed_status = "pass"
+        computed_detail = "一键代码流程摘要接近一页，并按子问题写入可追溯数值结果。"
+        computed_severity = "low"
+        computed_issues: list[str] = []
+        if chinese_chars < 650:
+            computed_issues.append(f"摘要约 {chinese_chars} 个汉字，未达到接近一页的自动流程标准")
+        missing_numeric = abstract_problem_numeric_gaps(plain, expected_count)
+        if missing_numeric:
+            computed_issues.append("以下子问题附近缺少数值结果：" + "、".join(missing_numeric))
+        if len(numbers) < max(3, expected_count):
+            computed_issues.append(f"摘要数值信息仅 {len(numbers)} 个，难以支撑逐问结果概括")
+        if computed_issues:
+            computed_status = "fail"
+            computed_detail = "；".join(computed_issues) + "。一键流程必须在摘要中概括模型链、逐问关键数值、检验结果和最终结论。"
+            computed_severity = "high"
+        checks.append(
+            make_check(
+                "abstract_computed_results",
+                computed_status,
+                "摘要逐问数值结果",
+                computed_detail,
+                computed_severity,
+            )
+        )
     return checks
+
+
+def abstract_problem_numeric_gaps(plain: str, expected_count: int) -> list[str]:
+    gaps: list[str] = []
+    for index in range(1, expected_count + 1):
+        start = re.search(rf"问题\s*{index}", plain)
+        if not start:
+            gaps.append(str(index))
+            continue
+        next_match = re.search(rf"问题\s*{index + 1}", plain[start.end() :]) if index < expected_count else None
+        end = start.end() + next_match.start() if next_match else min(len(plain), start.start() + 260)
+        segment = plain[start.start() : end]
+        if not re.search(r"\d+(?:\.\d+)?", segment):
+            gaps.append(str(index))
+    return gaps
 
 
 def check_model_building(tex: str) -> list[Check]:
@@ -554,7 +603,7 @@ def check_figures_and_tables(root: Path, tex: str) -> list[Check]:
     elif solving_figures or solving_tables:
         checks.append(make_check("figure_table_narrative", "pass", "图表判读完整性", "模型求解图表附近均检测到内容交代、结果判读和结论落点。"))
 
-    graphics = re.findall(r"\\includegraphics(?:\[[^\]]*\])?\{([^{}]+)\}", tex)
+    graphics = extract_graphic_paths(tex)
     missing_graphics = [path for path in graphics if not resolve_graphic(root, path)]
     if missing_graphics:
         checks.append(make_check("figure_files", "fail", "图片文件存在性", "缺少图片文件：" + "、".join(missing_graphics), "high"))
@@ -565,6 +614,127 @@ def check_figures_and_tables(root: Path, tex: str) -> list[Check]:
     else:
         checks.append(make_check("figure_files", "warning", "图片文件存在性", "未检测到 includegraphics。", "low"))
     return checks
+
+
+def check_submission_surface(tex: str) -> list[Check]:
+    visible = paper_visible_text(tex)
+    backstage_hits: list[str] = []
+    backstage_patterns = [
+        (r"\bmanifest\b|结果清单文件|computed_manifest|baseline_manifest|specialized_manifest", "manifest/结果清单"),
+        (r"\bauto_workflow\b|\bworkflow\b|自动流程日志|后台流程", "后台流程痕迹"),
+        (r"\bartifacts?[\\/]|support_materials|paper[\\/]main|results[\\/]|code[\\/]", "项目内部路径"),
+        (r"[A-Za-z]:[\\/][^\s，。；：,;]+", "本机绝对路径"),
+        (r"[\w\u4e00-\u9fff.-]+\.(?:json|log|csv|png|jpg|jpeg|pdf|tex|py|zip)\b", "具体文件名"),
+    ]
+    for pattern, label in backstage_patterns:
+        if re.search(pattern, visible, flags=re.I):
+            backstage_hits.append(label)
+    if backstage_hits:
+        return [
+            make_check(
+                "submission_surface_backstage_traces",
+                "fail",
+                "正文后台痕迹",
+                "提交可见文本仍出现：" + "、".join(dict.fromkeys(backstage_hits)) + "。正文不得暴露文件名、路径、manifest、日志或后台流程痕迹。",
+                "high",
+            )
+        ]
+    return [make_check("submission_surface_backstage_traces", "pass", "正文后台痕迹", "提交可见文本未检测到文件名、路径、manifest、日志或后台流程痕迹。")]
+
+
+def check_figure_image_quality(root: Path, tex: str) -> list[Check]:
+    graphics = extract_graphic_paths(tex)
+    paths = [resolve_graphic_path(root, graphic) for graphic in graphics]
+    paths = [path for path in paths if path is not None and path.suffix.lower() in {".png", ".jpg", ".jpeg"}]
+    if not paths:
+        return [make_check("figure_image_quality", "warning", "图片清晰度", "未检测到可直接检查尺寸的 PNG/JPG 图片。", "low")]
+    try:
+        from PIL import Image
+    except Exception:
+        return [make_check("figure_image_quality", "warning", "图片清晰度", "未安装 Pillow，无法读取图片尺寸。", "low")]
+    low_quality: list[str] = []
+    for path in paths:
+        try:
+            with Image.open(path) as image:
+                width, height = image.size
+        except Exception:
+            low_quality.append(path.name + " 无法读取")
+            continue
+        if width < 1200 and width * height < 1_000_000:
+            low_quality.append(f"{path.name} {width}x{height}")
+    if low_quality:
+        return [
+            make_check(
+                "figure_image_quality",
+                "fail",
+                "图片清晰度",
+                "以下图片分辨率偏低：" + "、".join(low_quality[:10]) + "。一键流程应生成白底、中文正常、300 dpi 以上的论文图片。",
+                "high",
+            )
+        ]
+    return [make_check("figure_image_quality", "pass", "图片清晰度", f"已检查 {len(paths)} 张 PNG/JPG 图片，尺寸满足论文阅读要求。")]
+
+
+def check_solver_figure_generation_rules(root: Path) -> list[Check]:
+    scripts = [
+        root / "code" / "run_computed_solution.py",
+        root / "code" / "run_baseline_analysis.py",
+        root / "code" / "run_specialized_model.py",
+    ]
+    issues: list[str] = []
+    for script_path in scripts:
+        if not script_path.exists():
+            continue
+        script = read_text(script_path)
+        uses_matplotlib = bool(re.search(r"matplotlib|plt\.|savefig\s*\(", script))
+        if uses_matplotlib:
+            if "font.sans-serif" not in script and "configure_chinese_fonts" not in script and "font_manager" not in script:
+                issues.append(f"{script_path.name} 未设置中文字体")
+            if "axes.unicode_minus" not in script:
+                issues.append(f"{script_path.name} 未设置中文负号显示")
+            white_background = re.search(
+                r"(?:figure\.facecolor|axes\.facecolor|savefig\.facecolor)[\"'\]]*\s*=\s*[\"']white[\"']|"
+                r"[\"'](?:figure\.facecolor|axes\.facecolor|savefig\.facecolor)[\"']\s*:\s*[\"']white[\"']|"
+                r"facecolor\s*=\s*[\"']white[\"']|"
+                r"set_facecolor\s*\(\s*[\"']white[\"']",
+                script,
+                flags=re.I,
+            )
+            if not white_background:
+                issues.append(f"{script_path.name} 未显式设置白底图片")
+        if re.search(r"\bplt\.title\s*\(|\.set_title\s*\(|\.suptitle\s*\(", script):
+            issues.append(f"{script_path.name} 使用图内标题")
+        for match in re.finditer(r"savefig\s*\(([^)]*)\)", script, flags=re.S):
+            call = match.group(1)
+            dpi_match = re.search(r"dpi\s*=\s*(\d+)", call)
+            if not dpi_match:
+                issues.append(f"{script_path.name} savefig 未显式设置 dpi")
+            elif int(dpi_match.group(1)) < 300:
+                issues.append(f"{script_path.name} savefig dpi={dpi_match.group(1)}")
+    if issues:
+        return [
+            make_check(
+                "solver_figure_generation_rules",
+                "fail",
+                "图片生成规则",
+                "求解脚本仍可能生成不合格图片：" + "、".join(issues[:12]) + "。",
+                "high",
+            )
+        ]
+    return [make_check("solver_figure_generation_rules", "pass", "图片生成规则", "求解脚本未检测到图内标题、低 dpi、中文字体缺失或非白底图片设置。")]
+
+
+def paper_visible_text(tex: str) -> str:
+    body_match = re.search(r"\\begin\{document\}([\s\S]*?)\\end\{document\}", tex)
+    text = body_match.group(1) if body_match else tex
+    text = re.sub(r"%.*", "", text)
+    text = re.sub(r"\\graphicspath\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", "", text)
+    text = re.sub(r"\\includegraphics(?:\[[^\]]*\])?\{\\detokenize\{[^{}]+\}\}", "", text)
+    text = re.sub(r"\\includegraphics(?:\[[^\]]*\])?\{[^{}]+\}", "", text)
+    text = re.sub(r"\\(?:label|ref|pageref|cite|citep|citet)(?:\[[^\]]*\])?\{[^{}]*\}", "", text)
+    text = re.sub(r"\\url\{[^{}]*\}", "", text)
+    text = strip_latex(text)
+    return re.sub(r"\s+", " ", text)
 
 
 def check_identity_risk(tex: str) -> list[Check]:
@@ -1470,8 +1640,23 @@ def extract_environments(tex: str, name: str) -> list[dict[str, Any]]:
     return [{"content": match.group(1), "start": match.start(), "end": match.end()} for match in pattern.finditer(tex)]
 
 
+def extract_graphic_paths(tex: str) -> list[str]:
+    paths: list[str] = []
+    pattern = re.compile(r"\\includegraphics(?:\[[^\]]*\])?\{(?:\\detokenize\{([^{}]+)\}|([^{}]+))\}")
+    for match in pattern.finditer(tex):
+        paths.append((match.group(1) or match.group(2) or "").strip())
+    return paths
+
+
 def resolve_graphic(root: Path, graphic: str) -> bool:
+    return resolve_graphic_path(root, graphic) is not None
+
+
+def resolve_graphic_path(root: Path, graphic: str) -> Path | None:
     raw = graphic.strip()
+    detokenized = re.fullmatch(r"\\detokenize\{([^{}]+)\}", raw)
+    if detokenized:
+        raw = detokenized.group(1).strip()
     candidates = [
         root / "paper" / raw,
         root / raw,
@@ -1482,12 +1667,13 @@ def resolve_graphic(root: Path, graphic: str) -> bool:
     for candidate in candidates:
         if candidate.suffix:
             if candidate.exists():
-                return True
+                return candidate
         else:
             for extension in extensions:
-                if (candidate.with_suffix(extension) if extension else candidate).exists():
-                    return True
-    return False
+                target = candidate.with_suffix(extension) if extension else candidate
+                if target.exists():
+                    return target
+    return None
 
 
 def strip_latex(text: str) -> str:

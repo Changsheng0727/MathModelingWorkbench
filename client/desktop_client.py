@@ -230,12 +230,6 @@ def main() -> int:
     log_client_event("client main starting")
     root = project_root()
     configure_runtime_paths(root)
-    preferred_url = f"http://{HOST}:{PREFERRED_PORT}"
-    if health_check_ok(f"{preferred_url}/api/health"):
-        log_client_event(f"reusing existing backend at {preferred_url}")
-        start_dependency_bootstrap(root)
-        open_window(preferred_url)
-        return 0
     port = find_available_port(PREFERRED_PORT)
     log_client_event(f"selected port={port}")
     process = start_backend(port)
@@ -249,7 +243,15 @@ def main() -> int:
         if process.poll() is None:
             process.terminate()
         raise
-    open_window(url)
+    try:
+        open_window(url)
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=8)
+            except TimeoutError:
+                process.kill()
     return 0
 
 

@@ -640,14 +640,14 @@ p {
 }
 
 #open-project-root::before {
-  content: "DIR";
-  font-size: 10px;
+  content: "夹";
+  font-size: 12px;
   font-weight: 800;
 }
 
 #get-api-key::before {
-  content: "KEY";
-  font-size: 10px;
+  content: "钥";
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -655,6 +655,12 @@ p {
 #save-paper-options::before {
   content: "✓";
   font-size: 13px;
+  font-weight: 800;
+}
+
+#test-llm-settings::before {
+  content: "测";
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -667,20 +673,20 @@ p {
 
 #run-auto-workflow::before,
 #run-model-assistant::before {
-  content: "AI";
-  font-size: 10px;
+  content: "智";
+  font-size: 12px;
   font-weight: 800;
 }
 
 #generate-skill-report::before {
-  content: "KB";
-  font-size: 10px;
+  content: "库";
+  font-size: 12px;
   font-weight: 800;
 }
 
 #generate-code-graph::before {
-  content: "CG";
-  font-size: 10px;
+  content: "图";
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -691,26 +697,26 @@ p {
 }
 
 #refresh-repair-center::before {
-  content: "FIX";
-  font-size: 10px;
+  content: "修";
+  font-size: 12px;
   font-weight: 800;
 }
 
 #batch-start-projects::before {
-  content: "Q";
-  font-size: 10px;
+  content: "队";
+  font-size: 12px;
   font-weight: 800;
 }
 
 #refresh-delivery-readiness::before {
-  content: "OK";
-  font-size: 10px;
+  content: "交";
+  font-size: 12px;
   font-weight: 800;
 }
 
 #compile-latex::before {
-  content: "TeX";
-  font-size: 10px;
+  content: "编";
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -1097,6 +1103,35 @@ p {
 .empty-state h3 {
   font-size: 20px;
   line-height: 1.35;
+}
+
+.not-found-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.not-found-panel {
+  width: min(460px, 100%);
+  border: 1px solid var(--clay-border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 30px;
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 14px;
+}
+
+.not-found-panel h1 {
+  font-size: 42px;
+  line-height: 1;
+}
+
+.not-found-panel .primary {
+  width: fit-content;
+  text-decoration: none;
 }
 
 .hidden {

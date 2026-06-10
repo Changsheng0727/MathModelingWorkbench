@@ -1317,6 +1317,7 @@ def normalize_tasks(selection: dict[str, Any]) -> list[str]:
         text = str(raw or "")
         tasks = [inline_text(item) for item in re.split(r"[\n；;]+", text) if inline_text(item)]
     tasks = [task for task in tasks if not is_meta_paper_task(task)]
+    tasks = merge_numbered_tasks(tasks)
     if not tasks:
         tasks = [
             "问题1：完成数据理解、预处理和基础变量构造",
@@ -1324,6 +1325,40 @@ def normalize_tasks(selection: dict[str, Any]) -> list[str]:
             "问题3：完成模型检验、结果解释和决策输出",
         ]
     return tasks[:8]
+
+
+def merge_numbered_tasks(tasks: list[str]) -> list[str]:
+    grouped: dict[int, list[str]] = {}
+    unnumbered: list[str] = []
+    for task in tasks:
+        index = task_problem_index(task)
+        if index:
+            grouped.setdefault(index, []).append(strip_task_problem_prefix(task))
+        else:
+            unnumbered.append(task)
+    if not grouped:
+        return tasks
+    merged: list[str] = []
+    for index in sorted(grouped):
+        parts = [part for part in dict.fromkeys(grouped[index]) if part]
+        merged.append(f"问题{index}：" + "；".join(parts))
+    merged.extend(unnumbered)
+    return merged
+
+
+def task_problem_index(task: str) -> int:
+    text = inline_text(task)
+    match = re.search(r"(?:问题|Question|Problem)\s*([0-9]+)", text, flags=re.I)
+    if not match:
+        match = re.search(r"闂.{0,12}?([0-9]+)", text)
+    return safe_int(match.group(1)) if match else 0
+
+
+def strip_task_problem_prefix(task: str) -> str:
+    text = inline_text(task)
+    text = re.sub(r"^\s*(?:问题|Question|Problem)\s*[0-9]+\s*[：:、.\-]?\s*", "", text, flags=re.I)
+    text = re.sub(r"^\s*闂.{0,12}?[0-9]+\s*[：:、.\-锛]*\s*", "", text)
+    return text.strip() or inline_text(task)
 
 
 def is_meta_paper_task(task: str) -> bool:
@@ -1339,6 +1374,12 @@ def is_meta_paper_task(task: str) -> bool:
         "不得编造",
         "结果回填",
         "AI工具",
+        "全流程",
+        "代码规划",
+        "manifest",
+        "复核日志",
+        "总控任务",
+        "G1-G6",
     ]
     return any(marker in text for marker in meta_markers)
 
@@ -1658,6 +1699,8 @@ def number_display_equations(tex: str) -> str:
             return match.group(0)
         if any(marker in body for marker in [r"\eqno", r"\tag{", r"\notag", r"\nonumber"]):
             return match.group(0)
+        if has_unclosed_latex_environment(body):
+            return match.group(0)
         clean_body = re.sub(r"\s*\\eqnum\s*$", "", body).strip()
         nonlocal added_number
         added_number = True
@@ -1671,6 +1714,19 @@ def number_display_equations(tex: str) -> str:
             1,
         )
     return updated
+
+
+def has_unclosed_latex_environment(body: str) -> bool:
+    stack: list[str] = []
+    for match in re.finditer(r"\\(begin|end)\{([A-Za-z*]+)\}", body):
+        action, name = match.groups()
+        if action == "begin":
+            stack.append(name)
+        elif stack and stack[-1] == name:
+            stack.pop()
+        else:
+            return True
+    return bool(stack)
 
 
 STANDALONE_FORMULA_SKIP_ENVIRONMENTS = {
@@ -2060,6 +2116,8 @@ def normalize_formula_for_latex(formula: str) -> str:
     text = re.sub(r"\|\|(.+?)\|\|(_\{?[A-Za-z0-9,+\-]+\}?)?", r"\\lVert \1\\rVert\2", text)
     for source, target in GREEK_TO_LATEX.items():
         text = text.replace(source, target)
+    text = text.replace(r"\_", "_")
+    text = text.replace(r"\logic", r"\mathrm{logic}")
     text = re.sub(r"(?<!\\)\bsum\s*_", r"\\sum_", text)
     text = re.sub(r"\\sum_\{([^{}]*?)\s+in\s+([^{}]*?)\}", r"\\sum_{\1\\in \\mathrm{\2}}", text)
     text = re.sub(r"\\sum_\{([^{}]*?)\s*=\s*([^{}]*?)\}", r"\\sum_{\1=\2}", text)
@@ -2081,7 +2139,13 @@ def normalize_formula_for_latex(formula: str) -> str:
     text = re.sub(r"(?<!\\)\bmin_", r"\\min_", text)
     text = re.sub(r"(?<!\\)\bargmin\b", r"\\arg\\min", text)
     text = text.replace("...", r"\ldots")
+    text = repair_text_macro_closures(text)
     return text.strip()
+
+
+def repair_text_macro_closures(text: str) -> str:
+    r"""Fix generated math like ``\text{label\})`` into ``\text{label})``."""
+    return re.sub(r"(\\text\{[^{}\\]*)\\\}(\s*[\)\]\},;+\-*/=<>\^_]|$)", r"\1}\2", text)
 
 
 def soften_inline_formula_text(text: str) -> str:

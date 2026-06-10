@@ -65,6 +65,9 @@ from openpyxl import load_workbook
 
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Arial Unicode MS", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
+plt.rcParams["figure.facecolor"] = "white"
+plt.rcParams["axes.facecolor"] = "white"
+plt.rcParams["savefig.facecolor"] = "white"
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -187,13 +190,13 @@ def plot_numeric_histograms(name: str, df: pd.DataFrame, safe_name: str) -> list
         if len(values) > 5000:
             values = values.sample(5000, random_state=20260520)
         ax.hist(values, bins=32, color="#2358a6", alpha=0.82)
-        ax.set_title(str(col))
+        ax.set_xlabel(str(col))
+        ax.set_ylabel("频数")
     for ax in axes[len(cols):]:
         ax.axis("off")
-    fig.suptitle(f"数值变量分布：{{name}}")
     fig.tight_layout()
     path = FIG_DIR / f"{{safe_name}}_numeric_hist.png"
-    fig.savefig(path, dpi=180)
+    fig.savefig(path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     outputs.append(path.relative_to(ROOT).as_posix())
     return outputs
@@ -212,10 +215,9 @@ def plot_correlation(name: str, df: pd.DataFrame, safe_name: str) -> list[str]:
     ax.set_xticklabels([str(c) for c in corr.columns], rotation=45, ha="right", fontsize=8)
     ax.set_yticklabels([str(c) for c in corr.index], fontsize=8)
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    ax.set_title(f"数值变量相关性：{{name}}")
     fig.tight_layout()
     path = FIG_DIR / f"{{safe_name}}_correlation.png"
-    fig.savefig(path, dpi=180)
+    fig.savefig(path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     corr.to_csv(TABLE_DIR / f"{{safe_name}}_correlation.csv", encoding="utf-8-sig")
     outputs.append(path.relative_to(ROOT).as_posix())
@@ -247,12 +249,11 @@ def plot_time_series(name: str, df: pd.DataFrame, safe_name: str) -> list[str]:
     daily.to_csv(TABLE_DIR / f"{{safe_name}}_daily_series.csv", index=False, encoding="utf-8-sig")
     fig, ax = plt.subplots(figsize=(10, 4.5))
     ax.plot(daily["date"], daily[str(value_col)], color="#237a57", linewidth=1.4)
-    ax.set_title(f"按日聚合趋势：{{name}} / {{value_col}}")
     ax.set_xlabel("日期")
     ax.set_ylabel(str(value_col))
     fig.tight_layout()
     path = FIG_DIR / f"{{safe_name}}_daily_trend.png"
-    fig.savefig(path, dpi=180)
+    fig.savefig(path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     outputs.append(path.relative_to(ROOT).as_posix())
     return outputs

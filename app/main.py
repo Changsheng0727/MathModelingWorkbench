@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from app.services.analyzer import apply_problem_selection, build_analysis
 from app.services.analysis_progress import AnalysisProgress, load_analysis_progress
-from app.services.auto_workflow import request_auto_workflow_cancel, run_auto_workflow
+from app.services.auto_workflow import diagnose_auto_workflow_exception, request_auto_workflow_cancel, run_auto_workflow
 from app.services.auto_workflow_jobs import (
     cancel_queued_auto_workflow_job,
     configure_auto_workflow_capacity,
@@ -51,6 +51,7 @@ from app.services.extractors import safe_folder_target
 from app.services.growth_metrics import build_growth_metrics, is_deliverable
 from app.services.llm_assistant import (
     MODEL_ASSISTANT_PROGRESS_RELATIVE,
+    call_chat_completion,
     run_baseline_llm_review,
     run_full_llm_refresh,
     run_custom_model_assistance,
@@ -517,6 +518,53 @@ def update_llm_settings(payload: LLMSettingsPayload) -> dict:
         return save_llm_settings(payload.api_key, payload.base_url, payload.model, payload.workflow_strategy)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/settings/llm/test")
+def test_llm_settings() -> dict:
+    settings = get_llm_settings()
+    if not settings.get("configured"):
+        return {
+            "ok": False,
+            "status": "requires_api_key",
+            "message": "请先填写 API 密钥后再测试连接。",
+            "diagnosis": {
+                "category": "llm_auth",
+                "label": "未配置 API 密钥",
+                "suggested_action": "在左侧 AI 设置中填写有效 API Key 后再测试连接。",
+            },
+        }
+    try:
+        content = call_chat_completion(
+            "请只回复 OK，用于数学建模客户端连接测试。",
+            max_tokens=16,
+            attempts=1,
+            stream_label="测试 AI 连接",
+        )
+    except Exception as exc:
+        diagnosis = diagnose_auto_workflow_exception(exc, "llm_settings_test")
+        return {
+            "ok": False,
+            "status": "failed",
+            "message": f"{type(exc).__name__}: {exc}",
+            "diagnosis": diagnosis,
+            "settings": {
+                "base_url": settings.get("base_url", ""),
+                "model": settings.get("model", ""),
+                "masked_api_key": settings.get("masked_api_key", ""),
+            },
+        }
+    return {
+        "ok": True,
+        "status": "success",
+        "message": "AI 连接测试成功。",
+        "sample": content[:80],
+        "settings": {
+            "base_url": settings.get("base_url", ""),
+            "model": settings.get("model", ""),
+            "masked_api_key": settings.get("masked_api_key", ""),
+        },
+    }
 
 
 @app.delete("/api/settings/llm")
@@ -1271,6 +1319,18 @@ def project_auto_workflow_job(project_id: str) -> dict:
     return {"auto_job": get_project_auto_workflow_job(project_id)}
 
 
+@app.get("/api/projects/{project_id}/auto/status")
+def project_auto_workflow_status(project_id: str) -> dict:
+    payload = project_progress(project_id)
+    progress = payload.get("progress", {}) if isinstance(payload.get("progress"), dict) else {}
+    auto_job = progress.get("auto_job") if isinstance(progress.get("auto_job"), dict) else get_project_auto_workflow_job(project_id)
+    return {
+        **payload,
+        "auto_job": auto_job or {},
+        "auto_workflow": progress,
+    }
+
+
 @app.get("/api/auto/jobs")
 def auto_workflow_jobs() -> dict:
     return {
@@ -1513,6 +1573,17 @@ def download(project_id: str, relative_path: str) -> FileResponse:
     if not target.exists() or not target.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
     return FileResponse(target, filename=target.name)
+
+
+@app.get("/download/{relative_path:path}")
+def download_from_recent_project(relative_path: str) -> FileResponse:
+    projects = list_projects()
+    if not projects:
+        raise HTTPException(status_code=404, detail="No project is available for this legacy download link.")
+    project_id = str(projects[0].get("id") or "")
+    if not project_id:
+        raise HTTPException(status_code=404, detail="No project is available for this legacy download link.")
+    return download(project_id, relative_path)
 
 
 @app.post("/api/projects/{project_id}/open-location/{relative_path:path}")

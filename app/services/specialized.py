@@ -87,6 +87,9 @@ PROBLEM_TITLE = CONFIG.get("problem_title", "Unknown problem")
 
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Arial Unicode MS", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
+plt.rcParams["figure.facecolor"] = "white"
+plt.rcParams["axes.facecolor"] = "white"
+plt.rcParams["savefig.facecolor"] = "white"
 
 
 def ensure_dirs() -> None:
@@ -353,13 +356,12 @@ def run_prediction_model(daily_source: str, daily: pd.DataFrame, manifest: dict)
     fig, ax = plt.subplots(figsize=(10, 4.5))
     ax.plot(daily["date"], daily[first_target], color="#657484", linewidth=1.0, alpha=0.7, label="历史")
     ax.plot(forecast_df["date"], forecast_df[first_target], color="#2358a6", marker="o", linewidth=1.8, label="预测")
-    ax.set_title(f"{first_target} 未来工作日预测")
     ax.set_xlabel("日期")
     ax.set_ylabel(str(first_target))
     ax.legend()
     fig.tight_layout()
     fig_path = FIG_DIR / "specialized_prediction_forecast.png"
-    fig.savefig(fig_path, dpi=200)
+    fig.savefig(fig_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     manifest["figures"].append(fig_path.relative_to(ROOT).as_posix())
     manifest["specialized_models"].append(
@@ -451,11 +453,10 @@ def run_dish_analysis(tables: list[tuple[str, pd.DataFrame]], manifest: dict) ->
     top = profile.head(20)
     fig, ax = plt.subplots(figsize=(10, 5.6))
     ax.barh(top["dish_name"][::-1], top["total_weight"][::-1], color="#237a57")
-    ax.set_title("累计销售重量排名前20菜品")
     ax.set_xlabel("累计重量")
     fig.tight_layout()
     fig_path = FIG_DIR / "specialized_top_dishes.png"
-    fig.savefig(fig_path, dpi=200)
+    fig.savefig(fig_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     manifest["figures"].append(fig_path.relative_to(ROOT).as_posix())
 
@@ -484,11 +485,10 @@ def run_dish_analysis(tables: list[tuple[str, pd.DataFrame]], manifest: dict) ->
         ax.set_xticks(x)
         ax.set_xticklabels(dates, rotation=25, ha="right")
         ax.set_ylabel("备菜量/kg")
-        ax.set_title("工作日午晚餐备菜总量")
         ax.legend()
         fig.tight_layout()
         fig_path = FIG_DIR / "specialized_meal_plan_total.png"
-        fig.savefig(fig_path, dpi=200)
+        fig.savefig(fig_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
         manifest["figures"].append(fig_path.relative_to(ROOT).as_posix())
         manifest["specialized_models"].append({"type": "meal_preparation", "source": "prediction_future_workdays.csv + dish_profile.csv", "rows": int(len(meal_plan))})

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from app.config import SETTINGS_ROOT
 from app.services.workflow_strategy import (
@@ -17,6 +18,12 @@ from app.services.workflow_strategy import (
 SETTINGS_PATH = SETTINGS_ROOT / "llm.json"
 DEFAULT_BASE_URL = "https://api.chshapi.org/v1"
 DEFAULT_MODEL = "gpt-5.5"
+BASE_URL_ENDPOINT_SUFFIXES = (
+    "/chat/completions",
+    "/completions",
+    "/responses",
+    "/models",
+)
 
 
 def get_llm_settings() -> dict[str, Any]:
@@ -25,12 +32,13 @@ def get_llm_settings() -> dict[str, Any]:
     api_key = stored.get("api_key") or env_key
     source = "local" if stored.get("api_key") else "env" if env_key else ""
     strategy = get_workflow_strategy(stored.get("workflow_strategy"))
+    base_url = effective_base_url(stored.get("base_url"))
     return {
         "provider": "openai",
         "configured": bool(api_key),
         "source": source,
         "masked_api_key": mask_api_key(api_key),
-        "base_url": stored.get("base_url") or DEFAULT_BASE_URL,
+        "base_url": base_url,
         "model": stored.get("model") or DEFAULT_MODEL,
         "workflow_strategy": strategy["id"],
         "workflow_strategy_label": strategy["label"],
@@ -44,7 +52,7 @@ def get_private_llm_config() -> dict[str, str]:
     env_key = os.getenv("OPENAI_API_KEY", "")
     return {
         "api_key": stored.get("api_key") or env_key,
-        "base_url": stored.get("base_url") or DEFAULT_BASE_URL,
+        "base_url": effective_base_url(stored.get("base_url")),
         "model": stored.get("model") or DEFAULT_MODEL,
         "workflow_strategy": normalize_workflow_strategy(stored.get("workflow_strategy")),
     }
@@ -117,7 +125,31 @@ def normalize_base_url(value: str | None) -> str:
         return DEFAULT_BASE_URL
     if not (value.startswith("https://") or value.startswith("http://")):
         raise ValueError("Base URL 必须以 http:// 或 https:// 开头")
+    value = strip_completion_endpoint(value)
+    parsed = urlsplit(value)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError("Base URL must be a complete http(s) URL")
+    path = parsed.path.rstrip("/")
+    if parsed.netloc.lower() == "api.openai.com" and not path:
+        path = "/v1"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def strip_completion_endpoint(value: str) -> str:
+    value = value.strip().rstrip("/")
+    lowered = value.lower()
+    for suffix in BASE_URL_ENDPOINT_SUFFIXES:
+        if lowered.endswith(suffix):
+            value = value[: -len(suffix)].rstrip("/")
+            break
     return value
+
+
+def effective_base_url(value: str | None) -> str:
+    try:
+        return normalize_base_url(value or DEFAULT_BASE_URL)
+    except ValueError:
+        return str(value or DEFAULT_BASE_URL).strip().rstrip("/")
 
 
 def normalize_model(value: str | None) -> str:

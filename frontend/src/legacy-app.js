@@ -45,6 +45,7 @@ const els = {
   modelInput: document.querySelector("#model-input"),
   workflowStrategyInput: document.querySelector("#workflow-strategy-input"),
   workflowStrategyHint: document.querySelector("#workflow-strategy-hint"),
+  testLlmSettings: document.querySelector("#test-llm-settings"),
   clearLlmSettings: document.querySelector("#clear-llm-settings"),
   llmSettingsStatus: document.querySelector("#llm-settings-status"),
   title: document.querySelector("#project-title"),
@@ -207,6 +208,25 @@ function showToast(message, tone = "info") {
   }, 2800);
 }
 
+function responseErrorMessage(response, payload, text, requestPath = "") {
+  const rawDetail = payload?.detail || payload?.message || text || response.statusText || `HTTP ${response.status}`;
+  const detail = String(rawDetail || "").trim();
+  const lowerDetail = detail.toLowerCase();
+  const isLocalApiRequest = String(requestPath || "").startsWith("/api/");
+  const looksLikeLlmProvider404 = (
+    lowerDetail.includes("llm api") ||
+    lowerDetail.includes("chat/completions") ||
+    lowerDetail.includes("base url") ||
+    detail.includes("服务商返回 NOT FOUND") ||
+    detail.includes("接口地址") ||
+    detail.includes("模型")
+  );
+  if (isLocalApiRequest && response.status === 404 && (!detail || /not found/i.test(detail)) && !looksLikeLlmProvider404) {
+    return "后端接口不存在（HTTP 404）。请关闭旧客户端或旧后台服务后重新打开最新版客户端；如果仍然出现，请重新安装最新安装包。";
+  }
+  return detail || `HTTP ${response.status}`;
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   const text = await response.text();
@@ -219,7 +239,7 @@ async function api(path, options = {}) {
     }
   }
   if (!response.ok) {
-    const detail = payload?.detail || text || response.statusText || `HTTP ${response.status}`;
+    const detail = responseErrorMessage(response, payload, text, path);
     throw new Error(detail);
   }
   return payload ?? {};
@@ -757,7 +777,7 @@ function renderStatusCards(metadata, analysis) {
       status: analysis ? "success" : "pending",
     },
     {
-      title: "LLM 分析",
+      title: "大模型分析",
       value: statusLabel(metadata.llm_analysis_status),
       detail: metadata.llm_analysis_status === "requires_api_key" ? "需要先填写 API 密钥" : "选题和建模建议",
       status: statusTone(metadata.llm_analysis_status),
@@ -765,7 +785,7 @@ function renderStatusCards(metadata, analysis) {
     {
       title: "自动解题",
       value: statusLabel(metadata.auto_workflow_status),
-      detail: diagnosisDetail || metadata.auto_workflow_mode || "LLM+代码一键流程",
+      detail: diagnosisDetail || metadata.auto_workflow_mode || "大模型+代码一键流程",
       status: statusTone(metadata.auto_workflow_status),
     },
     {
@@ -1780,7 +1800,7 @@ function renderProblems(problems, selectedId, systemRecommendedId = "") {
           </div>
           <div class="chip-row">
             <span class="problem-score">综合得分 ${escapeHtml(problem.fit_score)}</span>
-            <span class="chip is-muted">AI适配 ${escapeHtml(problem.ai_fit || "-")}</span>
+            <span class="chip is-muted">智能适配 ${escapeHtml(problem.ai_fit || "-")}</span>
             <span class="chip is-muted">可行性 ${escapeHtml(problem.feasibility || "-")}</span>
           </div>
           ${renderScoreBreakdown(problem.score_breakdown)}
@@ -1913,15 +1933,15 @@ function renderArtifacts(metadata, projectId) {
     ["attachment_profile_json", "并发附件画像 JSON"],
     ["parallel_task_plan", "并行求解任务计划"],
     ["parallel_task_plan_json", "并行求解任务计划 JSON"],
-    ["llm_problem_structure", "LLM 赛题结构增强"],
-    ["llm_problem_analysis", "LLM 赛题分析"],
-    ["llm_baseline_review", "LLM 基线复盘"],
-    ["llm_specialized_review", "LLM 专项复盘"],
-    ["llm_model_assistant", "LLM 模型辅助"],
-    ["llm_model_assistant_history", "LLM 模型辅助历史"],
-    ["llm_full_solution", "LLM 全流程题解"],
-    ["llm_paper_latex", "LLM LaTeX 生成记录"],
-    ["computed_solver_spec", "LLM 代码求解规范"],
+    ["llm_problem_structure", "大模型赛题结构增强"],
+    ["llm_problem_analysis", "大模型赛题分析"],
+    ["llm_baseline_review", "大模型基线复盘"],
+    ["llm_specialized_review", "大模型专项复盘"],
+    ["llm_model_assistant", "大模型辅助"],
+    ["llm_model_assistant_history", "大模型辅助历史"],
+    ["llm_full_solution", "大模型全流程题解"],
+    ["llm_paper_latex", "大模型 LaTeX 生成记录"],
+    ["computed_solver_spec", "大模型代码求解规范"],
     ["computed_solver_script", "代码求解脚本"],
     ["computed_solver_repair", "代码求解自动修复记录"],
     ["computed_solver_log", "代码运行日志"],
@@ -1943,7 +1963,7 @@ function renderArtifacts(metadata, projectId) {
     ["code_graph_report", "代码图谱报告"],
     ["code_graph_json", "代码图谱 JSON"],
     ["paper_autofilled", "回填论文 LaTeX"],
-    ["paper_llm", "LLM 论文 LaTeX"],
+    ["paper_llm", "大模型论文 LaTeX"],
     ["paper_fill_summary", "回填摘要"],
     ["format_rules_summary", "格式规则摘要"],
     ["paper_pdf", "论文 PDF"],
@@ -1953,15 +1973,15 @@ function renderArtifacts(metadata, projectId) {
     ["paper_review", "论文审查报告"],
     ["paper_review_json", "论文审查 JSON"],
     ["material_passport_json", "材料护照 JSON"],
-    ["llm_problem_structure_json", "LLM 赛题结构增强 JSON"],
-    ["llm_problem_analysis_json", "LLM 赛题分析 JSON"],
-    ["llm_baseline_review_json", "LLM 基线复盘 JSON"],
-    ["llm_specialized_review_json", "LLM 专项复盘 JSON"],
-    ["llm_model_assistant_json", "LLM 模型辅助 JSON"],
-    ["llm_model_assistant_history_json", "LLM 模型辅助历史 JSON"],
-    ["llm_full_solution_json", "LLM 全流程题解 JSON"],
-    ["llm_paper_latex_json", "LLM LaTeX 生成 JSON"],
-    ["computed_solver_spec_json", "LLM 代码求解规范 JSON"],
+    ["llm_problem_structure_json", "大模型赛题结构增强 JSON"],
+    ["llm_problem_analysis_json", "大模型赛题分析 JSON"],
+    ["llm_baseline_review_json", "大模型基线复盘 JSON"],
+    ["llm_specialized_review_json", "大模型专项复盘 JSON"],
+    ["llm_model_assistant_json", "大模型辅助 JSON"],
+    ["llm_model_assistant_history_json", "大模型辅助历史 JSON"],
+    ["llm_full_solution_json", "大模型全流程题解 JSON"],
+    ["llm_paper_latex_json", "大模型 LaTeX 生成 JSON"],
+    ["computed_solver_spec_json", "大模型代码求解规范 JSON"],
     ["computed_solver_script_json", "代码求解脚本 JSON"],
     ["computed_solver_repair_json", "代码求解自动修复 JSON"],
     ["computed_completeness_json", "代码求解完整性检查 JSON"],
@@ -2629,43 +2649,76 @@ els.workflowStrategyInput?.addEventListener("change", () => {
   }
 });
 
+function llmSettingsPayloadFromForm() {
+  return {
+    api_key: els.apiKeyInput.value,
+    base_url: els.baseUrlInput.value,
+    model: els.modelInput.value,
+    workflow_strategy: els.workflowStrategyInput?.value || "balanced",
+  };
+}
+
+async function saveLlmSettingsFromForm() {
+  const settings = await api("/api/settings/llm", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(llmSettingsPayloadFromForm()),
+  });
+  renderLlmSettings(settings);
+  return settings;
+}
+
 els.llmSettingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = els.llmSettingsForm.querySelector("button[type='submit']");
   button.disabled = true;
-  els.llmSettingsStatus.textContent = "正在保存 AI 设置。";
+  els.llmSettingsStatus.textContent = "正在保存大模型设置。";
   try {
-    const payload = {
-      api_key: els.apiKeyInput.value,
-      base_url: els.baseUrlInput.value,
-      model: els.modelInput.value,
-      workflow_strategy: els.workflowStrategyInput?.value || "balanced",
-    };
-    const settings = await api("/api/settings/llm", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    renderLlmSettings(settings);
-    showToast("AI 设置已保存", "success");
+    await saveLlmSettingsFromForm();
+    showToast("大模型设置已保存", "success");
   } catch (error) {
     els.llmSettingsStatus.textContent = `保存失败：${error.message}`;
-    showToast(`AI 设置保存失败：${error.message}`, "error");
+    showToast(`大模型设置保存失败：${error.message}`, "error");
   } finally {
     button.disabled = false;
   }
 });
 
+els.testLlmSettings?.addEventListener("click", async () => {
+  els.testLlmSettings.disabled = true;
+  els.llmSettingsStatus.textContent = "正在保存当前大模型设置并测试连接。";
+  try {
+    await saveLlmSettingsFromForm();
+    els.llmSettingsStatus.textContent = "正在测试大模型连接。";
+    const result = await api("/api/settings/llm/test", { method: "POST" });
+    if (result.ok) {
+      els.llmSettingsStatus.textContent = "大模型连接测试成功，可以运行大模型+代码一键流程。";
+      showToast("大模型连接测试成功", "success");
+      return;
+    }
+    const diagnosis = result.diagnosis || {};
+    const label = diagnosis.label ? `${diagnosis.label}：` : "";
+    const hint = diagnosis.suggested_action || result.message || "请检查接口地址、模型名和 API Key。";
+    els.llmSettingsStatus.textContent = `大模型连接测试失败：${label}${hint}`;
+    showToast("大模型连接测试失败，请查看设置提示", "error");
+  } catch (error) {
+    els.llmSettingsStatus.textContent = `大模型连接测试失败：${error.message}`;
+    showToast(`大模型连接测试失败：${error.message}`, "error");
+  } finally {
+    els.testLlmSettings.disabled = false;
+  }
+});
+
 els.clearLlmSettings.addEventListener("click", async () => {
   els.clearLlmSettings.disabled = true;
-  els.llmSettingsStatus.textContent = "正在清除 AI 设置。";
+  els.llmSettingsStatus.textContent = "正在清除大模型设置。";
   try {
     const settings = await api("/api/settings/llm", { method: "DELETE" });
     renderLlmSettings(settings);
-    showToast("AI 设置已清除", "success");
+    showToast("大模型设置已清除", "success");
   } catch (error) {
     els.llmSettingsStatus.textContent = `清除失败：${error.message}`;
-    showToast(`清除 AI 设置失败：${error.message}`, "error");
+    showToast(`清除大模型设置失败：${error.message}`, "error");
   } finally {
     els.clearLlmSettings.disabled = false;
   }
@@ -2784,7 +2837,7 @@ els.modelAssistantForm.addEventListener("submit", async (event) => {
   }
   const button = els.modelAssistantForm.querySelector("button[type='submit']");
   button.disabled = true;
-  els.modelAssistantStatus.textContent = "正在生成模型辅助方案，下面会显示检索、提示词构建和 LLM 生成过程。";
+  els.modelAssistantStatus.textContent = "正在生成模型辅助方案，下面会显示检索、提示词构建和大模型生成过程。";
   const stopProgressPolling = startModelAssistantProgressPolling(projectId);
   try {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/model-assistant`, {
@@ -2907,7 +2960,7 @@ async function runAutoWorkflow(
   const settings = state.llmSettings || (await api("/api/settings/llm"));
   state.llmSettings = settings;
   if (!settings.configured) {
-    els.autoWorkflowStatus.textContent = "请先在左侧 AI 设置中填写 API 密钥；LLM+代码自动解题不提供本地降级模式。";
+    els.autoWorkflowStatus.textContent = "请先在左侧大模型设置中填写接口密钥；大模型+代码自动解题不提供本地降级模式。";
     return;
   }
   const selectedId = selectedProblemId(state.currentProject?.metadata || {});
@@ -2940,7 +2993,7 @@ async function runAutoWorkflow(
     const detail = await api(`/api/projects/${encodeURIComponent(projectId)}`);
     renderProject(detail);
     if (finalStatus === "success") {
-      els.autoWorkflowStatus.textContent = "LLM+代码自动流程完成：已生成题解方案、运行代码得到结果、回填论文、审查报告和支撑材料。";
+      els.autoWorkflowStatus.textContent = "大模型+代码自动流程完成：已生成题解方案、运行代码得到结果、回填论文、审查报告和支撑材料。";
       showToast("自动流程已完成", "success");
     } else if (finalStatus === "cancelled") {
       els.autoWorkflowStatus.textContent = "自动流程已中断：当前阶段已安全结束，可点击“继续生成”从断点恢复。";
@@ -3110,7 +3163,7 @@ function renderLiveEvent(event) {
   return `
     <div class="llm-live-event" data-status="${escapeHtml(status)}">
       <span></span>
-      <p>${escapeHtml(event.label || event.kind || "LLM 操作")}${escapeHtml(detail)}</p>
+      <p>${escapeHtml(event.label || event.kind || "大模型操作")}${escapeHtml(detail)}</p>
     </div>
   `;
 }
@@ -3606,14 +3659,14 @@ els.runLlmAnalysis.addEventListener("click", async () => {
     return;
   }
   els.runLlmAnalysis.disabled = true;
-  els.llmAnalysisStatus.textContent = "正在调用大模型分析赛题并刷新 LLM 报告。";
+  els.llmAnalysisStatus.textContent = "正在调用大模型分析赛题并刷新大模型报告。";
   try {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/analyze`, { method: "POST" });
     renderProject(payload.project);
-    els.llmAnalysisStatus.textContent = "LLM 分析完成，可查看分析报告。";
+    els.llmAnalysisStatus.textContent = "大模型分析完成，可查看分析报告。";
     await loadProjects();
   } catch (error) {
-    els.llmAnalysisStatus.textContent = `LLM 分析失败：${error.message}`;
+    els.llmAnalysisStatus.textContent = `大模型分析失败：${error.message}`;
   } finally {
     els.runLlmAnalysis.disabled = false;
   }

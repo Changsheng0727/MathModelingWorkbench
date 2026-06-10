@@ -8,9 +8,10 @@ from datetime import datetime
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from app.services.analyzer import build_workflow, choose_problem, clean_question, normalize_problem_id, score_problem
-from app.services.llm_settings import get_llm_settings, get_private_llm_config
+from app.services.llm_settings import get_llm_settings, get_private_llm_config, normalize_base_url
 from app.services.llm_stream import active_llm_stream, bind_llm_stream
 from app.services.model_research import search_model_references
 from app.services.store import save_json
@@ -25,6 +26,9 @@ SYSTEM_PROMPT = """你是数学建模竞赛智能工作台中的大模型协作�
 """
 
 MODEL_ASSISTANT_PROGRESS_RELATIVE = "artifacts/model_assistant/progress.json"
+LLM_REQUEST_TIMEOUT_SECONDS = 300
+LLM_STREAM_READ_TIMEOUT_SECONDS = 60
+LLM_STREAM_TOTAL_TIMEOUT_SECONDS = 360
 
 
 def write_material_passport(
@@ -451,15 +455,20 @@ def call_chat_completion(
     max_tokens: int | None = None,
     attempts: int = 3,
     stream_label: str | None = None,
+    max_output_chars: int | None = None,
 ) -> str:
     config = get_private_llm_config()
     api_key = config["api_key"]
     if not api_key:
         raise ValueError("未配置 API Key")
-    base_url = config["base_url"].rstrip("/")
-    url = f"{base_url}/chat/completions"
+    try:
+        base_url = normalize_base_url(str(config.get("base_url") or ""))
+    except ValueError as exc:
+        raise ValueError(f"Base URL 配置无效：{exc}") from exc
+    model = str(config.get("model") or "")
+    urls = build_chat_completion_urls(base_url)
     body: dict[str, Any] = {
-        "model": config["model"],
+        "model": model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
@@ -472,31 +481,45 @@ def call_chat_completion(
     attempts = max(1, attempts)
     live_stream = active_llm_stream()
     label = stream_label or infer_llm_stream_label(prompt)
+    tried_urls: list[str] = []
     for attempt in range(1, attempts + 1):
         if live_stream:
             live_stream.begin_request(label, attempt, attempts, max_tokens)
-        try:
-            if live_stream:
-                content = request_chat_completion_stream(url, api_key, body, live_stream)
-            else:
-                content = request_chat_completion_once(url, api_key, body)
-            if not content.strip():
-                raise RuntimeError("LLM API 返回内容为空")
-            result = content.strip()
-            if live_stream:
-                live_stream.finish_request("success", f"已生成 {len(result)} 个字符。")
-            return result
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            last_error = f"LLM API 请求失败：HTTP {exc.code} {detail[:800]}"
-            if live_stream:
-                live_stream.finish_request("failed", last_error)
-            if exc.code in {400, 401, 403, 404}:
-                raise RuntimeError(last_error) from exc
-        except Exception as exc:
-            last_error = f"{type(exc).__name__}: {exc}"
-            if live_stream:
-                live_stream.finish_request("failed", last_error)
+        for url_index, url in enumerate(urls):
+            if url not in tried_urls:
+                tried_urls.append(url)
+            try:
+                if live_stream:
+                    content = request_chat_completion_stream(url, api_key, body, live_stream, max_output_chars=max_output_chars)
+                else:
+                    content = request_chat_completion_once(url, api_key, body, max_output_chars=max_output_chars)
+                if not content.strip():
+                    raise RuntimeError("LLM API 返回内容为空")
+                result = content.strip()
+                if live_stream:
+                    live_stream.finish_request("success", f"已生成 {len(result)} 个字符。")
+                return result
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")
+                last_error = format_llm_http_error(exc.code, detail, url, model, base_url, tried_urls=tried_urls)
+                can_try_next_url = (
+                    exc.code == 404
+                    and url_index < len(urls) - 1
+                    and not llm_detail_mentions_model_not_found(detail)
+                )
+                if can_try_next_url:
+                    if live_stream:
+                        live_stream.emit("endpoint_retry", label, "当前接口返回 404，正在自动尝试 /v1 兼容地址。", status="warning")
+                    continue
+                if live_stream:
+                    live_stream.finish_request("failed", last_error)
+                if exc.code in {400, 401, 403, 404}:
+                    raise RuntimeError(last_error) from exc
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                if live_stream:
+                    live_stream.finish_request("failed", last_error)
+                break
         if attempt < attempts:
             if live_stream:
                 live_stream.emit("retry", label, f"{last_error}；准备重试。", status="warning")
@@ -504,7 +527,98 @@ def call_chat_completion(
     raise RuntimeError(last_error or "LLM API 请求失败")
 
 
-def request_chat_completion_once(url: str, api_key: str, body: dict[str, Any]) -> str:
+def build_chat_completion_urls(base_url: str) -> list[str]:
+    base = normalize_base_url(base_url).rstrip("/")
+    urls = [f"{base}/chat/completions"]
+    parsed = urlsplit(base)
+    path = parsed.path.rstrip("/")
+    if not path.endswith("/v1"):
+        alt_path = f"{path}/v1" if path else "/v1"
+        alt_base = urlunsplit((parsed.scheme, parsed.netloc, alt_path, "", "")).rstrip("/")
+        urls.append(f"{alt_base}/chat/completions")
+    return list(dict.fromkeys(urls))
+
+
+def llm_detail_mentions_model_not_found(detail: str) -> bool:
+    text = normalize_llm_http_detail(detail).lower()
+    if not text:
+        return False
+    model_markers = ["model", "模型", "model_not_found", "model not found"]
+    not_found_markers = ["not found", "does not exist", "not exist", "not_found", "不存在", "不可用"]
+    return any(marker in text for marker in model_markers) and any(marker in text for marker in not_found_markers)
+
+
+def format_llm_http_error(
+    code: int,
+    detail: str,
+    url: str,
+    model: str,
+    base_url: str,
+    tried_urls: list[str] | None = None,
+) -> str:
+    detail_text = normalize_llm_http_detail(detail)
+    parts = [f"LLM API 请求失败：HTTP {code}"]
+    if detail_text:
+        parts.append(detail_text[:800])
+    parts.append(f"请求地址：{url}；接口地址：{base_url or '未填写'}；模型：{model or '未填写'}。")
+    if tried_urls:
+        parts.append("已尝试地址：" + "；".join(dict.fromkeys(tried_urls)))
+    if code == 404:
+        parts.append(
+            "服务商返回 NOT FOUND，通常表示接口路径或模型名在当前 Base URL 下不存在。"
+            "请在 AI 设置中填写服务商的 OpenAI 兼容基础地址，不要填写 /chat/completions；"
+            "如果地址正确，请把模型名改为当前 API Key 实际可调用的模型。"
+        )
+    elif code in {401, 403}:
+        parts.append("请检查 API Key 是否正确、是否有余额或是否具备调用当前模型的权限。")
+    elif code == 400:
+        parts.append("请检查模型名、请求参数和服务商兼容性；部分服务商不支持相同的 max_tokens 或流式参数。")
+    return " ".join(parts)
+
+
+def normalize_llm_http_detail(detail: str) -> str:
+    text = (detail or "").strip()
+    if not text:
+        return ""
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return re.sub(r"\s+", " ", text)
+    extracted = extract_llm_error_text(payload)
+    return re.sub(r"\s+", " ", extracted or text).strip()
+
+
+def extract_llm_error_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in ["detail", "message", "error"]:
+            item = value.get(key)
+            text = extract_llm_error_text(item)
+            if text:
+                return text
+        for key in ["code", "type"]:
+            item = value.get(key)
+            if isinstance(item, str) and item:
+                return item
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except TypeError:
+            return str(value)
+    if isinstance(value, list):
+        texts = [extract_llm_error_text(item) for item in value]
+        return "；".join(text for text in texts if text)
+    if value is None:
+        return ""
+    return str(value)
+
+
+def request_chat_completion_once(
+    url: str,
+    api_key: str,
+    body: dict[str, Any],
+    max_output_chars: int | None = None,
+) -> str:
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url,
@@ -515,12 +629,20 @@ def request_chat_completion_once(url: str, api_key: str, body: dict[str, Any]) -
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(request, timeout=600) as response:
+    with urllib.request.urlopen(request, timeout=LLM_REQUEST_TIMEOUT_SECONDS) as response:
         payload = json.loads(response.read().decode("utf-8"))
-    return extract_completion_content(payload)
+    content = extract_completion_content(payload)
+    enforce_llm_output_limit(content, max_output_chars)
+    return content
 
 
-def request_chat_completion_stream(url: str, api_key: str, body: dict[str, Any], live_stream: Any) -> str:
+def request_chat_completion_stream(
+    url: str,
+    api_key: str,
+    body: dict[str, Any],
+    live_stream: Any,
+    max_output_chars: int | None = None,
+) -> str:
     stream_body = dict(body)
     stream_body["stream"] = True
     data = json.dumps(stream_body, ensure_ascii=False).encode("utf-8")
@@ -535,16 +657,21 @@ def request_chat_completion_stream(url: str, api_key: str, body: dict[str, Any],
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=600) as response:
+        with urllib.request.urlopen(request, timeout=LLM_STREAM_READ_TIMEOUT_SECONDS) as response:
             content_type = response.headers.get("Content-Type", "").lower()
             if "event-stream" not in content_type:
                 payload = json.loads(response.read().decode("utf-8"))
                 content = extract_completion_content(payload)
+                enforce_llm_output_limit(content, max_output_chars)
                 live_stream.append_delta(content)
                 return content
 
             chunks: list[str] = []
+            total_chars = 0
+            started = time.monotonic()
             for raw_line in response:
+                if time.monotonic() - started > LLM_STREAM_TOTAL_TIMEOUT_SECONDS:
+                    raise TimeoutError(f"LLM API 流式响应超过 {LLM_STREAM_TOTAL_TIMEOUT_SECONDS} 秒，已中断本次生成。")
                 line = raw_line.decode("utf-8", errors="replace").strip()
                 if not line or line.startswith(":") or not line.startswith("data:"):
                     continue
@@ -557,6 +684,11 @@ def request_chat_completion_stream(url: str, api_key: str, body: dict[str, Any],
                     continue
                 delta = extract_stream_delta(payload)
                 if delta:
+                    total_chars += len(delta)
+                    if max_output_chars and total_chars > max_output_chars:
+                        raise RuntimeError(
+                            f"LLM API 响应超过安全长度上限（{total_chars}/{max_output_chars} 字符），已中断本次生成。"
+                        )
                     chunks.append(delta)
                     live_stream.append_delta(delta)
             content = "".join(chunks)
@@ -567,10 +699,17 @@ def request_chat_completion_stream(url: str, api_key: str, body: dict[str, Any],
         if exc.code in {400, 404, 405, 501}:
             detail = exc.read().decode("utf-8", errors="replace")
             live_stream.emit("stream_fallback", "流式响应不可用", f"接口未接受 stream=true，已退回普通响应。{detail[:160]}", status="warning")
-            content = request_chat_completion_once(url, api_key, body)
+            content = request_chat_completion_once(url, api_key, body, max_output_chars=max_output_chars)
             live_stream.append_delta(content)
             return content
         raise
+
+
+def enforce_llm_output_limit(content: str, max_output_chars: int | None) -> None:
+    if max_output_chars and len(content or "") > max_output_chars:
+        raise RuntimeError(
+            f"LLM API 响应超过安全长度上限（{len(content)}/{max_output_chars} 字符），已中断本次生成。"
+        )
 
 
 def extract_completion_content(payload: dict[str, Any]) -> str:

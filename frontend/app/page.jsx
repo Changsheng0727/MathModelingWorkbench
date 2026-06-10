@@ -49,7 +49,7 @@ export default function WorkbenchPage() {
 
           <section className="panel">
             <div className="section-title panel-title-actions">
-              <h2>AI 设置</h2>
+              <h2>大模型设置</h2>
               <a
                 id="get-api-key"
                 className="ghost compact external-link"
@@ -62,7 +62,7 @@ export default function WorkbenchPage() {
             </div>
             <form id="llm-settings-form" className="settings-form">
               <label>
-                <span className="label">OpenAI API 密钥</span>
+                <span className="label">大模型接口密钥</span>
                 <input id="api-key-input" className="text-input" type="password" autoComplete="off" placeholder="sk-..." />
               </label>
               <label>
@@ -82,10 +82,11 @@ export default function WorkbenchPage() {
                 </select>
               </label>
               <p id="workflow-strategy-hint" className="strategy-hint">
-                均衡档适合大多数赛题；极速档会要求 LLM 生成更高并发的求解脚本。
+                均衡档适合大多数赛题；极速档会要求大模型生成更高并发的求解脚本。
               </p>
               <div className="inline-actions">
                 <button id="save-llm-settings" className="primary compact" type="submit">保存</button>
+                <button id="test-llm-settings" className="ghost" type="button">测试连接</button>
                 <button id="clear-llm-settings" className="ghost" type="button">清除</button>
               </div>
             </form>
@@ -286,7 +287,7 @@ export default function WorkbenchPage() {
                   <div className="action-row">
                     <button id="run-modeling" className="ghost hidden" type="button">运行基线建模</button>
                     <button id="run-specialized" className="ghost hidden" type="button">运行专项建模</button>
-                    <button id="run-auto-workflow" className="primary compact" type="button">LLM+代码一键完成</button>
+                    <button id="run-auto-workflow" className="primary compact" type="button">大模型+代码一键完成</button>
                     <button id="resume-auto-workflow" className="ghost" type="button">继续生成</button>
                     <button id="cancel-auto-workflow" className="ghost" type="button">中断流程</button>
                     <button id="refresh-diagnostics" className="ghost" type="button">刷新诊断/性能</button>
@@ -295,7 +296,7 @@ export default function WorkbenchPage() {
                     <button id="fill-paper" className="ghost hidden" type="button">回填论文</button>
                     <button id="compile-latex" className="ghost" type="button">编译 LaTeX</button>
                     <button id="review-paper" className="ghost" type="button">审查论文</button>
-                    <button id="run-llm-analysis" className="ghost hidden" type="button">LLM 分析</button>
+                    <button id="run-llm-analysis" className="ghost hidden" type="button">大模型分析</button>
                   </div>
                 </div>
                 <div className="status-stack">

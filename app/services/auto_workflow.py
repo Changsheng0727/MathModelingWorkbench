@@ -25,6 +25,10 @@ from app.services.workflow_strategy import get_workflow_strategy, public_workflo
 StepFn = Callable[[], dict[str, Any]]
 CONTROL_RELATIVE = "artifacts/auto_workflow_control.json"
 AUTO_WORKFLOW_TOTAL_STEPS = 9
+LLM_PLANNING_ARTIFACT_KEYS = {
+    "llm_full_solution": "artifacts/llm_full_solution.md",
+    "llm_full_solution_json": "artifacts/llm_full_solution.json",
+}
 
 LEGACY_MODELING_ARTIFACT_KEYS = {
     "modeling_script",
@@ -98,6 +102,27 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
         if previous_steps:
             report["steps"] = previous_steps
             report["resumed_completed_steps"] = len(previous_steps)
+        completed_ids = {str(step.get("id")) for step in report["steps"] if isinstance(step, dict)}
+        reusable_planning = reusable_llm_planning_artifacts(root, meta)
+        if reusable_planning and "llm_planning" not in completed_ids:
+            now = datetime.now().isoformat(timespec="seconds")
+            report["steps"].append(
+                {
+                    "id": "llm_planning",
+                    "title": "大模型当场分析、选题与代码求解规划",
+                    "status": "success",
+                    "success": True,
+                    "required": True,
+                    "started_at": now,
+                    "finished_at": now,
+                    "duration_seconds": 0.0,
+                    "detail": "已复用上次成功生成的 LLM 求解规划，跳过重复请求。",
+                    "artifacts": reusable_planning,
+                }
+            )
+            update_artifacts(meta, reusable_planning)
+            meta["llm_solution_status"] = "planning_success"
+            meta["paper_fill_status"] = "waiting_for_computed_results"
 
     meta["auto_workflow_status"] = "running"
     meta["auto_workflow_mode"] = "llm_code_results"
@@ -345,7 +370,7 @@ def run_step(
         item["status"] = "failed" if required else "warning"
         item["success"] = False
         item["detail"] = f"{type(exc).__name__}: {exc}"
-        diagnosis = load_failure_diagnosis(root)
+        diagnosis = load_failure_diagnosis(root) or diagnose_auto_workflow_exception(exc, step_id)
         if diagnosis:
             item["failure_diagnosis"] = diagnosis
             meta["last_failure_diagnosis"] = compact_failure_diagnosis(diagnosis)
@@ -437,6 +462,36 @@ def load_failure_diagnosis(root: Path) -> dict[str, Any]:
             diagnosis = latest.get("failure_diagnosis")
             if isinstance(diagnosis, dict) and diagnosis.get("category"):
                 return diagnosis
+    return {}
+
+
+def diagnose_auto_workflow_exception(exc: Exception, step_id: str) -> dict[str, Any]:
+    text = f"{type(exc).__name__}: {exc}"
+    lower = text.lower()
+    llm_markers = ["llm api", "base url", "chat/completions", "api key", "model", "模型", "服务商"]
+    if ("not found" in lower or "http 404" in lower) and any(marker in lower for marker in llm_markers):
+        return {
+            "category": "llm_api_not_found",
+            "label": "LLM 接口或模型不可用",
+            "stage": step_id,
+            "severity": "fatal",
+            "repair_focus": "检查 AI 设置中的 Base URL 和模型名。",
+            "suggested_action": (
+                "在左侧 AI 设置中填写服务商的 OpenAI 兼容基础地址，不要包含 /chat/completions；"
+                "确认模型名是当前 API Key 可调用的真实模型后，点击继续生成。"
+            ),
+            "evidence": text[:700],
+        }
+    if "api key" in lower or "401" in lower or "403" in lower:
+        return {
+            "category": "llm_auth",
+            "label": "LLM 密钥或权限异常",
+            "stage": step_id,
+            "severity": "fatal",
+            "repair_focus": "检查 API Key、额度和模型调用权限。",
+            "suggested_action": "在左侧 AI 设置中更新有效 API Key，并确认账号有权限调用当前模型后继续生成。",
+            "evidence": text[:700],
+        }
     return {}
 
 
@@ -608,6 +663,19 @@ def load_resumable_steps(root: Path) -> list[dict[str, Any]]:
         if reusable:
             return reusable
     return []
+
+
+def reusable_llm_planning_artifacts(root: Path, meta: dict[str, Any]) -> dict[str, str]:
+    artifacts = meta.get("artifacts") if isinstance(meta.get("artifacts"), dict) else {}
+    candidates: dict[str, str] = {}
+    for key, fallback in LLM_PLANNING_ARTIFACT_KEYS.items():
+        value = str(artifacts.get(key) or fallback or "").strip()
+        if value:
+            candidates[key] = value
+    required = candidates.get("llm_full_solution_json", "")
+    if not required or not (root / required).exists():
+        return {}
+    return {key: value for key, value in candidates.items() if value and (root / value).exists()}
 
 
 def update_artifacts(meta: dict[str, Any], artifacts: dict[str, str]) -> None:

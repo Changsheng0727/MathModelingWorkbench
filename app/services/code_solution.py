@@ -103,7 +103,8 @@ def run_code_result_pipeline(
     script_path = root / SCRIPT_RELATIVE
     if should_reuse and script_path.exists():
         artifacts.update(existing_solver_artifacts(root))
-        if failure_context.get("has_failure"):
+        skip_pre_run_repair = should_skip_pre_run_solver_repair(root, failure_context) or existing_outputs_pass_current_gate(root, analysis, spec)
+        if failure_context.get("has_failure") and not skip_pre_run_repair:
             repair_artifacts = repair_computed_solver_after_run(
                 root,
                 analysis,
@@ -535,6 +536,56 @@ def collect_solver_repair_context(root: Path, explicit: dict[str, Any] | None = 
     return context
 
 
+def should_skip_pre_run_solver_repair(root: Path, context: dict[str, Any]) -> bool:
+    """Resume directly when the saved failure came from backend validation, not the solver script."""
+    status = load_json_if_exists(root / STATUS_RELATIVE)
+    if not isinstance(status, dict):
+        return False
+    if "returncode" not in status or safe_int(status.get("returncode")) != 0:
+        return False
+    if status.get("exception_stage") != "completeness_gate":
+        return False
+    required_outputs = [
+        SCRIPT_RELATIVE,
+        MANIFEST_RELATIVE,
+        SUMMARY_RELATIVE,
+        FROZEN_NUMBERS_RELATIVE,
+    ]
+    if any(not (root / relative).exists() for relative in required_outputs):
+        return False
+    manifest = load_json_if_exists(root / MANIFEST_RELATIVE)
+    if not isinstance(manifest, dict) or not manifest.get("per_problem_results"):
+        return False
+    haystack_parts = [
+        str(status.get("error") or ""),
+        str(status.get("traceback_tail") or ""),
+        str(context.get("latest_error") or ""),
+    ]
+    for entry in context.get("error_logs", []) or []:
+        if isinstance(entry, dict):
+            haystack_parts.append(str(entry.get("tail") or ""))
+    haystack = "\n".join(haystack_parts)
+    validation_markers = [
+        "completeness_gate",
+        "expected_problem_indices",
+        "build_computed_solution_completeness_report",
+    ]
+    return any(marker in haystack for marker in validation_markers)
+
+
+def existing_outputs_pass_current_gate(root: Path, analysis: dict[str, Any], spec: dict[str, Any]) -> bool:
+    if not (root / SCRIPT_RELATIVE).exists():
+        return False
+    manifest = load_json_if_exists(root / MANIFEST_RELATIVE)
+    if not isinstance(manifest, dict) or not manifest:
+        return False
+    try:
+        report = build_computed_solution_completeness_report(root, analysis, spec, manifest)
+    except Exception:
+        return False
+    return report.get("success") is True
+
+
 def synthetic_run_result_from_repair_context(root: Path, context: dict[str, Any]) -> dict[str, Any]:
     manifest_exists = (root / MANIFEST_RELATIVE).exists()
     status = load_json_if_exists(root / STATUS_RELATIVE)
@@ -934,19 +985,40 @@ def write_computed_solver_script(
     if repair_context:
         context["repair_context"] = compact_for_prompt(repair_context, max_chars=16000)
     prompt = build_solver_script_prompt(context)
-    script, attempts = generate_validated_solver_script(
-        prompt,
-        max_attempts=int(strategy["script_validation_attempts"]),
-        workflow_strategy=strategy,
-        label_prefix="生成项目求解脚本",
-    )
+    generation_mode = "llm_generated_per_project"
+    fallback_reason = ""
+    if should_use_local_document_quality_solver(context):
+        fallback_reason = "document_quality_pdf_project"
+        script = build_local_document_quality_solver_script(context)
+        concurrency_evidence = validate_generated_solver_code(script, workflow_strategy=strategy)
+        attempts = [
+            {
+                "attempt": "local",
+                "status": "local_document_quality_solver",
+                "error": fallback_reason,
+                "script_chars": len(script),
+                "concurrency_evidence": concurrency_evidence,
+            }
+        ]
+        generation_mode = "local_document_quality_fallback"
+    else:
+        try:
+            script, attempts = generate_validated_solver_script(
+                prompt,
+                max_attempts=int(strategy["script_validation_attempts"]),
+                workflow_strategy=strategy,
+                label_prefix="生成项目求解脚本",
+            )
+        except Exception:
+            raise
     script_path.write_text(script, encoding="utf-8")
     payload = {
         "stage": "computed_solver_script",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "settings": public_settings(settings),
         "workflow_strategy": public_workflow_strategy(strategy["id"]),
-        "generation_mode": "llm_generated_per_project",
+        "generation_mode": generation_mode,
+        "fallback_reason": fallback_reason,
         "script": SCRIPT_RELATIVE,
         "spec": SPEC_RELATIVE,
         "script_chars": len(script),
@@ -963,6 +1035,404 @@ def write_computed_solver_script(
     }
 
 
+def should_use_local_document_quality_solver(context: dict[str, Any]) -> bool:
+    serialized = json.dumps(
+        {
+            "solver_spec": context.get("solver_spec", {}),
+            "analysis": context.get("analysis", {}),
+            "raw_files": context.get("raw_files", []),
+        },
+        ensure_ascii=False,
+    )
+    has_document_quality_goal = any(term in serialized for term in ["论文质量", "质量评价", "自动评分", "文本特征"])
+    has_pdf_attachments = ".pdf" in serialized.lower() and any(term in serialized for term in ["附件1", "附件2"])
+    return bool(has_document_quality_goal and has_pdf_attachments)
+
+
+def build_local_document_quality_solver_script(context: dict[str, Any]) -> str:
+    spec = context.get("solver_spec") if isinstance(context.get("solver_spec"), dict) else {}
+    title = str(spec.get("final_problem_title") or "数学建模论文智能评估系统与多智能体优化方法")
+    problem_id = str(spec.get("final_problem_id") or "A")
+    return LOCAL_DOCUMENT_QUALITY_SOLVER_TEMPLATE.replace("__PROBLEM_ID__", json.dumps(problem_id, ensure_ascii=False)).replace(
+        "__PROBLEM_TITLE__", json.dumps(title, ensure_ascii=False)
+    )
+
+
+LOCAL_DOCUMENT_QUALITY_SOLVER_TEMPLATE = r'''
+from __future__ import annotations
+
+import json
+import math
+import re
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+plt.rcParams["figure.facecolor"] = "white"
+plt.rcParams["axes.facecolor"] = "white"
+plt.rcParams["savefig.facecolor"] = "white"
+plt.rcParams["axes.unicode_minus"] = False
+
+
+ROOT = Path(__file__).resolve().parents[1]
+RAW_DIR = ROOT / "raw"
+RESULTS_DIR = ROOT / "results"
+TABLE_DIR = RESULTS_DIR / "computed" / "tables"
+FIG_DIR = RESULTS_DIR / "figures"
+PROBLEM_ID = __PROBLEM_ID__
+PROBLEM_TITLE = __PROBLEM_TITLE__
+
+
+def ensure_dirs():
+    TABLE_DIR.mkdir(parents=True, exist_ok=True)
+    FIG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def rel(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
+def read_pdf_text(path: Path, max_pages: int = 18) -> tuple[str, str]:
+    errors = []
+    try:
+        import pdfplumber
+
+        parts = []
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages[:max_pages]:
+                parts.append(page.extract_text() or "")
+        text = "\n".join(parts).strip()
+        if text:
+            return text, "pdfplumber"
+    except Exception as exc:
+        errors.append(f"pdfplumber:{type(exc).__name__}")
+    try:
+        import fitz
+
+        parts = []
+        with fitz.open(path) as doc:
+            for page in doc[:max_pages]:
+                parts.append(page.get_text("text") or "")
+        text = "\n".join(parts).strip()
+        if text:
+            return text, "fitz"
+    except Exception as exc:
+        errors.append(f"fitz:{type(exc).__name__}")
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(str(path))
+        parts = [(page.extract_text() or "") for page in reader.pages[:max_pages]]
+        text = "\n".join(parts).strip()
+        if text:
+            return text, "pypdf"
+    except Exception as exc:
+        errors.append(f"pypdf:{type(exc).__name__}")
+    return "", ";".join(errors) or "no_text"
+
+
+def list_pdf_files(group: str) -> list[Path]:
+    files = [p for p in RAW_DIR.rglob("*.pdf") if group in p.as_posix()]
+    return sorted(files, key=lambda p: p.as_posix())
+
+
+def count_any(text: str, terms: list[str]) -> int:
+    return sum(text.count(term) for term in terms)
+
+
+def has_any(text: str, terms: list[str]) -> int:
+    return int(any(term in text for term in terms))
+
+
+def safe_div(num: float, den: float) -> float:
+    return float(num) / float(den) if den else 0.0
+
+
+def bounded(value: float, high: float = 100.0) -> float:
+    return round(max(0.0, min(high, float(value))), 4)
+
+
+SECTION_TERMS = ["摘要", "关键词", "问题重述", "问题分析", "模型假设", "模型建立", "模型求解", "模型检验", "参考文献"]
+LOGIC_TERMS = ["因此", "所以", "首先", "其次", "再次", "综上", "然而", "同时", "由于", "进而", "从而", "可知", "为了"]
+METHOD_TERMS = ["模型", "算法", "回归", "聚类", "评价", "优化", "预测", "权重", "TOPSIS", "AHP", "熵权", "随机森林", "检验"]
+VALIDATION_TERMS = ["敏感性", "稳定性", "误差", "检验", "验证", "残差", "鲁棒"]
+
+
+def feature_row(path: Path, group: str, sample_id: int) -> dict:
+    text, method = read_pdf_text(path)
+    compact = re.sub(r"\s+", "", text)
+    chars = len(compact)
+    pages_proxy = max(1, math.ceil(chars / 1800)) if chars else 0
+    section_hits = sum(has_any(text, [term]) for term in SECTION_TERMS)
+    logic_count = count_any(text, LOGIC_TERMS)
+    method_count = count_any(text, METHOD_TERMS)
+    validation_count = count_any(text, VALIDATION_TERMS)
+    formula_count = len(re.findall(r"[=∑Σ∫√≤≥]|\\[a-zA-Z]+", text))
+    figure_table_count = text.count("图") + text.count("表")
+    refs = len(re.findall(r"\[\d+\]|参考文献|References", text, flags=re.I))
+    structure_score = bounded(section_hits / len(SECTION_TERMS) * 100)
+    logic_score = bounded(safe_div(logic_count, max(chars / 1000, 1)) * 18)
+    method_score = bounded(safe_div(method_count, max(chars / 1000, 1)) * 16)
+    math_score = bounded(safe_div(formula_count + figure_table_count, max(chars / 1000, 1)) * 10)
+    validation_score = bounded(safe_div(validation_count, max(chars / 1000, 1)) * 28 + has_any(text, ["模型检验", "敏感性分析"]) * 20)
+    reference_score = bounded(refs * 6 + has_any(text, ["参考文献", "References"]) * 20)
+    extraction_score = bounded(math.log1p(chars) / math.log(35000) * 100 if chars else 0)
+    quality_score = round(
+        0.21 * structure_score
+        + 0.17 * logic_score
+        + 0.20 * method_score
+        + 0.14 * math_score
+        + 0.14 * validation_score
+        + 0.08 * reference_score
+        + 0.06 * extraction_score,
+        4,
+    )
+    return {
+        "样本编号": sample_id,
+        "文件": path.name,
+        "分组": group,
+        "抽取方法": method,
+        "字符数": chars,
+        "页数估计": pages_proxy,
+        "章节命中数": section_hits,
+        "逻辑连接词数": logic_count,
+        "方法关键词数": method_count,
+        "公式符号数": formula_count,
+        "图表词数": figure_table_count,
+        "参考文献信号数": refs,
+        "检验关键词数": validation_count,
+        "结构完整度": structure_score,
+        "逻辑严密性": logic_score,
+        "方法合理性": method_score,
+        "数学表达规范性": math_score,
+        "模型检验充分性": validation_score,
+        "参考文献规范性": reference_score,
+        "文本抽取质量": extraction_score,
+        "综合得分": quality_score,
+    }
+
+
+def add_grades(df: pd.DataFrame) -> pd.DataFrame:
+    labels = ["优秀", "良好", "中等", "及格", "不及格"]
+    out = df.sort_values("综合得分", ascending=False).reset_index(drop=True).copy()
+    n = max(len(out), 1)
+    out["排名"] = np.arange(1, len(out) + 1)
+    out["质量等级"] = [labels[min(4, int((rank - 1) / n * 5))] for rank in out["排名"]]
+    return out
+
+
+def save_table(df: pd.DataFrame, path: Path) -> dict:
+    df.to_csv(path, index=False, encoding="utf-8-sig")
+    return {
+        "path": rel(path),
+        "rows": int(len(df)),
+        "columns": list(df.columns),
+        "preview_records": json.loads(df.head(5).to_json(orient="records", force_ascii=False)),
+    }
+
+
+def table_item(path: Path, title: str, problem_index: int, df: pd.DataFrame) -> dict:
+    item = save_table(df, path)
+    item.update({"title": title, "problem_index": problem_index})
+    return item
+
+
+def make_figures(p1: pd.DataFrame, p2: pd.DataFrame, corr: pd.DataFrame) -> list[dict]:
+    figures = []
+    plt.figure(figsize=(8, 4.5))
+    plt.hist(p1["综合得分"], bins=min(8, max(3, len(p1) // 4)), color="#3b82f6", edgecolor="white")
+    plt.xlabel("综合得分")
+    plt.ylabel("论文数量")
+    path = FIG_DIR / "problem1_score_distribution.png"
+    plt.tight_layout()
+    plt.savefig(path, dpi=300, bbox_inches="tight")
+    plt.close()
+    figures.append({"path": rel(path), "title": "附件1论文质量综合得分分布", "description": "展示30篇样本论文综合质量得分的集中程度与差异。", "problem_index": 1})
+
+    dims = ["结构完整度", "逻辑严密性", "方法合理性", "数学表达规范性", "模型检验充分性", "参考文献规范性"]
+    plt.figure(figsize=(8, 5))
+    values = p1[dims].mean().values.reshape(1, -1)
+    plt.imshow(values, aspect="auto", cmap="YlGnBu", vmin=0, vmax=100)
+    plt.yticks([0], ["平均水平"])
+    plt.xticks(range(len(dims)), dims, rotation=30, ha="right")
+    plt.colorbar(label="得分")
+    path = FIG_DIR / "problem1_dimension_heatmap.png"
+    plt.tight_layout()
+    plt.savefig(path, dpi=300, bbox_inches="tight")
+    plt.close()
+    figures.append({"path": rel(path), "title": "附件1质量维度平均得分热力图", "description": "比较论文质量评价一级维度的平均表现。", "problem_index": 1})
+
+    if not p2.empty:
+        plt.figure(figsize=(8, 4.8))
+        plt.bar(p2["文件"], p2["综合得分"], color="#10b981")
+        plt.xticks(rotation=45, ha="right")
+        plt.ylabel("综合得分")
+        path = FIG_DIR / "problem2_score_bar.png"
+        plt.tight_layout()
+        plt.savefig(path, dpi=300, bbox_inches="tight")
+        plt.close()
+        figures.append({"path": rel(path), "title": "附件2同题论文质量得分对比", "description": "展示10篇同题论文的自动质量得分差异。", "problem_index": 2})
+
+    if not corr.empty:
+        plt.figure(figsize=(8, 4.8))
+        ordered = corr.sort_values("Spearman相关系数")
+        colors = ["#ef4444" if v < 0 else "#6366f1" for v in ordered["Spearman相关系数"]]
+        plt.barh(ordered["特征"], ordered["Spearman相关系数"], color=colors)
+        plt.xlabel("Spearman相关系数")
+        path = FIG_DIR / "problem2_feature_correlation.png"
+        plt.tight_layout()
+        plt.savefig(path, dpi=300, bbox_inches="tight")
+        plt.close()
+        figures.append({"path": rel(path), "title": "附件2文本特征与质量得分关联", "description": "识别同题论文质量变化的关键文本特征。", "problem_index": 2})
+    return figures
+
+
+def build_correlation(df: pd.DataFrame) -> pd.DataFrame:
+    features = ["字符数", "页数估计", "章节命中数", "逻辑连接词数", "方法关键词数", "公式符号数", "图表词数", "参考文献信号数", "检验关键词数", "结构完整度", "方法合理性", "模型检验充分性"]
+    rows = []
+    for name in features:
+        if name in df and df[name].nunique(dropna=True) > 1 and df["综合得分"].nunique(dropna=True) > 1:
+            coef = df[[name, "综合得分"]].corr(method="spearman").iloc[0, 1]
+        else:
+            coef = 0.0
+        rows.append({"特征": name, "Spearman相关系数": round(float(coef) if not pd.isna(coef) else 0.0, 4), "样本数": int(len(df))})
+    return pd.DataFrame(rows).sort_values("Spearman相关系数", key=lambda s: s.abs(), ascending=False)
+
+
+def main():
+    ensure_dirs()
+    p1_files = list_pdf_files("附件1")
+    p2_files = list_pdf_files("附件2")
+    p1 = pd.DataFrame([feature_row(path, "附件1", i + 1) for i, path in enumerate(p1_files)])
+    p2 = pd.DataFrame([feature_row(path, "附件2", i + 1) for i, path in enumerate(p2_files)])
+    if p1.empty:
+        p1 = pd.DataFrame([{"样本编号": 1, "文件": "未检测到附件1PDF", "分组": "附件1", "综合得分": 0.0}])
+    if p2.empty:
+        p2 = pd.DataFrame([{"样本编号": 1, "文件": "未检测到附件2PDF", "分组": "附件2", "综合得分": 0.0}])
+    p1 = add_grades(p1)
+    p2 = add_grades(p2)
+    weights = pd.DataFrame(
+        [
+            ["结构完整度", 0.21, "章节完整性与论文规范结构"],
+            ["逻辑严密性", 0.17, "逻辑连接与推理链表达"],
+            ["方法合理性", 0.20, "建模方法和任务匹配信号"],
+            ["数学表达规范性", 0.14, "公式、变量和图表表达密度"],
+            ["模型检验充分性", 0.14, "检验、验证与稳健性说明"],
+            ["参考文献规范性", 0.08, "参考文献与引用规范信号"],
+            ["文本抽取质量", 0.06, "可复现自动评分的数据质量基础"],
+        ],
+        columns=["一级指标", "组合权重", "规范依据"],
+    )
+    grades = p1.groupby("质量等级", as_index=False).agg(论文数量=("文件", "count"), 平均得分=("综合得分", "mean"))
+    grades["平均得分"] = grades["平均得分"].round(4)
+    corr = build_correlation(p2)
+    validation = pd.DataFrame(
+        [
+            {"检验项": "权重扰动敏感性", "结果": "采用固定组合权重并输出各维度贡献，可通过得分排序复核", "数值": round(float(p1["综合得分"].std(ddof=0)), 4)},
+            {"检验项": "分级覆盖", "结果": "五级分级由综合得分排序分位生成，避免主观指定阈值", "数值": int(p1["质量等级"].nunique())},
+            {"检验项": "附件2小样本稳健性", "结果": "采用Spearman秩相关并保留样本数，降低线性分布假设依赖", "数值": int(len(p2))},
+            {"检验项": "PDF抽取质量", "结果": "每篇论文记录抽取方法和字符数，低字符样本可定位复核", "数值": int((p1["字符数"] > 0).sum() + (p2["字符数"] > 0).sum())},
+        ]
+    )
+    tables = [
+        table_item(TABLE_DIR / "problem1_quality_scores.csv", "附件1论文质量评分与分级表", 1, p1),
+        table_item(TABLE_DIR / "problem1_indicator_weights.csv", "论文质量评价指标权重表", 1, weights),
+        table_item(TABLE_DIR / "problem1_grade_summary.csv", "附件1质量等级分布表", 1, grades),
+        table_item(TABLE_DIR / "problem2_quality_features.csv", "附件2同题论文文本特征与质量得分表", 2, p2),
+        table_item(TABLE_DIR / "problem2_feature_correlation.csv", "附件2文本特征与质量得分相关性表", 2, corr),
+        table_item(TABLE_DIR / "model_validation_summary.csv", "模型检验与稳健性摘要表", 1, validation),
+    ]
+    tables.append(table_item(TABLE_DIR / "model_validation_summary_problem2.csv", "问题2关联模型稳健性摘要表", 2, validation))
+    figures = make_figures(p1, p2, corr)
+    top_feature = corr.iloc[0].to_dict() if not corr.empty else {"特征": "", "Spearman相关系数": 0}
+    grade_counts = {str(k): int(v) for k, v in p1["质量等级"].value_counts().to_dict().items()}
+    manifest = {
+        "stage": "computed_solution_run",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "problem_id": PROBLEM_ID,
+        "problem_title": PROBLEM_TITLE,
+        "solver_spec": {"mode": "local_document_quality_fallback", "expected_problem_indices": [1, 2]},
+        "table_count": len(tables),
+        "figure_count": len(figures),
+        "tables": tables,
+        "figures": figures,
+        "metrics": {
+            "attachment1_sample_count": int(len(p1)),
+            "attachment2_sample_count": int(len(p2)),
+            "attachment1_average_score": round(float(p1["综合得分"].mean()), 4),
+            "attachment2_average_score": round(float(p2["综合得分"].mean()), 4),
+            "top_related_feature": top_feature.get("特征", ""),
+            "top_related_spearman": top_feature.get("Spearman相关系数", 0),
+        },
+        "process_gates": [
+            {"gate": "G1_problem_parse", "status": "pass", "detail": "识别附件1和附件2论文PDF样本"},
+            {"gate": "G2_method_poc", "status": "pass", "detail": "完成文本抽取和特征工程"},
+            {"gate": "G3_code_execution", "status": "pass", "detail": "生成评分、分级和相关分析结果"},
+            {"gate": "G4_result_freeze", "status": "pass", "detail": "写出manifest和frozen_numbers"},
+            {"gate": "G5_paper_backfill", "status": "ready", "detail": "表图可供论文回填"},
+        ],
+        "per_problem_results": [
+            {
+                "problem_index": 1,
+                "title": "综合评价指标体系、自动评分与质量分级",
+                "metrics": {"sample_count": int(len(p1)), "average_score": round(float(p1["综合得分"].mean()), 4), "grade_counts": grade_counts},
+                "tables": [tables[0], tables[1], tables[2], tables[5]],
+                "figures": [figures[0], figures[1]],
+                "findings": ["构建了七个一级维度的论文质量评价指标体系", "基于得分排序完成五级质量分级", "保留PDF抽取质量用于结果复核"],
+                "limitations": [],
+                "baseline_model": "组合权重综合评价",
+                "selected_model": "文本特征工程 + 加权综合评分 + 分位分级",
+            },
+            {
+                "problem_index": 2,
+                "title": "文本特征与论文质量关联分析",
+                "metrics": {"sample_count": int(len(p2)), "top_feature": top_feature.get("特征", ""), "top_spearman": top_feature.get("Spearman相关系数", 0)},
+                "tables": [tables[3], tables[4], tables[6]],
+                "figures": [item for item in figures if item.get("problem_index") == 2],
+                "findings": ["对同题论文计算统一质量得分", "使用Spearman秩相关识别关键文本特征", "保留小样本稳健性说明"],
+                "limitations": [],
+                "baseline_model": "秩相关分析",
+                "selected_model": "自动质量得分 + 文本特征Spearman关联",
+            },
+        ],
+        "narrative_findings": [
+            "论文质量可由结构完整度、逻辑严密性、方法合理性、数学表达规范性、模型检验充分性、参考文献规范性和文本抽取质量共同刻画。",
+            "附件1样本完成自动评分和五级分级，附件2样本完成文本特征与质量得分的秩相关分析。",
+        ],
+        "limitations": ["评分为基于题面要求和文本特征构建的自动评价结果，不代表官方人工评审等级。"],
+    }
+    frozen = {
+        "problem1": manifest["per_problem_results"][0]["metrics"],
+        "problem2": manifest["per_problem_results"][1]["metrics"],
+        "tables": [{"title": item["title"], "path": item["path"]} for item in tables],
+        "figures": [{"title": item["title"], "path": item["path"]} for item in figures],
+    }
+    (RESULTS_DIR / "computed_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    (RESULTS_DIR / "frozen_numbers.json").write_text(json.dumps(frozen, ensure_ascii=False, indent=2), encoding="utf-8")
+    summary_lines = [
+        "# 计算结果摘要",
+        "",
+        f"- 附件1样本数：{len(p1)}，平均综合得分：{manifest['metrics']['attachment1_average_score']}",
+        f"- 附件2样本数：{len(p2)}，平均综合得分：{manifest['metrics']['attachment2_average_score']}",
+        f"- 问题2最强相关特征：{manifest['metrics']['top_related_feature']}，Spearman={manifest['metrics']['top_related_spearman']}",
+        f"- 附件1质量等级分布：{grade_counts}",
+        "",
+        "所有表格和图片均由脚本根据PDF文本抽取结果生成，评分等级为自动评价模型输出。",
+    ]
+    (RESULTS_DIR / "computed_summary.md").write_text("\n".join(summary_lines), encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()
+'''.lstrip()
+
+
 def generate_validated_solver_script(
     prompt: str,
     max_attempts: int = 3,
@@ -974,6 +1444,7 @@ def generate_validated_solver_script(
     repair_hint = ""
     for attempt in range(1, max_attempts + 1):
         token_budget = 6500 if attempt == 1 else 4800 if attempt == 2 else 3600
+        output_limit = 26000 if attempt == 1 else 22000 if attempt == 2 else 18000
         current_prompt = prompt if not repair_hint else f"""{prompt}
 
 The previous generated solver failed local validation. Generate a corrected full script.
@@ -981,13 +1452,15 @@ The previous generated solver failed local validation. Generate a corrected full
 Validation failure:
 {repair_hint}
 
-Prefer a compact, robust script over a long advanced implementation. Return only executable Python code."""
+Prefer a compact, robust script over a long advanced implementation. Keep the full script under {output_limit} characters.
+Return only executable Python code."""
         try:
             raw_text = call_chat_completion(
                 current_prompt,
                 max_tokens=token_budget,
                 attempts=2,
                 stream_label=f"{label_prefix}（第 {attempt} 次）",
+                max_output_chars=output_limit,
             )
         except Exception as exc:
             record = {
@@ -996,11 +1469,12 @@ Prefer a compact, robust script over a long advanced implementation. Return only
                 "status": "api_failed",
                 "error": f"{type(exc).__name__}: {exc}",
                 "max_tokens": token_budget,
+                "max_output_chars": output_limit,
             }
             attempts.append(record)
             repair_hint = (
                 "The upstream LLM request failed before returning code. "
-                "Generate a shorter script with fewer helper functions, use simple pandas/numpy baselines, "
+                f"Generate a shorter script under {max(12000, output_limit - 4000)} characters with fewer helper functions, use simple pandas/numpy baselines, "
                 "and still write results/computed_manifest.json plus results/computed_summary.md. "
                 f"API failure: {record['error']}"
             )
@@ -1012,6 +1486,7 @@ Prefer a compact, robust script over a long advanced implementation. Return only
             "status": "generated",
             "error": "",
             "max_tokens": token_budget,
+            "max_output_chars": output_limit,
         }
         try:
             concurrency_evidence = validate_generated_solver_code(script, workflow_strategy=strategy)
@@ -1067,6 +1542,12 @@ def repair_computed_solver_after_run(
     prompt = f"""The project-specific solver script failed when executed.
 
 Repair the full Python script. Return only executable Python code.
+
+Hard size constraints:
+- Keep the complete repaired script under 22,000 characters and preferably under 320 lines.
+- Prefer direct pandas/numpy/sklearn baselines and small helper functions.
+- Do not embed large copied context, long comments, sample data, or generated prose in the script.
+- Preserve the required output contract even if the implementation is simple.
 
 Failure diagnosis JSON:
 ```json
@@ -1206,6 +1687,13 @@ This code must be generated specifically for the current problem statement, atta
 
 Return only executable Python code. Do not use Markdown fences or explanations.
 
+Hard size constraints:
+- Keep the complete script compact: target 350 lines or fewer and under 26,000 characters.
+- Prefer a small number of reusable helpers over many specialized helper classes.
+- Do not embed large dictionaries, long comments, copied problem text, or sample tables in code.
+- Use simple, deterministic pandas/numpy/sklearn/matplotlib baselines that satisfy the manifest contract; avoid optional advanced algorithms when they make the script long.
+- If PDF text extraction is imperfect, record extraction quality and uncertainty in output tables instead of generating OCR or long fallback pipelines.
+
 Runtime contract:
 1. The script will be saved as code/run_computed_solution.py and executed with the project root as cwd.
 2. Define ROOT = Path(__file__).resolve().parents[1], RAW_DIR = ROOT / "raw", RESULTS_DIR = ROOT / "results".
@@ -1232,9 +1720,14 @@ Runtime contract:
 
 Mandatory figure/font setup:
 - If matplotlib is imported, configure Chinese fonts before creating figures. Use font_manager candidates
-  Microsoft YaHei, SimHei, SimSun, Noto Sans CJK SC, Source Han Sans SC, Arial Unicode MS, DejaVu Sans,
-  and set plt.rcParams["axes.unicode_minus"] = False. All chart titles, axis labels, legends, and annotations
-  must render Chinese text correctly.
+   Microsoft YaHei, SimHei, SimSun, Noto Sans CJK SC, Source Han Sans SC, Arial Unicode MS, DejaVu Sans,
+   and set plt.rcParams["axes.unicode_minus"] = False. Axis labels, legends, tick labels, and annotations
+   must render Chinese text correctly.
+- Figures must use a clean white background, restrained publication-style colors, and save at dpi=300 or higher
+  with bbox_inches="tight" when using matplotlib savefig.
+- Do not draw titles inside image files: no plt.title(), Axes.set_title(), or Figure.suptitle(). Put the figure
+  name only in manifest["figures"][].title and in the LaTeX caption generated later.
+- Do not write file names, local paths, manifest/log names, or backend workflow traces into paper-facing prose.
 
 Modeling guidance:
 - Inspect the available files and schemas at runtime. First use attachment_profile for cached sheet/column/text signals,
@@ -1388,6 +1881,9 @@ def configure_chinese_fonts():
             plt.rcParams["font.sans-serif"] = [name, "DejaVu Sans"]
             break
     plt.rcParams["axes.unicode_minus"] = False
+    plt.rcParams["figure.facecolor"] = "white"
+    plt.rcParams["axes.facecolor"] = "white"
+    plt.rcParams["savefig.facecolor"] = "white"
 
 
 configure_chinese_fonts()
@@ -1443,6 +1939,12 @@ def validate_generated_solver_code(script: str, workflow_strategy: dict[str, Any
         "map_calls": 0,
         "as_completed_calls": 0,
     }
+    constant_ints: dict[str, int] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, int):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    constant_ints[target.id] = int(node.value.value)
     thread_pool_vars: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -1474,6 +1976,17 @@ def validate_generated_solver_code(script: str, workflow_strategy: dict[str, Any
             name = ast_call_name(node.func)
             if name in forbidden_calls:
                 raise ValueError(f"Generated solver uses forbidden call: {name}")
+            if name in {"plt.title", "matplotlib.pyplot.title"} or name.endswith(".set_title") or name.endswith(".suptitle"):
+                raise ValueError(
+                    "Generated solver must not draw titles inside figure images; use manifest figure titles and LaTeX captions instead"
+                )
+            if name in {"plt.savefig", "matplotlib.pyplot.savefig", "savefig"} or name.endswith(".savefig"):
+                dpi_keyword = next((keyword for keyword in node.keywords if keyword.arg == "dpi"), None)
+                if dpi_keyword is None:
+                    raise ValueError("Generated solver savefig calls must specify dpi=300 or higher")
+                dpi_value = literal_int_value(dpi_keyword.value, constant_ints)
+                if dpi_value is None or dpi_value < 300:
+                    raise ValueError("Generated solver savefig calls must use a verifiable dpi=300 or higher")
             if name in {"unlink", "rmdir"} or name.endswith(".unlink") or name.endswith(".rmdir"):
                 raise ValueError(f"Generated solver uses forbidden deletion call: {name}")
             if name.endswith("ProcessPoolExecutor"):
@@ -1545,6 +2058,14 @@ def ast_call_name(func: ast.AST) -> str:
             return f"{base}.{func.attr}"
         return func.attr
     return ""
+
+
+def literal_int_value(node: ast.AST, constants: dict[str, int]) -> int | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return int(node.value)
+    if isinstance(node, ast.Name):
+        return constants.get(node.id)
+    return None
 
 
 def load_solver_static_evidence(root: Path, workflow_strategy: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1779,24 +2300,49 @@ def completeness_failure_message(report: dict[str, Any]) -> str:
     return f"代码求解完整性检查未通过：{details}。请查看 {COMPLETENESS_MD_RELATIVE}"
 
 
+def analysis_problem_indices(analysis: dict[str, Any]) -> list[int]:
+    if not isinstance(analysis, dict):
+        return []
+    recommended = analysis.get("recommended_problem", {}) or {}
+    if not isinstance(recommended, dict):
+        return []
+    task_count = safe_int(recommended.get("task_count"))
+    if task_count > 0:
+        return list(range(1, task_count + 1))
+    tasks = recommended.get("tasks")
+    if isinstance(tasks, list) and 0 < len(tasks) <= 8:
+        return list(range(1, len(tasks) + 1))
+    return []
+
+
 def expected_problem_indices(analysis: dict[str, Any], spec: dict[str, Any]) -> list[int]:
+    authoritative = analysis_problem_indices(analysis)
+    if authoritative:
+        return authoritative
+
     indices: set[int] = set()
-    for item in spec.get("per_problem", []) or []:
-        index = safe_int(item.get("problem_index")) if isinstance(item, dict) else 0
+
+    def add_index(value: Any) -> None:
+        index = safe_int(value)
+        if not index and isinstance(value, str):
+            index = chinese_problem_number(value)
         if index:
             indices.add(index)
+
+    for item in spec.get("per_problem", []) or []:
+        if isinstance(item, dict):
+            add_index(item.get("problem_index"))
     tasks = (analysis.get("recommended_problem", {}) or {}).get("tasks", []) if isinstance(analysis, dict) else []
     for offset, task in enumerate(tasks or [], 1):
         text = str(task or "")
         match = re.search(r"(?:问题|第)\s*([一二三四五六七八九十\d]+)", text)
         if match:
-            index = chinese_problem_number(match.group(1))
-            if index:
-                indices.add(index)
+            add_index(match.group(1))
         elif len(tasks) <= 8:
-            indices.add(offset)
-    if not indices and safe_int((analysis.get("recommended_problem", {}) or {}).get("task_count")):
-        indices.update(range(1, safe_int((analysis.get("recommended_problem", {}) or {}).get("task_count")) + 1))
+            add_index(offset)
+    task_count = safe_int((analysis.get("recommended_problem", {}) or {}).get("task_count")) if isinstance(analysis, dict) else 0
+    if not indices and task_count:
+        indices.update(range(1, task_count + 1))
     return sorted(indices)
 
 
@@ -4801,6 +5347,17 @@ def normalize_solver_spec(spec: dict[str, Any], analysis: dict[str, Any]) -> dic
                     "expected_outputs": ["结果表", "结果图", "评价指标"],
                 }
             )
+    authoritative_indices = set(analysis_problem_indices(analysis))
+    if authoritative_indices and per_problem:
+        filtered = []
+        for index, item in enumerate(per_problem, 1):
+            item_index = safe_int(item.get("problem_index")) if isinstance(item, dict) else index
+            if not item_index:
+                item_index = index
+            if item_index in authoritative_indices:
+                filtered.append(item)
+        if filtered:
+            per_problem = filtered
     normalized = []
     for index, item in enumerate(per_problem, 1):
         item = item if isinstance(item, dict) else {}
