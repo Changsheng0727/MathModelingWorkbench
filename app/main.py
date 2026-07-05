@@ -46,6 +46,7 @@ from app.services.delivery_package import DELIVERY_PACKAGE_MANIFEST_JSON_RELATIV
 from app.services.delivery_readiness import DELIVERY_READINESS_JSON_RELATIVE, write_delivery_readiness_report
 from app.services.diagnostic_refresh import refresh_diagnostic_assets
 from app.services.executor import detect_environments
+from app.services.experience_center import build_experience_center
 from app.services.extractors import save_upload, unpack_upload, validate_upload_name
 from app.services.extractors import safe_folder_target
 from app.services.growth_metrics import build_growth_metrics, is_deliverable
@@ -309,6 +310,24 @@ def product_growth_metrics() -> dict:
     return {
         "growth": growth,
         "trust": trust,
+    }
+
+
+@app.get("/api/product/experience")
+def product_experience_center() -> dict:
+    projects_snapshot = list_projects()
+    auto_jobs = list_auto_workflow_jobs()
+    delivery_jobs = list_delivery_batch_jobs()
+    settings = load_capacity_settings()
+    llm_settings = get_llm_settings()
+    return {
+        "experience": build_experience_center(
+            projects_snapshot,
+            auto_jobs,
+            delivery_jobs,
+            settings,
+            llm_settings,
+        )
     }
 
 

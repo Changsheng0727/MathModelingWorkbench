@@ -27,20 +27,21 @@ export default function WorkbenchPage() {
           <section className="panel">
             <h2>上传赛题</h2>
             <form id="upload-form">
-              <div className="upload-choices">
-                <label className="drop-zone" htmlFor="file-input">
-                  <span id="file-label">选择 zip、pdf、docx、xlsx 或 csv</span>
-                  <input id="file-input" name="file" type="file" />
-                </label>
+              <label className="drop-zone" htmlFor="file-input">
+                <span id="file-label">选择赛题文件或压缩包</span>
+                <input id="file-input" name="file" type="file" />
+              </label>
+              <details className="simple-advanced">
+                <summary>高级上传选项</summary>
                 <label className="drop-zone" htmlFor="folder-input">
                   <span id="folder-label">选择包含全部赛题材料的文件夹</span>
                   <input id="folder-input" name="files" type="file" webkitdirectory="" directory="" multiple />
                 </label>
-              </div>
-              <label className="check-row">
-                <input id="auto-run-after-upload" type="checkbox" />
-                <span>上传后跳过手动确认，直接按当前推荐题目运行一键流程</span>
-              </label>
+                <label className="check-row">
+                  <input id="auto-run-after-upload" type="checkbox" />
+                  <span>上传后按推荐题目自动运行一键流程</span>
+                </label>
+              </details>
               <button className="primary" type="submit">开始分析</button>
             </form>
             <p id="upload-status" className="status" aria-live="polite"></p>
@@ -65,29 +66,32 @@ export default function WorkbenchPage() {
                 <span className="label">大模型接口密钥</span>
                 <input id="api-key-input" className="text-input" type="password" autoComplete="off" placeholder="sk-..." />
               </label>
-              <label>
-                <span className="label">接口地址</span>
-                <input id="base-url-input" className="text-input" type="url" autoComplete="off" />
-              </label>
-              <label>
-                <span className="label">模型</span>
-                <input id="model-input" className="text-input" type="text" autoComplete="off" />
-              </label>
-              <label>
-                <span className="label">求解策略</span>
-                <select id="workflow-strategy-input" className="text-input">
-                  <option value="balanced">均衡：速度和成功率兼顾</option>
-                  <option value="stable">稳妥：更多校验和自动修复</option>
-                  <option value="turbo">极速：并行读取附件和子问题</option>
-                </select>
-              </label>
-              <p id="workflow-strategy-hint" className="strategy-hint">
-                均衡档适合大多数赛题；极速档会要求大模型生成更高并发的求解脚本。
-              </p>
+              <details className="simple-advanced">
+                <summary>高级模型设置</summary>
+                <label>
+                  <span className="label">接口地址</span>
+                  <input id="base-url-input" className="text-input" type="url" autoComplete="off" />
+                </label>
+                <label>
+                  <span className="label">模型</span>
+                  <input id="model-input" className="text-input" type="text" autoComplete="off" />
+                </label>
+                <label>
+                  <span className="label">求解策略</span>
+                  <select id="workflow-strategy-input" className="text-input">
+                    <option value="balanced">均衡：速度和成功率兼顾</option>
+                    <option value="stable">稳妥：更多校验和自动修复</option>
+                    <option value="turbo">极速：并行读取附件和子问题</option>
+                  </select>
+                </label>
+                <p id="workflow-strategy-hint" className="strategy-hint">
+                  默认使用均衡档；只有需要更快或更稳时再调整。
+                </p>
+                <button id="clear-llm-settings" className="ghost" type="button">清除设置</button>
+              </details>
               <div className="inline-actions">
                 <button id="save-llm-settings" className="primary compact" type="submit">保存</button>
                 <button id="test-llm-settings" className="ghost" type="button">测试连接</button>
-                <button id="clear-llm-settings" className="ghost" type="button">清除</button>
               </div>
             </form>
             <p id="llm-settings-status" className="status" aria-live="polite"></p>
@@ -103,11 +107,14 @@ export default function WorkbenchPage() {
               <input id="project-search" className="text-input" type="search" placeholder="搜索项目名、状态或时间" autoComplete="off" />
             </label>
             <p id="project-count" className="project-count" aria-live="polite">暂无项目</p>
-            <div className="project-batch-actions">
-              <button id="select-analyzed-projects" className="ghost compact" type="button">选择已分析</button>
-              <button id="clear-project-selection" className="ghost compact" type="button">清空</button>
-              <button id="batch-start-projects" className="primary compact" type="button">批量入队</button>
-            </div>
+            <details id="project-batch-details" className="simple-advanced">
+              <summary>高级批量操作</summary>
+              <div className="project-batch-actions">
+                <button id="select-analyzed-projects" className="ghost compact" type="button">选择已分析</button>
+                <button id="clear-project-selection" className="ghost compact" type="button">清空</button>
+                <button id="batch-start-projects" className="primary compact" type="button">批量入队</button>
+              </div>
+            </details>
             <p id="batch-project-status" className="status" aria-live="polite"></p>
             <div id="project-list" className="project-list"></div>
           </section>
@@ -141,12 +148,31 @@ export default function WorkbenchPage() {
             <nav className="module-tabs" aria-label="工作台模块" role="tablist">
               <button className="module-tab is-active" type="button" role="tab" aria-selected="true" data-module-tab="overview">概览</button>
               <button className="module-tab" type="button" role="tab" aria-selected="false" data-module-tab="problems">选题</button>
-              <button className="module-tab" type="button" role="tab" aria-selected="false" data-module-tab="materials">材料</button>
-              <button className="module-tab" type="button" role="tab" aria-selected="false" data-module-tab="paper">论文</button>
               <button className="module-tab" type="button" role="tab" aria-selected="false" data-module-tab="outputs">输出</button>
+              <details className="module-more">
+                <summary>更多</summary>
+                <button className="module-tab" type="button" role="tab" aria-selected="false" data-module-tab="materials">材料</button>
+                <button className="module-tab" type="button" role="tab" aria-selected="false" data-module-tab="paper">论文设置</button>
+              </details>
             </nav>
 
             <section className="module-panel is-active" role="tabpanel" data-module-panel="overview">
+              <section className="guide-panel" id="experience-guide" aria-live="polite">
+                <div className="guide-main">
+                  <span className="guide-kicker">下一步</span>
+                  <h2 id="guide-title">上传赛题材料</h2>
+                  <p id="guide-detail">先选择赛题压缩包或文件夹，系统会自动识别题目、附件和推荐选题。</p>
+                </div>
+                <div className="guide-actions" id="guide-actions">
+                  <button className="primary compact" type="button" data-guide-action="focus_upload">选择赛题</button>
+                </div>
+                <ol className="guide-steps" id="guide-steps">
+                  <li data-status="current"><span>1</span><b>上传赛题</b></li>
+                  <li><span>2</span><b>确认选题</b></li>
+                  <li><span>3</span><b>自动求解</b></li>
+                  <li><span>4</span><b>导出交付</b></li>
+                </ol>
+              </section>
               <section className="summary-strip">
                 <div>
                   <span className="label">当前选题</span>
@@ -171,29 +197,32 @@ export default function WorkbenchPage() {
                 </div>
                 <div id="status-cards" className="status-grid"></div>
               </section>
-              <section className="panel wide">
-                <div className="section-title">
-                  <h2>解题进度中心</h2>
-                  <button id="refresh-growth-metrics" className="ghost" type="button">刷新</button>
-                </div>
-                <div id="growth-center" className="growth-center" aria-live="polite"></div>
-                <p id="growth-center-status" className="status" aria-live="polite"></p>
-              </section>
-              <section className="panel wide">
-                <div className="section-title">
-                  <h2>信任中心</h2>
-                  <button id="refresh-trust-center" className="ghost" type="button">刷新</button>
-                </div>
-                <div id="trust-center" className="trust-center" aria-live="polite"></div>
-                <p id="trust-center-status" className="status" aria-live="polite"></p>
-              </section>
-              <section className="panel wide">
-                <div className="section-title">
-                  <h2>后台任务中心</h2>
-                  <button id="refresh-auto-jobs" className="ghost" type="button">刷新</button>
-                </div>
-                <div id="auto-job-center" className="job-center" aria-live="polite"></div>
-              </section>
+              <details className="advanced-fold">
+                <summary>高级状态：并发、修复、信任与交付</summary>
+                <section className="panel wide">
+                  <div className="section-title">
+                    <h2>解题进度中心</h2>
+                    <button id="refresh-growth-metrics" className="ghost" type="button">刷新</button>
+                  </div>
+                  <div id="growth-center" className="growth-center" aria-live="polite"></div>
+                  <p id="growth-center-status" className="status" aria-live="polite"></p>
+                </section>
+                <section className="panel wide">
+                  <div className="section-title">
+                    <h2>信任中心</h2>
+                    <button id="refresh-trust-center" className="ghost" type="button">刷新</button>
+                  </div>
+                  <div id="trust-center" className="trust-center" aria-live="polite"></div>
+                  <p id="trust-center-status" className="status" aria-live="polite"></p>
+                </section>
+                <section className="panel wide">
+                  <div className="section-title">
+                    <h2>后台任务中心</h2>
+                    <button id="refresh-auto-jobs" className="ghost" type="button">刷新</button>
+                  </div>
+                  <div id="auto-job-center" className="job-center" aria-live="polite"></div>
+                </section>
+              </details>
             </section>
 
             <section className="module-panel" role="tabpanel" data-module-panel="problems" hidden>
@@ -285,10 +314,15 @@ export default function WorkbenchPage() {
                 <div className="section-title">
                   <h2>执行操作</h2>
                   <div className="action-row">
+                    <button id="run-auto-workflow" className="primary compact" type="button">开始一键生成</button>
+                    <button id="resume-auto-workflow" className="ghost" type="button">继续</button>
+                  </div>
+                </div>
+                <details className="simple-advanced output-advanced-actions">
+                  <summary>高级操作</summary>
+                  <div className="action-row">
                     <button id="run-modeling" className="ghost hidden" type="button">运行基线建模</button>
                     <button id="run-specialized" className="ghost hidden" type="button">运行专项建模</button>
-                    <button id="run-auto-workflow" className="primary compact" type="button">大模型+代码一键完成</button>
-                    <button id="resume-auto-workflow" className="ghost" type="button">继续生成</button>
                     <button id="cancel-auto-workflow" className="ghost" type="button">中断流程</button>
                     <button id="refresh-diagnostics" className="ghost" type="button">刷新诊断/性能</button>
                     <button id="generate-skill-report" className="ghost" type="button">生成技能库/诚信门禁</button>
@@ -298,7 +332,7 @@ export default function WorkbenchPage() {
                     <button id="review-paper" className="ghost" type="button">审查论文</button>
                     <button id="run-llm-analysis" className="ghost hidden" type="button">大模型分析</button>
                   </div>
-                </div>
+                </details>
                 <div className="status-stack">
                   <p id="modeling-status" className="status" aria-live="polite"></p>
                   <p id="specialized-status" className="status" aria-live="polite"></p>
@@ -314,23 +348,26 @@ export default function WorkbenchPage() {
                 </div>
               </section>
 
-              <section className="panel wide">
-                <div className="section-title">
-                  <h2>自动修复中心</h2>
-                  <button id="refresh-repair-center" className="ghost" type="button">刷新修复</button>
-                </div>
-                <div id="repair-center" className="repair-center" aria-live="polite"></div>
-                <p id="repair-center-status" className="status" aria-live="polite"></p>
-              </section>
+              <details className="advanced-fold output-advanced-panels">
+                <summary>高级检查：修复与交付</summary>
+                <section className="panel wide">
+                  <div className="section-title">
+                    <h2>自动修复中心</h2>
+                    <button id="refresh-repair-center" className="ghost" type="button">刷新修复</button>
+                  </div>
+                  <div id="repair-center" className="repair-center" aria-live="polite"></div>
+                  <p id="repair-center-status" className="status" aria-live="polite"></p>
+                </section>
 
-              <section className="panel wide">
-                <div className="section-title">
-                  <h2>交付就绪中心</h2>
-                  <button id="refresh-delivery-readiness" className="ghost" type="button">刷新交付</button>
-                </div>
-                <div id="delivery-center" className="delivery-center" aria-live="polite"></div>
-                <p id="delivery-readiness-status" className="status" aria-live="polite"></p>
-              </section>
+                <section className="panel wide">
+                  <div className="section-title">
+                    <h2>交付就绪中心</h2>
+                    <button id="refresh-delivery-readiness" className="ghost" type="button">刷新交付</button>
+                  </div>
+                  <div id="delivery-center" className="delivery-center" aria-live="polite"></div>
+                  <p id="delivery-readiness-status" className="status" aria-live="polite"></p>
+                </section>
+              </details>
 
               <section className="panel wide">
                 <div className="section-title">

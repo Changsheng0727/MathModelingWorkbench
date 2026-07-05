@@ -16,6 +16,7 @@ const state = {
   repairBriefing: null,
   deliveryReadiness: null,
   deliveryPackage: null,
+  experience: null,
   uploadProgressStop: null,
 };
 
@@ -34,6 +35,7 @@ const els = {
   selectAnalyzedProjects: document.querySelector("#select-analyzed-projects"),
   clearProjectSelection: document.querySelector("#clear-project-selection"),
   batchStartProjects: document.querySelector("#batch-start-projects"),
+  projectBatchDetails: document.querySelector("#project-batch-details"),
   batchProjectStatus: document.querySelector("#batch-project-status"),
   projectList: document.querySelector("#project-list"),
   health: document.querySelector("#health"),
@@ -58,6 +60,11 @@ const els = {
   documentCount: document.querySelector("#document-count"),
   dataCount: document.querySelector("#data-count"),
   projectStatus: document.querySelector("#project-status"),
+  experienceGuide: document.querySelector("#experience-guide"),
+  guideTitle: document.querySelector("#guide-title"),
+  guideDetail: document.querySelector("#guide-detail"),
+  guideActions: document.querySelector("#guide-actions"),
+  guideSteps: document.querySelector("#guide-steps"),
   statusCards: document.querySelector("#status-cards"),
   growthCenter: document.querySelector("#growth-center"),
   refreshGrowthMetrics: document.querySelector("#refresh-growth-metrics"),
@@ -249,6 +256,34 @@ function delay(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function activateModuleTab(target, { focus = false } = {}) {
+  const tabs = Array.from(document.querySelectorAll("[data-module-tab]"));
+  const panels = Array.from(document.querySelectorAll("[data-module-panel]"));
+  if (!tabs.length) {
+    return;
+  }
+  const activeTab = tabs.find((item) => item.dataset.moduleTab === target) || tabs[0];
+  const parentDetails = activeTab.closest("details");
+  if (parentDetails) {
+    parentDetails.open = true;
+  }
+  tabs.forEach((item) => {
+    const active = item === activeTab;
+    item.classList.toggle("is-active", active);
+    item.setAttribute("aria-selected", active ? "true" : "false");
+    item.tabIndex = active ? 0 : -1;
+  });
+  panels.forEach((panel) => {
+    const active = panel.dataset.modulePanel === activeTab.dataset.moduleTab;
+    panel.classList.toggle("is-active", active);
+    panel.hidden = !active;
+  });
+  writePreference("mmw-active-module", activeTab.dataset.moduleTab);
+  if (focus) {
+    activeTab.focus();
+  }
+}
+
 async function checkHealth() {
   try {
     await api("/api/health");
@@ -288,6 +323,7 @@ function dependencyInstallLabel(status = {}) {
 async function loadLlmSettings() {
   const settings = await api("/api/settings/llm");
   renderLlmSettings(settings);
+  renderExperienceGuide(state.experience || {});
 }
 
 async function loadTemplates() {
@@ -372,6 +408,7 @@ async function loadProjects() {
   state.projects = await api("/api/projects");
   pruneSelectedProjects();
   renderProjectList();
+  renderExperienceGuide(state.experience || {});
 }
 
 async function loadAutoJobs() {
@@ -407,6 +444,25 @@ async function loadGrowthMetrics() {
   }
 }
 
+async function loadExperienceCenter() {
+  if (!els.experienceGuide) {
+    return;
+  }
+  try {
+    const payload = await api("/api/product/experience");
+    state.experience = payload.experience || {};
+    renderExperienceGuide(state.experience);
+  } catch (error) {
+    renderExperienceGuide({
+      status: "warning",
+      label: "本地向导",
+      summary: `体验向导暂不可用：${error.message}`,
+      signals: {},
+      actions: [{ id: "refresh_all", label: "刷新状态", detail: "重新读取本地项目状态。", tone: "neutral" }],
+    });
+  }
+}
+
 async function loadTrustCenter() {
   if (!els.trustCenter) {
     return;
@@ -429,6 +485,8 @@ function renderProjectList() {
     ? projects.filter((project) => projectSearchText(project).includes(query))
     : projects;
   const selectedCount = state.selectedProjectIds.size;
+  const batchVisible = Boolean(els.projectBatchDetails?.open);
+  els.projectList?.classList.toggle("is-batch-visible", batchVisible);
 
   if (els.projectCount) {
     els.projectCount.textContent = projects.length
@@ -464,7 +522,7 @@ function renderProjectList() {
         const checked = state.selectedProjectIds.has(project.id) ? " checked" : "";
         const disabled = project.analysis_available ? "" : " disabled";
         return `
-        <article class="project-row${active}">
+        <article class="project-row${active}${batchVisible ? " is-batch-visible" : ""}">
           <label class="project-select">
             <input class="project-select-input" type="checkbox" data-project-id="${escapeHtml(project.id)}"${checked}${disabled} />
             <span class="sr-only">选择${escapeHtml(project.name || project.id)}</span>
@@ -645,6 +703,7 @@ function renderProject(detail) {
   els.projectStatus.textContent = metadata.auto_workflow_status
     ? `${metadata.status || "-"} · 自动流程：${metadata.auto_workflow_status}${diagnosisText}`
     : `${metadata.status || "-"}${diagnosisText}`;
+  renderExperienceGuide(state.experience || {});
   if (!analysis) {
     els.empty.classList.remove("hidden");
     els.analysisView.classList.add("hidden");
@@ -768,7 +827,6 @@ function renderStatusCards(metadata, analysis) {
   }
   const lastDiagnosis = metadata.last_failure_diagnosis || {};
   const diagnosisDetail = diagnosisSummary(lastDiagnosis);
-  const health = performanceHealthMetrics(metadata);
   const cards = [
     {
       title: "赛题解析",
@@ -777,61 +835,23 @@ function renderStatusCards(metadata, analysis) {
       status: analysis ? "success" : "pending",
     },
     {
-      title: "大模型分析",
-      value: statusLabel(metadata.llm_analysis_status),
-      detail: metadata.llm_analysis_status === "requires_api_key" ? "需要先填写 API 密钥" : "选题和建模建议",
-      status: statusTone(metadata.llm_analysis_status),
-    },
-    {
       title: "自动解题",
       value: statusLabel(metadata.auto_workflow_status),
-      detail: diagnosisDetail || metadata.auto_workflow_mode || "大模型+代码一键流程",
+      detail: diagnosisDetail || "生成代码、运行结果、回填论文",
       status: statusTone(metadata.auto_workflow_status),
     },
     {
-      title: "修复中心",
+      title: "自动修复",
       value: metadata.repair_center_label || statusLabel(metadata.repair_center_status),
-      detail: metadata.repair_center_summary || "失败诊断、证据和续跑入口",
+      detail: metadata.repair_center_summary || "失败后读取日志并继续生成",
       status: statusTone(metadata.repair_center_status),
-    },
-    {
-      title: "模型辅助",
-      value: statusLabel(metadata.model_assistant_status),
-      detail: "自定义模型补充和过程记录",
-      status: statusTone(metadata.model_assistant_status),
-    },
-    {
-      title: "代码求解",
-      value: statusLabel(metadata.computed_solution_status),
-      detail: diagnosisDetail && metadata.computed_solution_status === "failed" ? diagnosisDetail : "结果表、图片和 manifest",
-      status: statusTone(metadata.computed_solution_status),
-    },
-    {
-      title: "性能健康",
-      value: metadata.performance_health_label || statusLabel(metadata.performance_health_status),
-      detail: metadata.performance_health_summary || "速度、并发和自动修复指标",
-      status: statusTone(metadata.performance_health_status),
-      badge: health.badge,
-      metrics: health.items,
     },
     {
       title: "交付就绪",
       value: metadata.delivery_readiness_label || statusLabel(metadata.delivery_readiness_status),
-      detail: metadata.delivery_readiness_summary || "论文、结果、审查和支撑包",
+      detail: metadata.delivery_readiness_summary || "论文、结果和支撑材料",
       status: statusTone(metadata.delivery_readiness_status),
       badge: Number.isFinite(Number(metadata.delivery_readiness_score)) ? `${Number(metadata.delivery_readiness_score)} 分` : "",
-    },
-    {
-      title: "LaTeX 编译",
-      value: statusLabel(metadata.compile_status),
-      detail: "生成 paper/main.pdf",
-      status: statusTone(metadata.compile_status),
-    },
-    {
-      title: "论文审查",
-      value: statusLabel(metadata.paper_review_status),
-      detail: "结构、图表、页数和可追溯性",
-      status: statusTone(metadata.paper_review_status),
     },
   ];
   els.statusCards.innerHTML = cards
@@ -1131,6 +1151,104 @@ function renderDeliveryReportLinks(metadata = {}, projectId = "") {
       return `<a href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(path)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
     });
   return links.length ? `<div class="delivery-links">${links.join("")}</div>` : "";
+}
+
+function renderExperienceGuide(experience = {}) {
+  if (!els.experienceGuide) {
+    return;
+  }
+  const project = state.currentProject || {};
+  const metadata = project.metadata || {};
+  const analysis = project.analysis || null;
+  const step = currentGuideStep(metadata, analysis, experience);
+  els.experienceGuide.dataset.status = step.status || "pending";
+  if (els.guideTitle) {
+    els.guideTitle.textContent = step.title;
+  }
+  if (els.guideDetail) {
+    els.guideDetail.textContent = step.detail;
+  }
+  if (els.guideActions) {
+    els.guideActions.innerHTML = step.actions
+      .map((action) => `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`)
+      .join("");
+  }
+  if (els.guideSteps) {
+    els.guideSteps.innerHTML = ["上传赛题", "确认选题", "自动求解", "导出交付"]
+      .map((label, index) => {
+        const number = index + 1;
+        const status = number < step.index ? "done" : number === step.index ? "current" : "todo";
+        return `<li data-status="${escapeHtml(status)}"><span>${number}</span><b>${escapeHtml(label)}</b></li>`;
+      })
+      .join("");
+  }
+}
+
+function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
+  const projectId = metadata.id || state.currentProject?.metadata?.id || "";
+  const finalProblem = metadata.final_problem || {};
+  const autoStatus = metadata.auto_workflow_status || "";
+  const deliveryStatus = metadata.delivery_readiness_status || "";
+  const hasArtifacts = Boolean(metadata.artifacts && Object.keys(metadata.artifacts).length);
+  const configured = state.llmSettings?.configured;
+
+  if (!state.projects.length && !analysis) {
+    return guideStep(1, "上传赛题材料", "选择赛题压缩包或文件夹。上传后，系统会自动识别题目、附件和推荐选题。", [
+      { id: "focus_upload", label: "选择赛题", primary: true },
+    ]);
+  }
+  if (!analysis) {
+    const summary = experience.summary || "先打开一个项目，或继续上传新的赛题材料。";
+    return guideStep(1, "打开或上传项目", summary, [
+      { id: "focus_projects", label: "查看项目", primary: true },
+      { id: "focus_upload", label: "上传新赛题" },
+    ]);
+  }
+  if (!finalProblem.id && !finalProblem.final_problem_id) {
+    return guideStep(2, "确认要做哪一题", "先看推荐题和各题评分，确认后再启动自动求解，避免论文和代码跑偏。", [
+      { id: "open_problems", label: "去确认选题", primary: true },
+    ]);
+  }
+  if (!configured) {
+    return guideStep(3, "配置大模型接口", "自动求解需要先保存并测试大模型接口。通过后再运行一键流程。", [
+      { id: "focus_llm", label: "填写接口", primary: true },
+      { id: "test_llm", label: "测试连接" },
+    ], "warning");
+  }
+  if (["failed", "completed_with_warnings", "cancelled", "requires_api_key"].includes(autoStatus)) {
+    const reason = metadata.last_failure_diagnosis?.suggested_action || metadata.auto_workflow_error || "系统会读取错误日志和上下文继续修复。";
+    return guideStep(3, "继续生成并自动修复", reason, [
+      { id: "resume_auto", label: "继续并修复", primary: true },
+      { id: "open_outputs", label: "查看日志" },
+    ], "failed");
+  }
+  if (["running", "queued", "cancel_requested"].includes(autoStatus)) {
+    return guideStep(3, "等待自动求解完成", "大模型正在规划、生成代码、运行结果并回填论文。可以在输出页查看流式进度。", [
+      { id: "open_outputs", label: "看进度", primary: true },
+      { id: "cancel_auto", label: "中断流程" },
+    ], "running");
+  }
+  if (autoStatus !== "success") {
+    return guideStep(3, "启动自动求解", "系统会先解完每个子问题并生成图表，再撰写论文、编译和审查。", [
+      { id: "start_auto", label: "一键求解", primary: true },
+      { id: "open_outputs", label: "查看输出区" },
+    ]);
+  }
+  if (deliveryStatus !== "ready" && deliveryStatus !== "success") {
+    return guideStep(4, "检查论文并生成交付包", "自动求解已完成。下一步检查论文、编译 PDF/Word，并生成支撑材料包。", [
+      { id: "compile", label: "编译论文", primary: !hasArtifacts },
+      { id: "review", label: "审查论文" },
+      { id: "refresh_delivery", label: "刷新交付" },
+    ], "success");
+  }
+  return guideStep(4, "交付文件已就绪", "论文、结果和支撑材料已经进入交付阶段。可以打开项目文件夹或在生成文件里下载。", [
+    { id: "open_project_root", label: "打开文件夹", primary: true },
+    { id: "open_outputs", label: "查看生成文件" },
+  ], "success");
+}
+
+function guideStep(index, title, detail, actions = [], status = "pending") {
+  return { index, title, detail, actions, status };
 }
 
 function renderGrowthCenter(growth = {}) {
@@ -1780,12 +1898,23 @@ function renderProblems(problems, selectedId, systemRecommendedId = "") {
     .map((problem) => {
       const selected = problem.id === selectedId ? " selected" : "";
       const isSystemRecommended = problem.id === systemRecommendedId;
-      const tasks = (problem.tasks || []).slice(0, 3).map((task) => `<li>${escapeHtml(task)}</li>`).join("");
+      const tasks = (problem.tasks || []).slice(0, 2).map((task) => `<li>${escapeHtml(task)}</li>`).join("");
       const modelTypes = renderChipRow(problem.model_types, "is-muted");
       const methods = renderChipRow(problem.suggested_methods);
       const risks = renderChipRow(problem.risk_items, "is-risk");
+      const scoreBreakdown = renderScoreBreakdown(problem.score_breakdown);
       const selectDisabled = problem.id === selectedId ? " disabled" : "";
       const selectLabel = problem.id === selectedId ? "已选择" : "选择此题";
+      const quickSignals = [
+        problem.ai_fit ? `智能适配 ${problem.ai_fit}` : "",
+        problem.feasibility ? `可行性 ${problem.feasibility}` : "",
+      ].filter(Boolean);
+      const detailBlocks = [
+        scoreBreakdown,
+        modelTypes ? `<div class="chip-row"><b>模型类型</b>${modelTypes}</div>` : "",
+        methods ? `<div class="chip-row"><b>可用方法</b>${methods}</div>` : "",
+        risks ? `<div class="chip-row"><b>主要风险</b>${risks}</div>` : "",
+      ].filter(Boolean).join("");
       return `
         <article class="problem-card${selected}">
           <div class="problem-head">
@@ -1798,16 +1927,12 @@ function renderProblems(problems, selectedId, systemRecommendedId = "") {
               ${isSystemRecommended ? '<span class="recommend-badge">系统推荐</span>' : ""}
             </div>
           </div>
-          <div class="chip-row">
+          <div class="problem-quick">
             <span class="problem-score">综合得分 ${escapeHtml(problem.fit_score)}</span>
-            <span class="chip is-muted">智能适配 ${escapeHtml(problem.ai_fit || "-")}</span>
-            <span class="chip is-muted">可行性 ${escapeHtml(problem.feasibility || "-")}</span>
+            ${quickSignals.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
           </div>
-          ${renderScoreBreakdown(problem.score_breakdown)}
-          ${modelTypes ? `<div class="chip-row">${modelTypes}</div>` : ""}
-          ${methods ? `<div class="chip-row">${methods}</div>` : ""}
-          ${risks ? `<div class="chip-row">${risks}</div>` : ""}
           ${tasks ? `<ul class="problem-meta">${tasks}</ul>` : ""}
+          ${detailBlocks ? `<details class="problem-details"><summary>查看方法、评分和风险</summary>${detailBlocks}</details>` : ""}
           <button class="select-problem-button" type="button" data-problem-id="${escapeHtml(problem.id)}"${selectDisabled}>${selectLabel}</button>
         </article>
       `;
@@ -2490,6 +2615,138 @@ els.growthCenter?.addEventListener("click", async (event) => {
   }
 });
 
+els.experienceGuide?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-guide-action]");
+  if (!button) {
+    return;
+  }
+  button.disabled = true;
+  try {
+    await runGuideAction(button.dataset.guideAction);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+async function runGuideAction(action) {
+  const projectId = state.currentProject?.metadata?.id || "";
+  if (action === "focus_upload") {
+    scrollIntoViewIfPossible(els.form);
+    els.file?.focus();
+    return;
+  }
+  if (action === "focus_projects") {
+    scrollIntoViewIfPossible(els.projectList);
+    els.projectSearch?.focus();
+    return;
+  }
+  if (action === "focus_llm") {
+    scrollIntoViewIfPossible(els.llmSettingsForm);
+    els.apiKeyInput?.focus();
+    return;
+  }
+  if (action === "test_llm") {
+    els.testLlmSettings?.click();
+    return;
+  }
+  if (action === "open_problems") {
+    activateModuleTab("problems", { focus: true });
+    return;
+  }
+  if (action === "open_outputs") {
+    activateModuleTab("outputs", { focus: true });
+    scrollIntoViewIfPossible(els.autoWorkflowProgress || els.artifacts);
+    return;
+  }
+  if (action === "start_auto") {
+    if (!projectId) {
+      showToast("请先打开一个项目。", "warning");
+      return;
+    }
+    activateModuleTab("outputs");
+    els.runAutoWorkflow?.click();
+    return;
+  }
+  if (action === "resume_auto") {
+    if (!projectId) {
+      showToast("请先打开一个项目。", "warning");
+      return;
+    }
+    activateModuleTab("outputs");
+    els.resumeAutoWorkflow?.click();
+    return;
+  }
+  if (action === "cancel_auto") {
+    els.cancelAutoWorkflow?.click();
+    return;
+  }
+  if (action === "compile") {
+    activateModuleTab("outputs");
+    els.compile?.click();
+    return;
+  }
+  if (action === "review") {
+    activateModuleTab("outputs");
+    els.reviewPaper?.click();
+    return;
+  }
+  if (action === "refresh_delivery") {
+    activateModuleTab("outputs");
+    els.refreshDeliveryReadiness?.click();
+    return;
+  }
+  if (action === "open_project_root") {
+    els.openProjectRoot?.click();
+    return;
+  }
+  if (action === "select_analyzed") {
+    els.selectAnalyzedProjects?.click();
+    scrollIntoViewIfPossible(els.batchStartProjects);
+    return;
+  }
+  if (action === "batch_packages") {
+    const growthButton = els.growthCenter?.querySelector("[data-growth-action='batch_packages']");
+    if (growthButton) {
+      growthButton.click();
+    } else {
+      await loadGrowthMetrics();
+      els.growthCenter?.querySelector("[data-growth-action='batch_packages']")?.click();
+    }
+    return;
+  }
+  if (action === "autotune_capacity") {
+    const capacityButton = els.autoJobCenter?.querySelector("[data-capacity-action='autotune']");
+    if (capacityButton) {
+      capacityButton.click();
+    } else {
+      await loadAutoJobs();
+      els.autoJobCenter?.querySelector("[data-capacity-action='autotune']")?.click();
+    }
+    return;
+  }
+  if (action === "repair_campaign") {
+    const repairButton = els.trustCenter?.querySelector("[data-trust-action='repair_campaign']");
+    if (repairButton) {
+      repairButton.click();
+    } else {
+      await loadTrustCenter();
+      els.trustCenter?.querySelector("[data-trust-action='repair_campaign']")?.click();
+    }
+    return;
+  }
+  if (action === "refresh_all") {
+    await Promise.all([loadProjects(), loadExperienceCenter(), loadAutoJobs(), loadGrowthMetrics(), loadTrustCenter()]);
+    showToast("产品状态已刷新", "success");
+  }
+}
+
+function scrollIntoViewIfPossible(node) {
+  if (!node || typeof node.scrollIntoView !== "function") {
+    return;
+  }
+  node.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 els.autoJobCenter?.addEventListener("click", async (event) => {
   const capacityButton = event.target.closest("[data-capacity-action='autotune']");
   if (capacityButton) {
@@ -2572,6 +2829,10 @@ if (els.projectSearch) {
     renderProjectList();
   });
 }
+
+els.projectBatchDetails?.addEventListener("toggle", () => {
+  renderProjectList();
+});
 
 els.projectList?.addEventListener("change", (event) => {
   const input = event.target.closest(".project-select-input");
@@ -3604,31 +3865,12 @@ els.reviewPaper.addEventListener("click", async () => {
 
 function initModuleTabs() {
   const tabs = Array.from(document.querySelectorAll("[data-module-tab]"));
-  const panels = Array.from(document.querySelectorAll("[data-module-panel]"));
   if (!tabs.length) {
     return;
   }
-  const activateTab = (target, { focus = false } = {}) => {
-    const activeTab = tabs.find((item) => item.dataset.moduleTab === target) || tabs[0];
-    tabs.forEach((item) => {
-      const active = item === activeTab;
-      item.classList.toggle("is-active", active);
-      item.setAttribute("aria-selected", active ? "true" : "false");
-      item.tabIndex = active ? 0 : -1;
-    });
-    panels.forEach((panel) => {
-      const active = panel.dataset.modulePanel === activeTab.dataset.moduleTab;
-      panel.classList.toggle("is-active", active);
-      panel.hidden = !active;
-    });
-    writePreference("mmw-active-module", activeTab.dataset.moduleTab);
-    if (focus) {
-      activeTab.focus();
-    }
-  };
   tabs.forEach((tab, index) => {
     tab.addEventListener("click", () => {
-      activateTab(tab.dataset.moduleTab);
+      activateModuleTab(tab.dataset.moduleTab);
     });
     tab.addEventListener("keydown", (event) => {
       const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
@@ -3646,10 +3888,10 @@ function initModuleTabs() {
       } else if (event.key === "End") {
         nextIndex = tabs.length - 1;
       }
-      activateTab(tabs[nextIndex].dataset.moduleTab, { focus: true });
+      activateModuleTab(tabs[nextIndex].dataset.moduleTab, { focus: true });
     });
   });
-  activateTab(readPreference("mmw-active-module", tabs[0].dataset.moduleTab));
+  activateModuleTab(readPreference("mmw-active-module", tabs[0].dataset.moduleTab));
 }
 
 els.runLlmAnalysis.addEventListener("click", async () => {
@@ -3676,6 +3918,7 @@ initThemeToggle();
 initModuleTabs();
 checkHealth();
 loadProjects();
+loadExperienceCenter();
 loadAutoJobs();
 loadGrowthMetrics();
 loadTrustCenter();
