@@ -569,39 +569,6 @@ function llmConnectionBlocker(settings = {}) {
   return "";
 }
 
-async function loadProjects({ restore = false, refresh = false } = {}) {
-  if (els.projectCount) {
-    els.projectCount.classList.add("is-loading");
-    els.projectCount.textContent = "正在刷新项目状态…";
-  }
-  els.projectList?.setAttribute("aria-busy", "true");
-  try {
-    state.projects = await api(`/api/projects${refresh ? "?refresh=true" : ""}`);
-    pruneSelectedProjects();
-    renderProjectList();
-    renderExperienceGuide(state.experience || {});
-    if (restore) {
-      await restoreInitialProject();
-    }
-  } catch (error) {
-    renderProjectListLoadError(error);
-    throw error;
-  } finally {
-    els.projectCount?.classList.remove("is-loading");
-    els.projectList?.setAttribute("aria-busy", "false");
-  }
-}
-
-function renderProjectListLoadError(error) {
-  const existingCount = (state.projects || []).length;
-  if (els.projectCount) {
-    els.projectCount.textContent = existingCount ? `刷新失败，仍显示 ${existingCount} 个旧项目` : "项目列表加载失败";
-  }
-  if (els.projectList && !existingCount) {
-    els.projectList.innerHTML = `<p class="status">项目列表暂时无法读取：${escapeHtml(error.message)}。请检查本地后端是否已启动，或重新打开客户端。</p>`;
-  }
-}
-
 async function restoreInitialProject() {
   if (state.projectRestoreTried || state.currentProject) {
     return;
@@ -4798,8 +4765,7 @@ async function runAutoWorkflow(
     els.autoWorkflowStatus.textContent = "请先打开一个项目。";
     return;
   }
-  const settings = state.llmSettings || (await api("/api/settings/llm"));
-  state.llmSettings = settings;
+  const settings = state.llmSettings || renderLlmSettingsResponse(await api("/api/settings/llm?include_overview=true"));
   if (!settings.configured) {
     els.autoWorkflowStatus.textContent = "请先在左侧大模型设置中填写接口密钥；大模型+代码自动解题不提供本地降级模式。";
     return;

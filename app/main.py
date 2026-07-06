@@ -580,8 +580,11 @@ def write_project_code_graph_report(project_id: str) -> dict:
 
 
 @app.get("/api/settings/llm")
-def read_llm_settings() -> dict:
-    return get_llm_settings()
+def read_llm_settings(include_overview: bool = False) -> dict:
+    settings = get_llm_settings()
+    if include_overview:
+        settings["overview"] = build_product_overview_response()
+    return settings
 
 
 @app.put("/api/settings/llm")
