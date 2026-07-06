@@ -5635,6 +5635,10 @@ els.runLlmAnalysis.addEventListener("click", async () => {
   }
   els.runLlmAnalysis.disabled = true;
   els.llmAnalysisStatus.textContent = "正在调用大模型分析赛题并刷新大模型报告。";
+  renderProgressPanel(els.llmAnalysisProgress, {
+    status: "running",
+    detail: "正在提交大模型分析任务，稍后会显示实时输出。",
+  }, 3);
   const stopProgressPolling = startLlmAnalysisProgressPolling(projectId);
   try {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/analyze`, { method: "POST" });

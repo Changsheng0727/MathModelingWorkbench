@@ -2331,9 +2331,12 @@ def project_llm_analysis_progress(project_id: str, include_overview: bool = Fals
     status = meta.get("llm_analysis_status") or "idle"
     progress: dict = {"status": status}
     live_stream = load_llm_live_stream(root)
-    if live_stream.get("channel") == "llm_analysis":
+    live_status = str(live_stream.get("status") or "")
+    if live_stream.get("channel") == "llm_analysis" and not (status == "running" and live_status != "running"):
         progress["live_stream"] = live_stream
-        progress["status"] = live_stream.get("status") or status
+        progress["status"] = live_status or status
+    if progress.get("status") == "running" and not progress.get("live_stream"):
+        progress["detail"] = "正在启动大模型分析直播，稍后会显示实时输出。"
     if meta.get("llm_analysis_error"):
         progress["status"] = "failed"
         progress["error"] = meta.get("llm_analysis_error")
@@ -2357,6 +2360,9 @@ def run_project_llm_analysis(project_id: str) -> dict:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="项目不存在") from exc
     meta = load_json(root / "metadata.json")
+    meta["llm_analysis_status"] = "running"
+    meta.pop("llm_analysis_error", None)
+    save_json(root / "metadata.json", meta)
     try:
         with bind_llm_stream(root, "llm_analysis", "LLM 分析大模型直播", "正在刷新赛题分析、基线复盘和专项复盘。") as live_stream:
             artifacts = run_full_llm_refresh(root)
@@ -2373,6 +2379,7 @@ def run_project_llm_analysis(project_id: str) -> dict:
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
     attach_artifacts_safely(meta, artifacts)
     meta["llm_analysis_status"] = "success"
+    meta.pop("llm_analysis_error", None)
     save_json(root / "metadata.json", meta)
     return {"artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
