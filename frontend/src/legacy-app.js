@@ -903,6 +903,8 @@ function projectSearchText(project = {}) {
     project.readiness_next_step?.detail,
     project.readiness_next_step_label,
     project.readiness_next_step_detail,
+    project.readiness_completion?.label,
+    project.readiness_completion_label,
     project.readiness_todo_count ? `待办 ${project.readiness_todo_count}` : "",
     ...(Array.isArray(project.readiness_todo_preview) ? project.readiness_todo_preview.flatMap((item) => [item.label, item.detail, item.action_label || item.action?.label]) : []),
     project.readiness_action?.label,
@@ -1252,6 +1254,7 @@ function renderProjectReadiness(readiness = {}) {
   const nextStep = next.label
     ? `<p class="readiness-next"><b>下一步</b><span>${escapeHtml(next.label)}${next.detail ? ` · ${escapeHtml(next.detail)}` : ""}</span></p>`
     : "";
+  const completion = renderReadinessCompletion(readiness.completion || {});
   const todos = Array.isArray(readiness.todo_items) ? readiness.todo_items.slice(0, 5) : [];
   const todoList = todos.length ? renderReadinessTodos(todos) : "";
   els.projectReadiness.dataset.status = status;
@@ -1265,6 +1268,7 @@ function renderProjectReadiness(readiness = {}) {
         <span>准备度</span>
         <h3>${escapeHtml(readiness.label || "当前项目状态")}</h3>
         <p>${escapeHtml(readiness.summary || "")}</p>
+        ${completion}
         ${nextStep}
       </div>
       ${actionButton}
@@ -1272,6 +1276,27 @@ function renderProjectReadiness(readiness = {}) {
     ${todoList}
     <div class="readiness-checks">
       ${checks.map(renderReadinessCheck).join("")}
+    </div>
+  `;
+}
+
+function renderReadinessCompletion(completion = {}) {
+  const total = Number(completion.total || 0);
+  if (!total) {
+    return "";
+  }
+  const passed = Number(completion.passed || 0);
+  const requiredPassed = Number(completion.required_passed || 0);
+  const requiredTotal = Number(completion.required_total || 0);
+  const todoCount = Number(completion.todo_count || 0);
+  const items = [
+    ["检查", `${passed}/${total}`],
+    requiredTotal ? ["必需", `${requiredPassed}/${requiredTotal}`] : null,
+    ["待办", `${todoCount}`],
+  ].filter(Boolean);
+  return `
+    <div class="readiness-completion" title="${escapeHtml(completion.label || "")}">
+      ${items.map(([label, value]) => `<span><b>${escapeHtml(label)}</b>${escapeHtml(value)}</span>`).join("")}
     </div>
   `;
 }

@@ -1801,6 +1801,34 @@ p {
   overflow-wrap: anywhere;
 }
 
+.readiness-completion {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.readiness-completion span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 3px 7px;
+  border: 1px solid rgba(185, 200, 216, 0.58);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.35;
+  box-shadow: var(--shadow-inset);
+}
+
+.readiness-completion b {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .readiness-next {
   display: inline-flex;
   align-items: flex-start;
@@ -4776,6 +4804,7 @@ ul.problem-meta {
 :root[data-theme="dark"] .project-filter,
 :root[data-theme="dark"] .project-select-input,
 :root[data-theme="dark"] .status-card,
+:root[data-theme="dark"] .readiness-completion span,
 :root[data-theme="dark"] .readiness-next,
 :root[data-theme="dark"] .readiness-score,
 :root[data-theme="dark"] .readiness-check,

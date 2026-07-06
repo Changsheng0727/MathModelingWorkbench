@@ -30,6 +30,7 @@ def build_project_readiness(
     warnings = [item for item in checks if item.get("status") == "warning"]
     score = score_checks(checks)
     status = "failed" if blockers else "warning" if warnings or score < 86 else "success"
+    todo_items = readiness_todo_items(checks)
     blocking_item = next((item for item in checks if item.get("status") == "fail" and item.get("action")), None)
     warning_item = next((item for item in checks if item.get("status") == "warning" and item.get("action")), None)
     action_item = blocking_item
@@ -48,7 +49,8 @@ def build_project_readiness(
         "summary": readiness_summary(status, score, blockers, warnings, metadata, repair or {}),
         "primary_action": primary_action,
         "next_step": readiness_next_step(primary_action, action_item),
-        "todo_items": readiness_todo_items(checks),
+        "completion": readiness_completion(checks, required, todo_items),
+        "todo_items": todo_items,
         "checks": checks,
         "blockers": blockers,
         "warning_count": len(warnings),
@@ -266,6 +268,29 @@ def readiness_todo_items(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def readiness_completion(
+    checks: list[dict[str, Any]],
+    required: list[dict[str, Any]],
+    todo_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    passed = sum(1 for item in checks if item.get("status") == "pass")
+    required_passed = sum(1 for item in required if item.get("status") != "fail")
+    failed = sum(1 for item in checks if item.get("status") == "fail")
+    warning = sum(1 for item in checks if item.get("status") == "warning")
+    total = len(checks)
+    todo_count = len(todo_items)
+    return {
+        "passed": passed,
+        "total": total,
+        "failed": failed,
+        "warning": warning,
+        "todo_count": todo_count,
+        "required_passed": required_passed,
+        "required_total": len(required),
+        "label": f"已通过 {passed}/{total}，待处理 {todo_count} 项",
+    }
 
 
 def score_checks(checks: list[dict[str, Any]]) -> int:
