@@ -47,9 +47,9 @@ def build_project_readiness(
     """Small, user-facing readiness model for the current project overview."""
     checks = [
         check_metadata(metadata),
-        check_llm(llm_settings or {}),
         check_analysis(analysis),
         check_problem(metadata, analysis),
+        check_llm(llm_settings or {}),
         check_results(root, metadata),
         check_paper(root, metadata),
         check_pdf(root, metadata),
@@ -137,14 +137,37 @@ def check_problem(metadata: dict[str, Any], analysis: dict[str, Any] | None) -> 
         if isinstance(analysis_data.get("system_recommended_problem"), dict)
         else {}
     )
-    selected = final_problem or recommended or system_recommended
-    problem_id = selected.get("id") or selected.get("final_problem_id") or ""
+    problem_id = final_problem.get("id") or final_problem.get("final_problem_id") or ""
+    recommended_id = (
+        recommended.get("id")
+        or recommended.get("final_problem_id")
+        or system_recommended.get("id")
+        or system_recommended.get("final_problem_id")
+        or ""
+    )
+    recommended_title = (
+        recommended.get("title")
+        or recommended.get("final_problem_title")
+        or system_recommended.get("title")
+        or system_recommended.get("final_problem_title")
+        or ""
+    )
+    if problem_id:
+        detail = f"当前已确认使用 {problem_id} 题。"
+        status = "pass"
+    elif recommended_id:
+        title = f"：{recommended_title}" if recommended_title else ""
+        detail = f"系统推荐 {recommended_id} 题{title}，请确认后再开始求解。"
+        status = "fail"
+    else:
+        detail = "尚未确认最终选题。"
+        status = "fail"
     return readiness_check(
         "problem",
         "选题确认",
-        "pass" if problem_id else "warning",
-        f"当前将使用 {problem_id} 题。" if problem_id else "尚未确认最终选题。",
-        required=False,
+        status,
+        detail,
+        required=True,
         action={"id": "open_problems", "label": "确认选题"},
     )
 

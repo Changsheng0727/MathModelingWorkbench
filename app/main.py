@@ -768,6 +768,11 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_card_progress_percent"] = project["readiness_header_progress_percent"]
     project["readiness_card_progress_label"] = project["readiness_header_progress_label"]
     project["readiness_card_progress_tone"] = project["readiness_header_progress_tone"]
+    project["readiness_guide_index"] = project.get("readiness_phase_step", 0)
+    project["readiness_guide_status"] = project_readiness_guide_status(project)
+    project["readiness_guide_title"] = project_readiness_guide_title(project)
+    project["readiness_guide_detail"] = project_readiness_guide_detail(project)
+    project["readiness_guide_actions"] = project_readiness_guide_actions(project)
     return project
 
 
@@ -919,6 +924,71 @@ def project_readiness_card_detail(project: dict) -> str:
         or str(project.get("readiness_top_action_reason") or "").strip()
         or str(project.get("readiness_gap_label") or "").strip()
     )
+
+
+def project_readiness_guide_status(project: dict) -> str:
+    tone = str(project.get("readiness_top_action_tone") or project.get("readiness_header_progress_tone") or "").strip()
+    return {
+        "failed": "failed",
+        "warning": "warning",
+        "running": "running",
+        "success": "success",
+        "normal": "pending",
+    }.get(tone, tone or "pending")
+
+
+def project_readiness_guide_title(project: dict) -> str:
+    phase = str(project.get("readiness_phase_label") or "").strip()
+    action = str(project.get("readiness_action_label") or "").strip()
+    status = project_readiness_guide_status(project)
+    if status == "running":
+        return phase or "正在生成"
+    if action:
+        return f"下一步：{action}"
+    return phase or str(project.get("readiness_label") or "当前项目状态").strip()
+
+
+def project_readiness_guide_detail(project: dict) -> str:
+    return (
+        str(project.get("readiness_top_action_reason") or "").strip()
+        or str(project.get("readiness_header_detail") or "").strip()
+        or str(project.get("readiness_summary") or "").strip()
+    )
+
+
+def project_readiness_guide_actions(project: dict) -> list[dict]:
+    action = project.get("readiness_action") if isinstance(project.get("readiness_action"), dict) else {}
+    actions: list[dict] = []
+    add_readiness_guide_action(actions, action, primary=True)
+    secondary_actions = {
+        "focus_llm": {"id": "test_llm", "label": "测试连接"},
+        "start_auto": {"id": "open_outputs", "label": "查看输出区"},
+        "watch_auto": {"id": "cancel_auto", "label": "中断流程"},
+        "resume_auto": {"id": "open_outputs", "label": "查看日志"},
+        "compile": {"id": "review", "label": "审查论文"},
+        "refresh_delivery": {"id": "open_outputs", "label": "查看输出"},
+        "build_delivery_package": {"id": "open_project_root", "label": "打开文件夹"},
+        "open_primary_output": {"id": "open_project_root", "label": "打开文件夹"},
+    }
+    secondary = secondary_actions.get(str(action.get("id") or ""))
+    if secondary:
+        add_readiness_guide_action(actions, secondary)
+    return actions
+
+
+def add_readiness_guide_action(actions: list[dict], action: dict, *, primary: bool = False) -> None:
+    action_id = str(action.get("id") or "").strip()
+    label = str(action.get("label") or "").strip()
+    if not action_id or not label or any(item.get("id") == action_id for item in actions):
+        return
+    row = {"id": action_id, "label": label, "primary": primary}
+    detail = str(action.get("detail") or "").strip()
+    path = str(action.get("path") or "").strip()
+    if detail:
+        row["detail"] = detail
+    if path:
+        row["path"] = path
+    actions.append(row)
 
 
 def project_readiness_action_hint(action: dict, project: dict) -> str:

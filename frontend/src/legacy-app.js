@@ -647,6 +647,8 @@ function normalizedGuideActions(actions = [], fallback = []) {
       id: String(action.id),
       label: String(action.label),
       primary: Boolean(action.primary),
+      detail: action.detail ? String(action.detail) : "",
+      path: action.path ? String(action.path) : "",
     }));
 }
 
@@ -1886,7 +1888,11 @@ function renderExperienceGuide(experience = {}) {
   }
   if (els.guideActions) {
     els.guideActions.innerHTML = step.actions
-      .map((action) => `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`)
+      .map((action) => {
+        const path = action.path ? ` data-guide-path="${escapeHtml(action.path)}"` : "";
+        const title = action.detail ? ` title="${escapeHtml(action.detail)}"` : "";
+        return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${path}${title}>${escapeHtml(action.label)}</button>`;
+      })
       .join("");
   }
   if (els.guideSteps) {
@@ -1928,6 +1934,10 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
       ]),
       onboarding.status || "pending",
     );
+  }
+  const readinessStep = guideStepFromReadiness(metadata);
+  if (readinessStep) {
+    return readinessStep;
   }
   if (!finalProblem.id && !finalProblem.final_problem_id) {
     return guideStep(2, "确认要做哪一题", "先看推荐题和各题评分，确认后再启动自动求解，避免论文和代码跑偏。", [
@@ -1974,6 +1984,20 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
 
 function guideStep(index, title, detail, actions = [], status = "pending") {
   return { index, title, detail, actions, status };
+}
+
+function guideStepFromReadiness(metadata = {}) {
+  const actions = normalizedGuideActions(metadata.readiness_guide_actions);
+  if (!metadata.readiness_guide_title || !actions.length) {
+    return null;
+  }
+  return guideStep(
+    Number(metadata.readiness_guide_index || metadata.readiness_phase_step || 1) || 1,
+    metadata.readiness_guide_title,
+    metadata.readiness_guide_detail || metadata.readiness_top_action_reason || metadata.readiness_summary || "",
+    actions,
+    metadata.readiness_guide_status || statusTone(metadata.readiness_status || metadata.auto_workflow_status || ""),
+  );
 }
 
 function guideRoadmap(readiness = {}, fallbackStep = {}) {
@@ -3433,7 +3457,7 @@ els.experienceGuide?.addEventListener("click", async (event) => {
   }
   button.disabled = true;
   try {
-    await runGuideAction(button.dataset.guideAction);
+    await runGuideAction(button.dataset.guideAction, { path: button.dataset.guidePath || "" });
   } finally {
     button.disabled = false;
   }
