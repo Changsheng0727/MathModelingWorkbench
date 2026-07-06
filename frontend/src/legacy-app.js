@@ -628,13 +628,19 @@ function renderProjectList() {
 function renderProjectEmptyState(onboarding = {}) {
   const title = onboarding?.title || "还没有项目";
   const detail = onboarding?.detail || "先上传一个赛题包，系统会自动完成材料识别、选题分析和后续生成。";
+  const outcome = onboarding?.outcome || "";
   const actions = normalizedGuideActions(onboarding?.actions, [{ id: "focus_upload", label: "选择赛题", primary: true }]);
   return `
     <div class="project-empty-card">
       <b>${escapeHtml(title)}</b>
       <p>${escapeHtml(detail)}</p>
+      ${outcome ? `<small>${escapeHtml(outcome)}</small>` : ""}
       <div>
-        ${actions.map((action) => `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`).join("")}
+        ${actions.map((action) => {
+          const titleText = [action.detail, action.outcome ? `点击后：${action.outcome}` : ""].filter(Boolean).join("；");
+          const titleAttr = titleText ? ` title="${escapeHtml(titleText)}"` : "";
+          return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${titleAttr}>${escapeHtml(action.label)}</button>`;
+        }).join("")}
       </div>
     </div>
   `;
@@ -1939,6 +1945,7 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
       onboarding.detail || "选择赛题压缩包或文件夹。上传后，系统会自动识别题目、附件和推荐选题。",
       normalizedGuideActions(onboarding.actions, [{ id: "focus_upload", label: "选择赛题", primary: true }]),
       onboarding.status || "pending",
+      onboarding.outcome || "",
     );
   }
   if (!analysis) {
@@ -1951,6 +1958,7 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
         { id: "focus_upload", label: "上传新赛题" },
       ]),
       onboarding.status || "pending",
+      onboarding.outcome || "",
     );
   }
   const readinessStep = guideStepFromReadiness(metadata);

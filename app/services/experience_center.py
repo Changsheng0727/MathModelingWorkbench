@@ -186,7 +186,25 @@ def recommended_actions(
 
 
 def action(id_: str, label: str, detail: str, tone: str) -> dict[str, str]:
-    return {"id": id_, "label": label, "detail": detail, "tone": tone}
+    row = {"id": id_, "label": label, "detail": detail, "tone": tone}
+    outcome = action_outcome(id_)
+    if outcome:
+        row["outcome"] = outcome
+    return row
+
+
+def action_outcome(id_: str) -> str:
+    return {
+        "focus_llm": "接口测试通过后，才能稳定运行一键求解。",
+        "test_llm": "连接成功后，可直接上传赛题或继续当前项目。",
+        "focus_upload": "上传完成后，会自动分析题目、附件和推荐选题。",
+        "focus_projects": "打开优先级最高的项目后，会显示当前下一步。",
+        "select_analyzed": "会批量勾选已分析项目，方便继续自动求解。",
+        "batch_packages": "会为已就绪项目生成正式提交压缩包。",
+        "autotune_capacity": "会按当前排队压力调整并发配置。",
+        "repair_campaign": "会刷新失败诊断，并推动可续跑项目恢复生成。",
+        "refresh_all": "会重新计算当前产品状态和后台任务。",
+    }.get(id_, "")
 
 
 def onboarding_hint(total: int, configured: bool) -> dict[str, Any]:
@@ -196,9 +214,10 @@ def onboarding_hint(total: int, configured: bool) -> dict[str, Any]:
             "step_index": 1,
             "title": "先配置接口，再上传赛题",
             "detail": "自动求解依赖可用的大模型接口。先保存并测试 API Key，再上传赛题包会少走弯路。",
+            "outcome": "接口连通后，再上传赛题即可进入自动分析和推荐选题。",
             "actions": [
-                {"id": "focus_llm", "label": "填写接口", "primary": True},
-                {"id": "focus_upload", "label": "选择赛题"},
+                {**action("focus_llm", "填写接口", "保存 API Key 并测试连接。", "warning"), "primary": True},
+                action("focus_upload", "选择赛题", "上传赛题压缩包或文件夹。", "neutral"),
             ],
         }
     if not total:
@@ -207,16 +226,18 @@ def onboarding_hint(total: int, configured: bool) -> dict[str, Any]:
             "step_index": 1,
             "title": "上传赛题材料",
             "detail": "选择赛题压缩包或文件夹，系统会自动识别题目、附件和推荐选题。",
-            "actions": [{"id": "focus_upload", "label": "选择赛题", "primary": True}],
+            "outcome": "上传完成后，会显示选题建议、附件清单和下一步按钮。",
+            "actions": [{**action("focus_upload", "选择赛题", "上传赛题压缩包或文件夹。", "primary"), "primary": True}],
         }
     return {
         "status": "pending",
         "step_index": 1,
         "title": "打开一个项目继续",
         "detail": "项目列表已按优先级排序。先打开最上方项目，再按页面提示继续生成或修复。",
+        "outcome": "打开项目后，顶部和引导面板会给出当前最应该做的一步。",
         "actions": [
-            {"id": "focus_projects", "label": "查看项目", "primary": True},
-            {"id": "focus_upload", "label": "上传新赛题"},
+            {**action("focus_projects", "查看项目", "定位到项目列表。", "primary"), "primary": True},
+            action("focus_upload", "上传新赛题", "上传新的赛题材料。", "neutral"),
         ],
     }
 

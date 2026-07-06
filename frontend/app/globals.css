@@ -865,6 +865,13 @@ p {
   overflow-wrap: anywhere;
 }
 
+.project-empty-card small {
+  color: var(--primary-strong);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
 .project-empty-card > div {
   display: flex;
   flex-wrap: wrap;
