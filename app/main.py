@@ -688,6 +688,7 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_required_total"] = readiness.get("required_total", 0)
     project["readiness_bucket"] = project_readiness_bucket(project)
     project["readiness_bucket_label"] = project_readiness_bucket_label(project["readiness_bucket"])
+    project.pop("root", None)
     return project
 
 

@@ -562,7 +562,7 @@ function renderProjectList() {
         const analysisBadge = project.analysis_available ? '<span class="project-badge project-badge-ok">已分析</span>' : '<span class="project-badge project-badge-muted">未分析</span>';
         const readinessBadge = renderProjectReadinessBadge(project);
         const metadataErrorBadge = project.metadata_error
-          ? `<span class="project-badge project-badge-error" title="${escapeHtml(project.metadata_error)}">元数据异常</span>`
+          ? `<span class="project-badge project-badge-error" title="${escapeHtml(project.open_warning || project.metadata_error)}">元数据异常</span>`
           : "";
         const openBadge = project.can_open === false ? '<span class="project-badge project-badge-error">不可打开</span>' : "";
         const rootRepairBadge = project.root_was_repaired
@@ -821,6 +821,7 @@ function projectSearchText(project = {}) {
     project.project_updated_at,
     project.root_repair_notice,
     project.root_was_repaired ? "路径已校正" : "",
+    project.open_warning,
     project.status,
     project.auto_workflow_status,
     project.performance_health_label,
