@@ -840,6 +840,37 @@ p {
   line-height: 1.35;
 }
 
+.project-empty-card {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid var(--clay-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(244, 248, 251, 0.74)),
+    var(--panel);
+  box-shadow: var(--shadow-inset);
+}
+
+.project-empty-card b {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.project-empty-card p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.project-empty-card > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
 .project-batch-actions {
   display: grid;
   grid-template-columns: 1fr 72px 1fr;
@@ -5026,6 +5057,7 @@ ul.problem-meta {
 :root[data-theme="dark"] .strategy-hint,
 :root[data-theme="dark"] .failure-diagnosis,
 :root[data-theme="dark"] .ghost,
+:root[data-theme="dark"] .project-empty-card,
 :root[data-theme="dark"] .project-button,
 :root[data-theme="dark"] .project-quick-action,
 :root[data-theme="dark"] .project-filter,

@@ -94,6 +94,7 @@ def build_experience_center(
         "score": score,
         "label": experience_label(score),
         "summary": experience_summary(score, total, queue, failed),
+        "onboarding": onboarding_hint(total, configured),
         "dimensions": dimensions,
         "actions": actions,
         "principles": principles,
@@ -186,6 +187,38 @@ def recommended_actions(
 
 def action(id_: str, label: str, detail: str, tone: str) -> dict[str, str]:
     return {"id": id_, "label": label, "detail": detail, "tone": tone}
+
+
+def onboarding_hint(total: int, configured: bool) -> dict[str, Any]:
+    if not total and not configured:
+        return {
+            "status": "warning",
+            "step_index": 1,
+            "title": "先配置接口，再上传赛题",
+            "detail": "自动求解依赖可用的大模型接口。先保存并测试 API Key，再上传赛题包会少走弯路。",
+            "actions": [
+                {"id": "focus_llm", "label": "填写接口", "primary": True},
+                {"id": "focus_upload", "label": "选择赛题"},
+            ],
+        }
+    if not total:
+        return {
+            "status": "pending",
+            "step_index": 1,
+            "title": "上传赛题材料",
+            "detail": "选择赛题压缩包或文件夹，系统会自动识别题目、附件和推荐选题。",
+            "actions": [{"id": "focus_upload", "label": "选择赛题", "primary": True}],
+        }
+    return {
+        "status": "pending",
+        "step_index": 1,
+        "title": "打开一个项目继续",
+        "detail": "项目列表已按优先级排序。先打开最上方项目，再按页面提示继续生成或修复。",
+        "actions": [
+            {"id": "focus_projects", "label": "查看项目", "primary": True},
+            {"id": "focus_upload", "label": "上传新赛题"},
+        ],
+    }
 
 
 def experience_label(score: int) -> str:

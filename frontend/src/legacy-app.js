@@ -500,6 +500,9 @@ async function loadExperienceCenter() {
     const payload = await api("/api/product/experience");
     state.experience = payload.experience || {};
     renderExperienceGuide(state.experience);
+    if (!state.projects?.length) {
+      renderProjectList();
+    }
   } catch (error) {
     renderExperienceGuide({
       status: "warning",
@@ -549,7 +552,7 @@ function renderProjectList() {
   }
 
   if (!projects.length) {
-    els.projectList.innerHTML = '<p class="status">暂无项目</p>';
+    els.projectList.innerHTML = renderProjectEmptyState(state.experience?.onboarding);
     updateProjectBatchControls();
     return;
   }
@@ -618,6 +621,32 @@ function renderProjectList() {
       }
     });
   });
+}
+
+function renderProjectEmptyState(onboarding = {}) {
+  const title = onboarding?.title || "还没有项目";
+  const detail = onboarding?.detail || "先上传一个赛题包，系统会自动完成材料识别、选题分析和后续生成。";
+  const actions = normalizedGuideActions(onboarding?.actions, [{ id: "focus_upload", label: "选择赛题", primary: true }]);
+  return `
+    <div class="project-empty-card">
+      <b>${escapeHtml(title)}</b>
+      <p>${escapeHtml(detail)}</p>
+      <div>
+        ${actions.map((action) => `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}">${escapeHtml(action.label)}</button>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function normalizedGuideActions(actions = [], fallback = []) {
+  const source = Array.isArray(actions) && actions.length ? actions : fallback;
+  return source
+    .filter((action) => action && action.id && action.label)
+    .map((action) => ({
+      id: String(action.id),
+      label: String(action.label),
+      primary: Boolean(action.primary),
+    }));
 }
 
 function renderProjectFilters(projects = []) {
@@ -1863,18 +1892,28 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
   const deliveryStatus = metadata.delivery_readiness_status || "";
   const hasArtifacts = Boolean(metadata.artifacts && Object.keys(metadata.artifacts).length);
   const configured = state.llmSettings?.configured;
+  const onboarding = experience.onboarding || {};
 
   if (!state.projects.length && !analysis) {
-    return guideStep(1, "上传赛题材料", "选择赛题压缩包或文件夹。上传后，系统会自动识别题目、附件和推荐选题。", [
-      { id: "focus_upload", label: "选择赛题", primary: true },
-    ]);
+    return guideStep(
+      onboarding.step_index || 1,
+      onboarding.title || "上传赛题材料",
+      onboarding.detail || "选择赛题压缩包或文件夹。上传后，系统会自动识别题目、附件和推荐选题。",
+      normalizedGuideActions(onboarding.actions, [{ id: "focus_upload", label: "选择赛题", primary: true }]),
+      onboarding.status || "pending",
+    );
   }
   if (!analysis) {
-    const summary = experience.summary || "先打开一个项目，或继续上传新的赛题材料。";
-    return guideStep(1, "打开或上传项目", summary, [
-      { id: "focus_projects", label: "查看项目", primary: true },
-      { id: "focus_upload", label: "上传新赛题" },
-    ]);
+    return guideStep(
+      onboarding.step_index || 1,
+      onboarding.title || "打开或上传项目",
+      onboarding.detail || experience.summary || "先打开一个项目，或继续上传新的赛题材料。",
+      normalizedGuideActions(onboarding.actions, [
+        { id: "focus_projects", label: "查看项目", primary: true },
+        { id: "focus_upload", label: "上传新赛题" },
+      ]),
+      onboarding.status || "pending",
+    );
   }
   if (!finalProblem.id && !finalProblem.final_problem_id) {
     return guideStep(2, "确认要做哪一题", "先看推荐题和各题评分，确认后再启动自动求解，避免论文和代码跑偏。", [
@@ -3638,6 +3677,16 @@ els.projectBatchDetails?.addEventListener("toggle", () => {
 });
 
 els.projectList?.addEventListener("click", async (event) => {
+  const guideButton = event.target.closest("[data-guide-action]");
+  if (guideButton) {
+    guideButton.disabled = true;
+    try {
+      await runGuideAction(guideButton.dataset.guideAction);
+    } finally {
+      guideButton.disabled = false;
+    }
+    return;
+  }
   const button = event.target.closest("[data-project-action]");
   if (!button) {
     return;
