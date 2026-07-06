@@ -558,7 +558,7 @@ function renderProjectList() {
     .map(
       (project) => {
         const active = state.currentProject?.metadata?.id === project.id ? " is-active" : "";
-        const autoBadge = project.auto_workflow_status ? `<span class="project-badge">${escapeHtml(project.auto_workflow_status)}</span>` : "";
+        const autoBadge = renderProjectAutoBadge(project);
         const analysisBadge = project.analysis_available ? '<span class="project-badge project-badge-ok">已分析</span>' : '<span class="project-badge project-badge-muted">未分析</span>';
         const readinessBadge = renderProjectReadinessBadge(project);
         const metadataErrorBadge = project.metadata_error
@@ -664,6 +664,17 @@ function projectFilterLabel(filter = "all") {
 
 function validProjectFilter(filter = "all") {
   return ["all", "needs_action", "running", "deliverable", "artifact_issue"].includes(filter) ? filter : "all";
+}
+
+function renderProjectAutoBadge(project = {}) {
+  const status = project.auto_workflow_status || "";
+  if (!status) {
+    return "";
+  }
+  const tone = statusTone(status);
+  const className = tone === "success" ? " project-badge-ok" : tone === "failed" ? " project-badge-error" : tone === "pending" ? " project-badge-muted" : "";
+  const title = project.auto_workflow_repair_hint || project.auto_workflow_job_summary || status;
+  return `<span class="project-badge${className}" title="${escapeHtml(title)}">${escapeHtml(statusLabel(status))}</span>`;
 }
 
 function renderProjectDeliveryBadge(project = {}) {
@@ -844,6 +855,9 @@ function projectSearchText(project = {}) {
     project.open_warning,
     project.status,
     project.auto_workflow_status,
+    statusLabel(project.auto_workflow_status),
+    project.auto_workflow_repair_hint,
+    project.auto_workflow_job_summary,
     project.performance_health_label,
     project.performance_health_summary,
     project.repair_center_label,

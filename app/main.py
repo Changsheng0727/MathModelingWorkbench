@@ -665,6 +665,7 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     root = Path(project.get("root") or project_root(str(project.get("id", ""))))
     project["can_open"] = root.exists()
     project["open_warning"] = "项目元数据异常，可打开项目文件夹修复。" if project.get("metadata_error") else ""
+    normalize_project_auto_status_for_summary(root, project)
     analysis = project.get("analysis_summary") if isinstance(project.get("analysis_summary"), dict) else None
     if project.get("analysis_available") and not analysis:
         analysis = {"analysis_available": True}
@@ -694,6 +695,26 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_bucket_label"] = project_readiness_bucket_label(project["readiness_bucket"])
     project.pop("root", None)
     return project
+
+
+def normalize_project_auto_status_for_summary(root: Path, project: dict) -> None:
+    project_id = str(project.get("id") or "")
+    active_job = get_project_auto_workflow_job(project_id) if project_id else {}
+    if active_job.get("status") in {"queued", "running"}:
+        project["auto_workflow_status"] = str(active_job.get("status") or "")
+        project["auto_workflow_job_summary"] = str(active_job.get("summary") or "")
+        return
+    status = str(project.get("auto_workflow_status") or "")
+    if status not in {"queued", "running", "between_steps", "cancel_requested"}:
+        return
+    progress_path = root / "artifacts" / "auto_workflow_progress.json"
+    try:
+        progress = load_json(progress_path) if progress_path.exists() else project.get("auto_workflow_progress", {})
+    except Exception:
+        progress = {}
+    if not isinstance(progress, dict) or auto_progress_is_stale(progress):
+        project["auto_workflow_status"] = "interrupted"
+        project["auto_workflow_repair_hint"] = "上次自动流程已没有后台任务，可点击继续生成。"
 
 
 def project_readiness_bucket(project: dict) -> str:
