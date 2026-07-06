@@ -452,7 +452,7 @@ els.environment?.addEventListener("click", async (event) => {
 
 async function loadLlmSettings() {
   const settings = await api("/api/settings/llm");
-  renderLlmSettings(settings);
+  renderLlmSettingsResponse(settings);
   renderExperienceGuide(state.experience || {});
 }
 
@@ -534,6 +534,15 @@ function renderLlmSettings(settings) {
   } else {
     setLlmSettingsStatus(`${label}：${detail}`, settings.connection_tone || "failed");
   }
+}
+
+function renderLlmSettingsResponse(payload = {}) {
+  const { overview, ...settings } = payload;
+  renderLlmSettings(settings);
+  if (overview) {
+    applyProductOverviewPayload(overview);
+  }
+  return settings;
 }
 
 function setLlmSettingsStatus(message, tone = "") {
@@ -4542,8 +4551,7 @@ async function saveLlmSettingsFromForm() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(llmSettingsPayloadFromForm()),
   });
-  renderLlmSettings(settings);
-  return settings;
+  return renderLlmSettingsResponse(settings);
 }
 
 els.llmSettingsForm.addEventListener("submit", async (event) => {
@@ -4571,7 +4579,10 @@ els.testLlmSettings?.addEventListener("click", async () => {
     setLlmSettingsStatus("正在测试大模型连接。", "running");
     const result = await api("/api/settings/llm/test", { method: "POST" });
     if (result.settings) {
-      state.llmSettings = result.settings;
+      renderLlmSettings(result.settings);
+    }
+    if (result.overview) {
+      applyProductOverviewPayload(result.overview);
     }
     if (result.ok) {
       setLlmSettingsStatus("大模型连接测试成功，可以运行大模型+代码一键流程。", "success");
@@ -4603,7 +4614,7 @@ els.clearLlmSettings.addEventListener("click", async () => {
   setLlmSettingsStatus("正在清除大模型设置。", "running");
   try {
     const settings = await api("/api/settings/llm", { method: "DELETE" });
-    renderLlmSettings(settings);
+    renderLlmSettingsResponse(settings);
     await refreshCurrentProjectDetail().catch(() => {});
     showToast("大模型设置已清除", "success");
   } catch (error) {

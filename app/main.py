@@ -572,9 +572,11 @@ def read_llm_settings() -> dict:
 @app.put("/api/settings/llm")
 def update_llm_settings(payload: LLMSettingsPayload) -> dict:
     try:
-        return save_llm_settings(payload.api_key, payload.base_url, payload.model, payload.workflow_strategy)
+        settings = save_llm_settings(payload.api_key, payload.base_url, payload.model, payload.workflow_strategy)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    settings["overview"] = build_product_overview_response()
+    return settings
 
 
 @app.post("/api/settings/llm/test")
@@ -585,6 +587,7 @@ def test_llm_settings() -> dict:
             "ok": False,
             "status": "requires_api_key",
             "message": "请先填写 API 密钥后再测试连接。",
+            "overview": build_product_overview_response(),
             "diagnosis": {
                 "category": "llm_auth",
                 "label": "未配置 API 密钥",
@@ -607,6 +610,7 @@ def test_llm_settings() -> dict:
             "message": f"{type(exc).__name__}: {exc}",
             "diagnosis": diagnosis,
             "settings": updated_settings,
+            "overview": build_product_overview_response(),
         }
     updated_settings = record_llm_test_result(True, "success", "AI 连接测试成功。")
     return {
@@ -615,12 +619,15 @@ def test_llm_settings() -> dict:
         "message": "AI 连接测试成功。",
         "sample": content[:80],
         "settings": updated_settings,
+        "overview": build_product_overview_response(),
     }
 
 
 @app.delete("/api/settings/llm")
 def delete_llm_settings() -> dict:
-    return clear_llm_settings()
+    settings = clear_llm_settings()
+    settings["overview"] = build_product_overview_response()
+    return settings
 
 
 @app.get("/api/templates")
