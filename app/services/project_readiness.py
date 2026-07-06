@@ -264,22 +264,27 @@ def action_with_detail(item: dict[str, Any]) -> dict[str, str]:
     return action
 
 
-def readiness_next_step(action: dict[str, Any], item: dict[str, Any] | None) -> dict[str, str]:
+def readiness_next_step(action: dict[str, Any], item: dict[str, Any] | None) -> dict[str, Any]:
     action_id = str(action.get("id") or "").strip()
     label = str(action.get("label") or "").strip()
     if not action_id or not label:
         return {}
+    check_label = str((item or {}).get("label") or "")
     detail = str(action.get("detail") or "").strip()
     if not detail and item:
         detail = str(item.get("detail") or "").strip()
     if not detail and action.get("path"):
         detail = f"打开 {Path(str(action.get('path'))).name or '输出文件'} 所在位置。"
+    context = f"{'必需项' if (item or {}).get('required') else '建议项'}：{check_label}" if check_label else ""
     return {
         "id": action_id,
         "label": label,
         "detail": detail,
         "check_id": str((item or {}).get("id") or ""),
-        "check_label": str((item or {}).get("label") or ""),
+        "check_label": check_label,
+        "check_status": str((item or {}).get("status") or ""),
+        "required": bool((item or {}).get("required")),
+        "context": context,
         "path": str(action.get("path") or ""),
     }
 

@@ -779,12 +779,14 @@ function renderProjectNextStep(project = {}) {
   const next = project.readiness_next_step || {};
   const label = project.readiness_next_step_label || next.label || action.label || "";
   const detail = project.readiness_next_step_detail || next.detail || project.readiness_action_detail || action.detail || project.readiness_summary || "";
+  const context = project.readiness_next_step_context || next.context || "";
   const todoCount = Number(project.readiness_todo_count || 0);
   const moreText = todoCount > 1 ? ` · 后续 ${todoCount - 1} 项` : "";
   if (!label && !detail) {
     return "";
   }
-  const text = label ? `下一步：${label}${detail ? ` · ${detail}` : ""}${moreText}` : detail;
+  const contextText = context && context !== detail ? ` · ${context}` : "";
+  const text = label ? `下一步：${label}${contextText}${detail ? ` · ${detail}` : ""}${moreText}` : detail;
   return `<span class="project-next">${escapeHtml(text)}</span>`;
 }
 
@@ -1279,7 +1281,7 @@ function renderProjectReadiness(readiness = {}) {
     ? `<span class="readiness-phase" title="${escapeHtml(phase.detail || phase.label)}">${escapeHtml(phasePrefix)}：${escapeHtml(phase.label)}</span>`
     : "";
   const nextStep = next.label
-    ? `<p class="readiness-next"><b>下一步</b><span>${escapeHtml(next.label)}${next.detail ? ` · ${escapeHtml(next.detail)}` : ""}</span></p>`
+    ? `<p class="readiness-next"><b>下一步</b><span>${escapeHtml(next.label)}${next.context ? ` · ${escapeHtml(next.context)}` : ""}${next.detail ? ` · ${escapeHtml(next.detail)}` : ""}</span></p>`
     : "";
   const completion = renderReadinessCompletion(readiness.completion || {});
   const todos = Array.isArray(readiness.todo_items) ? readiness.todo_items.slice(0, 5) : [];
