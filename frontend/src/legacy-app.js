@@ -19,6 +19,7 @@ const state = {
   deliveryPackage: null,
   experience: null,
   actionCatalog: {},
+  actionProgressCatalog: {},
   uploadProgressStop: null,
   projectRestoreTried: false,
 };
@@ -501,6 +502,7 @@ async function loadExperienceCenter() {
   try {
     const payload = await api("/api/product/experience");
     state.actionCatalog = payload.action_catalog || state.actionCatalog || {};
+    state.actionProgressCatalog = payload.action_progress_catalog || state.actionProgressCatalog || {};
     state.experience = payload.experience || {};
     renderExperienceGuide(state.experience);
     if (!state.projects?.length) {
@@ -665,6 +667,10 @@ function normalizedGuideActions(actions = [], fallback = []) {
 
 function guideActionOutcome(actionId = "") {
   return state.actionCatalog?.[String(actionId || "")] || "";
+}
+
+function guideActionProgress(actionId = "") {
+  return state.actionProgressCatalog?.[String(actionId || "")] || "";
 }
 
 function renderProjectFilters(projects = []) {
@@ -3526,6 +3532,11 @@ els.projectReadiness?.addEventListener("click", async (event) => {
 
 async function runGuideAction(action, options = {}) {
   const projectId = state.currentProject?.metadata?.id || "";
+  const progress = guideActionProgress(action);
+  if (progress && els.guideOutcome) {
+    els.guideOutcome.textContent = progress;
+    els.guideOutcome.hidden = false;
+  }
   if (action === "focus_upload") {
     scrollIntoViewIfPossible(els.form);
     els.file?.focus();

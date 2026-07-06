@@ -27,5 +27,35 @@ ACTION_OUTCOMES: dict[str, str] = {
 }
 
 
+ACTION_PROGRESS: dict[str, str] = {
+    "focus_llm": "正在定位大模型接口设置。",
+    "test_llm": "正在测试大模型连接。",
+    "focus_upload": "正在定位赛题上传入口。",
+    "focus_projects": "正在定位项目列表。",
+    "open_problems": "正在打开选题分析页。",
+    "confirm_recommended_problem": "正在保存最终选题。",
+    "start_auto": "正在启动自动求解流程。",
+    "watch_auto": "正在打开输出页和流式进度。",
+    "resume_auto": "正在从上次中断处继续生成。",
+    "cancel_auto": "正在请求安全中断。",
+    "open_outputs": "正在打开生成文件和日志。",
+    "compile": "正在启动论文编译。",
+    "review": "正在启动论文审查。",
+    "refresh_delivery": "正在刷新交付检查。",
+    "build_delivery_package": "正在生成交付压缩包。",
+    "open_project_root": "正在打开项目文件夹。",
+    "open_primary_output": "正在打开最新输出所在位置。",
+    "select_analyzed": "正在选择已分析项目。",
+    "batch_packages": "正在启动批量交付打包。",
+    "autotune_capacity": "正在根据队列压力调整并发。",
+    "repair_campaign": "正在刷新失败诊断并启动修复。",
+    "refresh_all": "正在刷新项目、任务和交付状态。",
+}
+
+
 def action_outcome(action_id: str) -> str:
     return ACTION_OUTCOMES.get(str(action_id or ""), "")
+
+
+def action_progress(action_id: str) -> str:
+    return ACTION_PROGRESS.get(str(action_id or ""), "")
