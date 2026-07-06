@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from app.services.action_catalog import action_outcome, action_success
+from app.services.trust_center import needs_repair
 
 
 def build_experience_center(
@@ -22,7 +23,7 @@ def build_experience_center(
     failed = sum(1 for item in projects if item.get("auto_workflow_status") == "failed")
     deliverable = sum(1 for item in projects if delivery_is_ready(item))
     packaged = sum(1 for item in projects if item.get("delivery_package_status") == "success" or item.get("delivery_package_sha256"))
-    repair_backlog = sum(1 for item in projects if item.get("repair_center_action") in {"resume", "repair", "refresh"})
+    repair_backlog = sum(1 for item in projects if needs_repair(item))
     configured = bool(llm_settings.get("configured"))
 
     queue = int(auto_jobs.get("queued_count") or 0) + int(delivery_jobs.get("queued_count") or 0)

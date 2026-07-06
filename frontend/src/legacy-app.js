@@ -689,6 +689,17 @@ function normalizedGuideActions(actions = [], fallback = []) {
     }));
 }
 
+function mergeGuideActions(...groups) {
+  const seen = new Set();
+  return groups.flat().filter((action) => {
+    if (!action?.id || seen.has(action.id)) {
+      return false;
+    }
+    seen.add(action.id);
+    return true;
+  });
+}
+
 function guideActionOutcome(actionId = "") {
   const id = String(actionId || "");
   return state.actionCatalog?.[id] || state.actionCatalog?.[guideActionId(id)] || "";
@@ -2036,14 +2047,16 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
     );
   }
   if (!analysis) {
+    const onboardingActions = normalizedGuideActions(onboarding.actions, [
+      { id: "focus_projects", label: "查看项目", primary: true },
+      { id: "focus_upload", label: "上传新赛题" },
+    ]);
+    const productActions = normalizedGuideActions(experience.actions).filter((action) => action.id !== "refresh_all");
     return guideStep(
       onboarding.step_index || 1,
       onboarding.title || "打开或上传项目",
       onboarding.detail || experience.summary || "先打开一个项目，或继续上传新的赛题材料。",
-      normalizedGuideActions(onboarding.actions, [
-        { id: "focus_projects", label: "查看项目", primary: true },
-        { id: "focus_upload", label: "上传新赛题" },
-      ]),
+      mergeGuideActions(onboardingActions, productActions).slice(0, 4),
       onboarding.status || "pending",
       onboarding.outcome || "",
     );
