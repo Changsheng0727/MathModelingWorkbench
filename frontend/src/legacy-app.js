@@ -525,6 +525,7 @@ function renderProjectList() {
         const analysisBadge = project.analysis_available ? '<span class="project-badge project-badge-ok">已分析</span>' : '<span class="project-badge project-badge-muted">未分析</span>';
         const readinessBadge = renderProjectReadinessBadge(project);
         const nextStep = renderProjectNextStep(project);
+        const quickAction = renderProjectQuickAction(project);
         const deliveryBadge = renderProjectDeliveryBadge(project);
         const diagnosis = project.last_failure_diagnosis || {};
         const diagnosisBadge = diagnosis.category
@@ -545,6 +546,7 @@ function renderProjectList() {
             <span class="project-badges">${analysisBadge}${readinessBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
             ${nextStep}
           </button>
+          ${quickAction}
         </article>
       `;
       },
@@ -632,6 +634,16 @@ function renderProjectNextStep(project = {}) {
   }
   const text = label ? `下一步：${label}${summary ? ` · ${summary}` : ""}` : summary;
   return `<span class="project-next">${escapeHtml(text)}</span>`;
+}
+
+function renderProjectQuickAction(project = {}) {
+  const action = project.readiness_action || {};
+  const actionId = project.readiness_action_id || action.id || "";
+  const label = project.readiness_action_label || action.label || "";
+  if (!project.id || !actionId || !label) {
+    return "";
+  }
+  return `<button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}">${escapeHtml(label)}</button>`;
 }
 
 function pruneSelectedProjects() {
@@ -734,6 +746,8 @@ function projectSearchText(project = {}) {
     project.readiness_label,
     project.readiness_summary,
     project.readiness_action?.label,
+    project.readiness_action_id,
+    project.readiness_action_label,
     projectFilterLabel(project.readiness_bucket),
     project.delivery_package_summary,
     project.delivery_package_sha256,
@@ -3003,6 +3017,25 @@ els.projectFilters?.addEventListener("click", (event) => {
 
 els.projectBatchDetails?.addEventListener("toggle", () => {
   renderProjectList();
+});
+
+els.projectList?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-project-action]");
+  if (!button) {
+    return;
+  }
+  const projectId = button.dataset.projectId;
+  const action = button.dataset.projectAction;
+  if (!projectId || !action) {
+    return;
+  }
+  button.disabled = true;
+  try {
+    await openProject(projectId);
+    await runGuideAction(action);
+  } finally {
+    button.disabled = false;
+  }
 });
 
 els.projectList?.addEventListener("change", (event) => {

@@ -642,6 +642,7 @@ p {
 .primary:active,
 .ghost:active,
 .project-button:active,
+.project-quick-action:active,
 .artifact-link:active,
 .artifact-open:active,
 .job-open:active,
@@ -653,6 +654,7 @@ p {
 .primary:focus-visible,
 .ghost:focus-visible,
 .project-button:focus-visible,
+.project-quick-action:focus-visible,
 .artifact-link:focus-visible,
 .artifact-open:focus-visible,
 .job-open:focus-visible,
@@ -853,14 +855,14 @@ p {
 
 .project-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: stretch;
   min-width: 0;
 }
 
 .project-row.is-batch-visible {
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr) auto;
 }
 
 .project-select {
@@ -945,6 +947,30 @@ p {
     linear-gradient(90deg, rgba(233, 241, 255, 0.96), rgba(255, 255, 255, 0.94)),
     #ffffff;
   box-shadow: inset 3px 0 0 var(--primary), var(--shadow-sm);
+}
+
+.project-quick-action {
+  align-self: center;
+  min-width: 52px;
+  min-height: 34px;
+  border: 1px solid rgba(185, 200, 216, 0.72);
+  border-radius: 7px;
+  background: linear-gradient(145deg, #ffffff, #f4f8fb);
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+  box-shadow: var(--shadow-inset);
+}
+
+.project-quick-action:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.project-quick-action:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .project-name {
@@ -4467,6 +4493,7 @@ ul.problem-meta {
 :root[data-theme="dark"] .failure-diagnosis,
 :root[data-theme="dark"] .ghost,
 :root[data-theme="dark"] .project-button,
+:root[data-theme="dark"] .project-quick-action,
 :root[data-theme="dark"] .project-filter,
 :root[data-theme="dark"] .project-select-input,
 :root[data-theme="dark"] .status-card,
@@ -4585,6 +4612,7 @@ ul.problem-meta {
 :root[data-theme="dark"] .drop-zone:focus-within,
 :root[data-theme="dark"] .ghost:hover,
 :root[data-theme="dark"] .project-button:hover,
+:root[data-theme="dark"] .project-quick-action:hover,
 :root[data-theme="dark"] .project-filter:hover,
 :root[data-theme="dark"] .artifact-link:hover,
 :root[data-theme="dark"] .module-tab:hover {
@@ -4999,6 +5027,22 @@ ul.problem-meta {
   .job-open {
     grid-column: 2;
     width: fit-content;
+  }
+
+  .project-row {
+    grid-template-columns: 1fr;
+  }
+
+  .project-row.is-batch-visible {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .project-row.is-batch-visible .project-quick-action {
+    grid-column: 2;
+  }
+
+  .project-quick-action {
+    width: 100%;
   }
 
   .action-row,
