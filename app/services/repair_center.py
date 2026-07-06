@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.services.action_catalog import enrich_action
 from app.services.performance_health import latest_failure_diagnosis
 from app.services.store import load_json, save_json
 
@@ -20,7 +21,11 @@ def write_repair_briefing(root: Path, meta: dict[str, Any] | None = None) -> dic
         meta["repair_center_status"] = payload.get("status", "")
         meta["repair_center_label"] = payload.get("label", "")
         meta["repair_center_summary"] = payload.get("summary", "")
-        meta["repair_center_action"] = payload.get("primary_action", {}).get("id", "")
+        primary_action = payload.get("primary_action", {})
+        primary_action = primary_action if isinstance(primary_action, dict) else {}
+        meta["repair_center_action"] = primary_action.get("id", "")
+        meta["repair_center_action_label"] = primary_action.get("label", "")
+        meta["repair_center_action_button_label"] = primary_action.get("button_label", "")
         meta["repair_center_can_resume"] = payload.get("can_resume", False)
         meta.setdefault("artifacts", {}).update(
             {
@@ -162,7 +167,7 @@ def build_actions(
                 "detail": "当前没有明显阻断，可继续论文编译、审查和支撑材料打包。",
             }
         )
-    return dedupe_actions(actions)[:6]
+    return [enrich_action(action) for action in dedupe_actions(actions)[:6]]
 
 
 def collect_evidence(root: Path, diagnosis: dict[str, Any], statuses: dict[str, Any]) -> list[dict[str, str]]:

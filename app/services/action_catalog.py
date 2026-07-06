@@ -164,6 +164,11 @@ ACTION_BUTTONS.update(
         "analyze_project": "重新分析",
         "refresh_diagnostics": "刷新诊断",
         "download_support_zip": "下载支撑包",
+        "resume_auto_workflow": "继续修复",
+        "fix_completeness_gate": "补齐结果",
+        "inspect_failure_evidence": "查看证据",
+        "continue_review": "查看报告",
+        "start_auto_workflow": "开始求解",
     }
 )
 

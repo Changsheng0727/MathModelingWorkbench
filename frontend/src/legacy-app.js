@@ -1790,7 +1790,14 @@ function renderRepairActionButton(action = {}, projectId = "", metadata = {}) {
   if (command === "open_report" && !artifacts.repair_briefing && !artifacts.repair_briefing_json && !artifacts.computed_solver_repair) {
     return "";
   }
-  return `<button class="repair-action" type="button" data-repair-action="${escapeHtml(command)}">${escapeHtml(action.label || "处理")}</button>`;
+  const buttonLabel = action.button_label || action.buttonLabel || guideActionButtonLabel(action.id) || action.label || "处理";
+  const progress = action.progress || guideActionProgress(action.id);
+  const success = action.success || guideActionSuccess(action.id);
+  const titleText = [action.detail, action.outcome ? `点击后：${action.outcome}` : ""].filter(Boolean).join("；");
+  const title = titleText ? ` title="${escapeHtml(titleText)}"` : "";
+  const progressAttr = progress ? ` data-repair-progress="${escapeHtml(progress)}"` : "";
+  const successAttr = success ? ` data-repair-success="${escapeHtml(success)}"` : "";
+  return `<button class="repair-action" type="button" data-repair-action="${escapeHtml(command)}" data-repair-action-id="${escapeHtml(action.id)}"${progressAttr}${successAttr}${title}>${escapeHtml(buttonLabel)}</button>`;
 }
 
 function repairActionCommand(actionId = "") {
@@ -4907,24 +4914,52 @@ els.repairCenter?.addEventListener("click", async (event) => {
     return;
   }
   const command = button.dataset.repairAction;
-  if (command === "resume") {
-    await runAutoWorkflow(projectId, { resume: true });
-    return;
+  const actionId = button.dataset.repairActionId || "";
+  const progress = button.dataset.repairProgress || guideActionProgress(actionId);
+  const success = button.dataset.repairSuccess || guideActionSuccess(actionId);
+  button.disabled = true;
+  if (els.repairCenterStatus && progress) {
+    els.repairCenterStatus.textContent = progress;
   }
-  if (command === "start") {
-    await runAutoWorkflow(projectId, { resume: false });
-    return;
-  }
-  if (command === "diagnostics") {
-    await refreshDiagnosticsForProject(projectId);
-    return;
-  }
-  if (command === "open_report") {
-    const artifacts = state.currentProject?.metadata?.artifacts || {};
-    const path = artifacts.repair_briefing || artifacts.repair_briefing_json || artifacts.computed_solver_repair;
-    if (path) {
-      window.open(`/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(path)}`, "_blank", "noopener");
+  try {
+    if (command === "resume") {
+      await runAutoWorkflow(projectId, { resume: true });
+      if (els.repairCenterStatus && success) {
+        els.repairCenterStatus.textContent = success;
+      }
+      return;
     }
+    if (command === "start") {
+      await runAutoWorkflow(projectId, { resume: false });
+      if (els.repairCenterStatus && success) {
+        els.repairCenterStatus.textContent = success;
+      }
+      return;
+    }
+    if (command === "diagnostics") {
+      await refreshDiagnosticsForProject(projectId);
+      if (els.repairCenterStatus && success) {
+        els.repairCenterStatus.textContent = success;
+      }
+      return;
+    }
+    if (command === "open_report") {
+      const artifacts = state.currentProject?.metadata?.artifacts || {};
+      const path = artifacts.repair_briefing || artifacts.repair_briefing_json || artifacts.computed_solver_repair;
+      if (path) {
+        window.open(`/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(path)}`, "_blank", "noopener");
+        if (els.repairCenterStatus) {
+          els.repairCenterStatus.textContent = success || "已打开修复报告。";
+        }
+      }
+    }
+  } catch (error) {
+    if (els.repairCenterStatus) {
+      els.repairCenterStatus.textContent = `修复动作失败：${error.message}`;
+    }
+    showToast(`修复动作失败：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
   }
 });
 

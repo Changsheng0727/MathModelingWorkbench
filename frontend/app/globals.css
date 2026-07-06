@@ -3843,6 +3843,12 @@ p {
   transform: translateY(-1px);
 }
 
+.repair-action:disabled {
+  opacity: 0.62;
+  cursor: wait;
+  transform: none;
+}
+
 .repair-meta {
   display: flex;
   flex-wrap: wrap;
