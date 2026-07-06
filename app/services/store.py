@@ -60,12 +60,42 @@ def load_json(path: Path) -> Any:
         raise
 
 
+def project_metadata_error_stub(root: Path, exc: Exception) -> dict[str, Any]:
+    project_id, name = project_identity_from_folder(root.name)
+    try:
+        created_at = datetime.fromtimestamp(root.stat().st_mtime).isoformat(timespec="seconds")
+    except OSError:
+        created_at = ""
+    return {
+        "id": project_id,
+        "name": name,
+        "original_name": root.name,
+        "created_at": created_at,
+        "root": str(root),
+        "status": "metadata_error",
+        "metadata_error": f"{type(exc).__name__}: {exc}",
+    }
+
+
+def project_identity_from_folder(folder_name: str) -> tuple[str, str]:
+    match = re.match(r"^(\d{8}-\d{6}-[0-9a-fA-F]{8})(?:-(.*))?$", folder_name)
+    if match:
+        return match.group(1), match.group(2) or folder_name
+    return folder_name, folder_name
+
+
 def list_projects() -> list[dict[str, Any]]:
     projects = []
     for root in sorted(PROJECTS_ROOT.glob("*"), reverse=True):
         meta_path = root / "metadata.json"
         if meta_path.exists():
-            meta = load_json(meta_path)
+            try:
+                meta = load_json(meta_path)
+                if not isinstance(meta, dict):
+                    raise ValueError("metadata.json must contain a JSON object")
+            except Exception as exc:
+                projects.append(project_metadata_error_stub(root, exc))
+                continue
             analysis_path = root / "artifacts" / "analysis.json"
             if analysis_path.exists():
                 meta["analysis_available"] = True

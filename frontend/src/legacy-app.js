@@ -524,6 +524,9 @@ function renderProjectList() {
         const autoBadge = project.auto_workflow_status ? `<span class="project-badge">${escapeHtml(project.auto_workflow_status)}</span>` : "";
         const analysisBadge = project.analysis_available ? '<span class="project-badge project-badge-ok">已分析</span>' : '<span class="project-badge project-badge-muted">未分析</span>';
         const readinessBadge = renderProjectReadinessBadge(project);
+        const metadataErrorBadge = project.metadata_error
+          ? `<span class="project-badge project-badge-error" title="${escapeHtml(project.metadata_error)}">元数据异常</span>`
+          : "";
         const nextStep = renderProjectNextStep(project);
         const quickAction = renderProjectQuickAction(project);
         const deliveryBadge = renderProjectDeliveryBadge(project);
@@ -543,7 +546,7 @@ function renderProjectList() {
           <button class="project-button project-open${active}" type="button" data-project-id="${escapeHtml(project.id)}">
             <span class="project-name">${escapeHtml(project.name)}</span>
             <span class="project-meta">${escapeHtml(formatProjectTime(project.created_at))} · ${escapeHtml(status)}</span>
-            <span class="project-badges">${analysisBadge}${readinessBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
+            <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
             ${nextStep}
           </button>
           ${quickAction}
@@ -554,7 +557,13 @@ function renderProjectList() {
     .join("");
   updateProjectBatchControls(filtered);
   els.projectList.querySelectorAll(".project-open").forEach((button) => {
-    button.addEventListener("click", () => openProject(button.dataset.projectId));
+    button.addEventListener("click", async () => {
+      try {
+        await openProject(button.dataset.projectId);
+      } catch (error) {
+        showToast(`打开项目失败：${error.message}`, "error");
+      }
+    });
   });
 }
 
@@ -754,6 +763,8 @@ function projectSearchText(project = {}) {
     project.readiness_action_id,
     project.readiness_action_label,
     project.readiness_bucket_label || projectFilterLabel(project.readiness_bucket),
+    project.metadata_error,
+    project.metadata_error ? "元数据异常" : "",
     project.delivery_package_summary,
     project.delivery_package_sha256,
     project.last_failure_diagnosis?.label,
@@ -786,7 +797,46 @@ function formatBytes(value) {
 async function openProject(projectId) {
   const detail = await api(`/api/projects/${projectId}`);
   renderProject(detail);
-  showToast("已打开项目", "success");
+  if (detail.metadata?.metadata_error) {
+    showToast("项目元数据读取失败，已打开可恢复视图。", "warning");
+  } else {
+    showToast("已打开项目", "success");
+  }
+}
+
+async function openProjectRoot(projectId = "") {
+  const targetProjectId = projectId || state.currentProject?.metadata?.id || "";
+  if (!targetProjectId) {
+    showToast("请先打开一个项目。", "warning");
+    return;
+  }
+  const control = projectId ? null : els.openProjectRoot;
+  const originalText = control?.textContent || "";
+  if (control) {
+    control.disabled = true;
+    control.textContent = "打开中";
+  }
+  try {
+    await api(`/api/projects/${encodeURIComponent(targetProjectId)}/open-root`, { method: "POST" });
+    if (control) {
+      control.textContent = "已打开";
+      window.setTimeout(() => {
+        control.textContent = originalText;
+      }, 1200);
+    }
+    showToast("已打开项目文件夹", "success");
+  } catch (error) {
+    if (control) {
+      control.textContent = originalText;
+    }
+    showToast(`打开项目文件夹失败：${error.message}`, "error");
+  } finally {
+    if (control) {
+      window.setTimeout(() => {
+        control.disabled = false;
+      }, 250);
+    }
+  }
 }
 
 function renderProject(detail) {
@@ -808,6 +858,7 @@ function renderProject(detail) {
     : `${metadata.status || "-"}${diagnosisText}`;
   renderExperienceGuide(state.experience || {});
   if (!analysis) {
+    renderEmptyState(metadata);
     els.empty.classList.remove("hidden");
     els.analysisView.classList.add("hidden");
     renderProgressPanel(els.uploadProgress, metadata.analysis_progress, 7);
@@ -836,6 +887,32 @@ function renderProject(detail) {
   updateAutoWorkflowButtons(metadata.auto_workflow_status, metadata.auto_workflow_progress || {});
   renderModelAssistantProgress(metadata.model_assistant_progress);
   renderProgressPanel(els.uploadProgress, metadata.analysis_progress, 7);
+}
+
+function renderEmptyState(metadata = {}) {
+  if (!els.empty) {
+    return;
+  }
+  if (metadata.metadata_error) {
+    els.empty.innerHTML = `
+      <h3>项目元数据读取失败。</h3>
+      <p>项目文件夹仍在本地，可以先打开文件夹检查 metadata.json，或重新上传赛题材料。</p>
+      <p class="status">${escapeHtml(metadata.metadata_error)}</p>
+    `;
+    return;
+  }
+  if (metadata.analysis_error) {
+    els.empty.innerHTML = `
+      <h3>赛题分析文件读取失败。</h3>
+      <p>可以重新运行赛题分析，或打开项目文件夹检查 artifacts/analysis.json。</p>
+      <p class="status">${escapeHtml(metadata.analysis_error)}</p>
+    `;
+    return;
+  }
+  els.empty.innerHTML = `
+    <h3>上传一个赛题包后，这里会显示自动分析结果。</h3>
+    <p>系统会识别赛题、附件、格式规范，生成推荐选题、任务工作流和 LaTeX 论文骨架。</p>
+  `;
 }
 
 function selectedProblemSource(metadata) {
@@ -2877,7 +2954,7 @@ async function runGuideAction(action) {
     return;
   }
   if (action === "open_project_root") {
-    els.openProjectRoot?.click();
+    await openProjectRoot(projectId);
     return;
   }
   if (action === "select_analyzed") {
@@ -3037,6 +3114,10 @@ els.projectList?.addEventListener("click", async (event) => {
   }
   button.disabled = true;
   try {
+    if (action === "open_project_root") {
+      await openProjectRoot(projectId);
+      return;
+    }
     await openProject(projectId);
     await runGuideAction(action);
   } finally {
@@ -3083,29 +3164,7 @@ els.batchStartProjects?.addEventListener("click", async () => {
 
 if (els.openProjectRoot) {
   els.openProjectRoot.addEventListener("click", async () => {
-    const projectId = state.currentProject?.metadata?.id;
-    if (!projectId) {
-      showToast("请先打开一个项目。", "warning");
-      return;
-    }
-    els.openProjectRoot.disabled = true;
-    const originalText = els.openProjectRoot.textContent;
-    els.openProjectRoot.textContent = "打开中";
-    try {
-      await api(`/api/projects/${encodeURIComponent(projectId)}/open-root`, { method: "POST" });
-      els.openProjectRoot.textContent = "已打开";
-      showToast("已打开项目文件夹", "success");
-      window.setTimeout(() => {
-        els.openProjectRoot.textContent = originalText;
-      }, 1200);
-    } catch (error) {
-      showToast(`打开项目文件夹失败：${error.message}`, "error");
-      els.openProjectRoot.textContent = originalText;
-    } finally {
-      window.setTimeout(() => {
-        els.openProjectRoot.disabled = false;
-      }, 250);
-    }
+    await openProjectRoot();
   });
 }
 

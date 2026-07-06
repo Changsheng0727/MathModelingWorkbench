@@ -74,7 +74,15 @@ from app.services.repair_center import REPAIR_BRIEFING_JSON_RELATIVE, write_repa
 from app.services.reviewer import review_paper
 from app.services.runner import compile_latex
 from app.services.specialized import generate_specialized_script, run_specialized_script
-from app.services.store import create_project, list_projects, load_json, make_support_zip, project_root, save_json
+from app.services.store import (
+    create_project,
+    list_projects,
+    load_json,
+    make_support_zip,
+    project_metadata_error_stub,
+    project_root,
+    save_json,
+)
 from app.services.templates import (
     DEFAULT_TEMPLATE_ID,
     create_template,
@@ -675,6 +683,8 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
 
 
 def project_readiness_bucket(project: dict) -> str:
+    if project.get("metadata_error"):
+        return "needs_action"
     auto_status = str(project.get("auto_workflow_status") or "")
     if auto_status in {"queued", "running", "between_steps", "cancel_requested"}:
         return "running"
@@ -942,9 +952,19 @@ def project_detail(project_id: str) -> dict:
         root = project_root(project_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="项目不存在") from exc
-    meta = load_json(root / "metadata.json")
+    try:
+        meta = load_json(root / "metadata.json")
+        if not isinstance(meta, dict):
+            raise ValueError("metadata.json must contain a JSON object")
+    except Exception as exc:
+        meta = project_metadata_error_stub(root, exc)
     analysis_path = root / "artifacts" / "analysis.json"
-    analysis = load_json(analysis_path) if analysis_path.exists() else None
+    analysis = None
+    if analysis_path.exists() and not meta.get("metadata_error"):
+        try:
+            analysis = load_json(analysis_path)
+        except Exception as exc:
+            meta["analysis_error"] = f"{type(exc).__name__}: {exc}"
     if analysis and not isinstance(meta.get("analysis_summary"), dict):
         meta["analysis_summary"] = summarize_analysis_for_metadata(analysis)
         save_json(root / "metadata.json", meta)

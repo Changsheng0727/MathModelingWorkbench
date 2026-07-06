@@ -16,6 +16,7 @@ def build_project_readiness(
 ) -> dict[str, Any]:
     """Small, user-facing readiness model for the current project overview."""
     checks = [
+        check_metadata(metadata),
         check_llm(llm_settings or {}),
         check_analysis(analysis),
         check_problem(metadata, analysis),
@@ -45,6 +46,18 @@ def build_project_readiness(
         "required_passed": sum(1 for item in required if item.get("status") != "fail"),
         "required_total": len(required),
     }
+
+
+def check_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    error = str(metadata.get("metadata_error") or "").strip()
+    return readiness_check(
+        "metadata",
+        "项目元数据",
+        "fail" if error else "pass",
+        f"metadata.json 读取失败：{error}" if error else "项目元数据可读取。",
+        required=True,
+        action={"id": "open_project_root", "label": "打开文件夹"},
+    )
 
 
 def check_llm(settings: dict[str, Any]) -> dict[str, Any]:
