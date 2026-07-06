@@ -197,6 +197,7 @@ def update_product_capacity_settings(payload: CapacitySettingsPayload) -> dict:
         "delivery_update": delivery_update or {},
         "auto_jobs": list_auto_workflow_jobs(),
         "delivery_batch_jobs": list_delivery_batch_jobs(),
+        "overview": build_product_overview_response(),
     }
 
 
@@ -227,6 +228,7 @@ def autotune_product_capacity() -> dict:
         "delivery_update": delivery_update,
         "auto_jobs": list_auto_workflow_jobs(),
         "delivery_batch_jobs": list_delivery_batch_jobs(),
+        "overview": build_product_overview_response(),
     }
 
 
