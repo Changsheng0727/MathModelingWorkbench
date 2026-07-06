@@ -642,6 +642,54 @@ async function loadAutoJobs() {
   }
 }
 
+function applyProductOverviewPayload(payload = {}) {
+  state.actionAliasCatalog = payload.action_alias_catalog || state.actionAliasCatalog || {};
+  state.actionCatalog = payload.action_catalog || state.actionCatalog || {};
+  state.actionProgressCatalog = payload.action_progress_catalog || state.actionProgressCatalog || {};
+  state.actionSuccessCatalog = payload.action_success_catalog || state.actionSuccessCatalog || {};
+  state.actionButtonCatalog = payload.action_button_catalog || state.actionButtonCatalog || {};
+  state.experience = payload.experience || state.experience || {};
+  state.autoJobs = payload.auto_jobs || state.autoJobs || {};
+  state.deliveryBatchJobs = payload.delivery_batch_jobs || state.deliveryBatchJobs || {};
+  state.capacitySettings = payload.capacity_settings || state.autoJobs.capacity_settings || state.deliveryBatchJobs.capacity_settings || null;
+  state.capacityAutotune = payload.capacity_autotune || state.capacityAutotune || null;
+  state.growthMetrics = payload.growth || state.growthMetrics || {};
+  state.trustMetrics = payload.trust || state.trustMetrics || {};
+  state.trustExports = payload.trust_exports || state.trustExports || null;
+  state.repairCampaigns = payload.repair_campaigns || state.repairCampaigns || null;
+  renderExperienceGuide(state.experience);
+  if (!state.projects?.length) {
+    renderProjectList();
+  }
+  renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
+  renderGrowthCenter(state.growthMetrics);
+  renderTrustCenter(state.trustMetrics, state.trustExports);
+}
+
+async function loadProductOverview() {
+  try {
+    applyProductOverviewPayload(await api("/api/product/overview"));
+  } catch (error) {
+    if (els.autoJobCenter) {
+      els.autoJobCenter.innerHTML = `<p class="status">后台任务中心暂不可用：${escapeHtml(error.message)}</p>`;
+    }
+    if (els.growthCenter) {
+      els.growthCenter.innerHTML = `<p class="status">解题进度中心暂不可用：${escapeHtml(error.message)}</p>`;
+    }
+    if (els.trustCenter) {
+      els.trustCenter.innerHTML = `<p class="status">信任中心暂不可用：${escapeHtml(error.message)}</p>`;
+    }
+    renderExperienceGuide({
+      status: "warning",
+      label: "本地向导",
+      summary: `体验向导暂不可用：${error.message}`,
+      signals: {},
+      actions: [{ id: "refresh_all", label: "刷新状态", detail: "重新读取本地项目状态。", tone: "neutral" }],
+    });
+    throw error;
+  }
+}
+
 async function loadGrowthMetrics() {
   if (!els.growthCenter) {
     return;
@@ -3747,9 +3795,7 @@ els.refresh.addEventListener("click", async () => {
   els.refresh.disabled = true;
   try {
     await loadProjects({ refresh: true });
-    await loadAutoJobs();
-    await loadGrowthMetrics();
-    await loadTrustCenter();
+    await loadProductOverview();
     showToast("项目列表已刷新", "success");
   } catch (error) {
     showToast(`刷新项目失败：${error.message}`, "error");
@@ -3761,9 +3807,7 @@ els.refresh.addEventListener("click", async () => {
 els.refreshAutoJobs?.addEventListener("click", async () => {
   els.refreshAutoJobs.disabled = true;
   try {
-    await loadAutoJobs();
-    await loadGrowthMetrics();
-    await loadTrustCenter();
+    await loadProductOverview();
     showToast("后台任务中心已刷新", "success");
   } catch (error) {
     showToast(`后台任务刷新失败：${error.message}`, "error");
@@ -5560,7 +5604,6 @@ checkHealth();
 loadProjects({ restore: true }).catch((error) => {
   showToast(`项目列表加载失败：${error.message}`, "error");
 });
-loadExperienceCenter();
-loadAutoJobs();
-loadGrowthMetrics();
-loadTrustCenter();
+loadProductOverview().catch((error) => {
+  showToast(`首页状态加载失败：${error.message}`, "warning");
+});

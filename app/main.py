@@ -358,6 +358,38 @@ def product_trust_center() -> dict:
     }
 
 
+@app.get("/api/product/overview")
+def product_overview() -> dict:
+    projects_snapshot = list_projects()
+    auto_jobs = list_auto_workflow_jobs()
+    delivery_batch_jobs = list_delivery_batch_jobs()
+    delivery_batches = list_delivery_package_batches()
+    settings = load_capacity_settings()
+    llm_settings = get_llm_settings()
+    return {
+        "action_alias_catalog": ACTION_ALIASES,
+        "action_catalog": ACTION_OUTCOMES,
+        "action_progress_catalog": ACTION_PROGRESS,
+        "action_success_catalog": ACTION_SUCCESS,
+        "action_button_catalog": ACTION_BUTTONS,
+        "experience": build_experience_center(
+            projects_snapshot,
+            auto_jobs,
+            delivery_batch_jobs,
+            settings,
+            llm_settings,
+        ),
+        "auto_jobs": auto_jobs,
+        "delivery_batch_jobs": delivery_batch_jobs,
+        "capacity_settings": settings,
+        "capacity_autotune": list_capacity_autotune_events(),
+        "growth": build_growth_metrics(projects_snapshot, auto_jobs, delivery_batches, delivery_batch_jobs),
+        "trust": build_trust_center(projects_snapshot, auto_jobs, delivery_batch_jobs, delivery_batches),
+        "trust_exports": list_trust_report_exports(),
+        "repair_campaigns": list_repair_campaigns(),
+    }
+
+
 @app.post("/api/product/trust/export")
 def product_trust_report_export() -> dict:
     projects_snapshot = list_projects()
