@@ -655,13 +655,27 @@ def projects() -> list[dict]:
     llm_settings = get_llm_settings()
     items = [attach_project_readiness_summary(project, llm_settings) for project in list_projects()]
     items.sort(key=lambda item: str(item.get("project_updated_at") or item.get("created_at") or ""), reverse=True)
-    items.sort(key=lambda item: int(item.get("readiness_attention_rank") or 99))
+    items.sort(key=project_attention_sort_rank)
     if items:
-        items[0]["default_open"] = True
-        items[0]["default_open_reason"] = items[0].get("readiness_attention_reason") or (
-            "优先处理" if int(items[0].get("readiness_attention_rank") or 99) <= 20 else "最近更新"
-        )
+        mark_default_project(items[0])
     return items
+
+
+def mark_default_project(project: dict) -> None:
+    rank = project_attention_sort_rank(project)
+    reason = project.get("readiness_attention_reason") or ("优先处理" if rank <= 20 else "最近更新")
+    project["default_open"] = True
+    project["default_open_reason"] = reason
+    project["default_open_label"] = "建议先处理" if rank <= 20 else "最近更新"
+    project["default_open_tone"] = "urgent" if rank <= 0 else "active" if rank <= 20 else "normal"
+
+
+def project_attention_sort_rank(project: dict) -> int:
+    try:
+        rank_value = project.get("readiness_attention_rank")
+        return int(rank_value if rank_value is not None else 99)
+    except (TypeError, ValueError):
+        return 99
 
 
 def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:

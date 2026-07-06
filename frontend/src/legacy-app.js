@@ -567,6 +567,7 @@ function renderProjectList() {
       (project) => {
         const active = state.currentProject?.metadata?.id === project.id ? " is-active" : "";
         const autoBadge = renderProjectAutoBadge(project);
+        const defaultOpenBadge = renderDefaultOpenBadge(project);
         const analysisBadge = project.analysis_available ? '<span class="project-badge project-badge-ok">已分析</span>' : '<span class="project-badge project-badge-muted">未分析</span>';
         const readinessBadge = renderProjectReadinessBadge(project);
         const metadataErrorBadge = project.metadata_error
@@ -600,7 +601,7 @@ function renderProjectList() {
           <button class="project-button project-open${active}" type="button" data-project-id="${escapeHtml(project.id)}"${openDisabled}>
             <span class="project-name">${escapeHtml(project.name)}</span>
             <span class="project-meta">更新 ${escapeHtml(formatProjectTime(updatedAt))} · ${escapeHtml(status)}</span>
-            <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${rootRepairBadge}${autoBadge}${deliveryBadge}${artifactBadge}${diagnosisBadge}</span>
+            <span class="project-badges">${defaultOpenBadge}${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${rootRepairBadge}${autoBadge}${deliveryBadge}${artifactBadge}${diagnosisBadge}</span>
             ${attentionReason}
             ${artifactMeta}
             ${stageLine}
@@ -707,6 +708,16 @@ function projectFilterLabel(filter = "all") {
 
 function validProjectFilter(filter = "all") {
   return ["all", "urgent", "needs_action", "running", "deliverable", "artifact_issue"].includes(filter) ? filter : "all";
+}
+
+function renderDefaultOpenBadge(project = {}) {
+  if (!project.default_open) {
+    return "";
+  }
+  const tone = project.default_open_tone || "normal";
+  const label = project.default_open_label || "建议打开";
+  const reason = project.default_open_reason || label;
+  return `<span class="project-badge project-badge-default" data-tone="${escapeHtml(tone)}" title="${escapeHtml(reason)}">${escapeHtml(label)}</span>`;
 }
 
 function renderProjectAutoBadge(project = {}) {
@@ -943,6 +954,9 @@ function projectSearchText(project = {}) {
     project.project_updated_at,
     project.root_repair_notice,
     project.root_was_repaired ? "路径已校正" : "",
+    project.default_open ? "默认打开 建议打开 推荐项目" : "",
+    project.default_open_label,
+    project.default_open_reason,
     project.open_warning,
     project.status,
     project.auto_workflow_status,

@@ -1192,6 +1192,21 @@ p {
   color: var(--red);
 }
 
+.project-badge-default {
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+}
+
+.project-badge-default[data-tone="urgent"] {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.project-badge-default[data-tone="active"] {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
 .topbar {
   position: sticky;
   top: 0;
