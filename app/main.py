@@ -359,14 +359,15 @@ def product_trust_center() -> dict:
 
 
 @app.get("/api/product/overview")
-def product_overview() -> dict:
-    projects_snapshot = list_projects()
+def product_overview(refresh: bool = False) -> dict:
+    llm_settings = get_llm_settings()
+    projects_snapshot = build_project_list_response(refresh=refresh, llm_settings=llm_settings)
     auto_jobs = list_auto_workflow_jobs()
     delivery_batch_jobs = list_delivery_batch_jobs()
     delivery_batches = list_delivery_package_batches()
     settings = load_capacity_settings()
-    llm_settings = get_llm_settings()
     return {
+        "projects": projects_snapshot,
         "action_alias_catalog": ACTION_ALIASES,
         "action_catalog": ACTION_OUTCOMES,
         "action_progress_catalog": ACTION_PROGRESS,
@@ -667,7 +668,11 @@ def format_bytes(value: int) -> str:
 
 @app.get("/api/projects")
 def projects(refresh: bool = False) -> list[dict]:
-    llm_settings = get_llm_settings()
+    return build_project_list_response(refresh=refresh)
+
+
+def build_project_list_response(*, refresh: bool = False, llm_settings: dict | None = None) -> list[dict]:
+    llm_settings = llm_settings or get_llm_settings()
     items = [attach_project_readiness_summary(project, llm_settings) for project in list_projects(refresh=refresh)]
     items.sort(key=project_attention_sort_rank)
     if items:

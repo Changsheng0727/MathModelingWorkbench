@@ -643,6 +643,11 @@ async function loadAutoJobs() {
 }
 
 function applyProductOverviewPayload(payload = {}) {
+  const hasProjectList = Array.isArray(payload.projects);
+  if (hasProjectList) {
+    state.projects = payload.projects;
+    pruneSelectedProjects();
+  }
   state.actionAliasCatalog = payload.action_alias_catalog || state.actionAliasCatalog || {};
   state.actionCatalog = payload.action_catalog || state.actionCatalog || {};
   state.actionProgressCatalog = payload.action_progress_catalog || state.actionProgressCatalog || {};
@@ -658,7 +663,7 @@ function applyProductOverviewPayload(payload = {}) {
   state.trustExports = payload.trust_exports || state.trustExports || null;
   state.repairCampaigns = payload.repair_campaigns || state.repairCampaigns || null;
   renderExperienceGuide(state.experience);
-  if (!state.projects?.length) {
+  if (hasProjectList || !state.projects?.length) {
     renderProjectList();
   }
   renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
@@ -666,9 +671,12 @@ function applyProductOverviewPayload(payload = {}) {
   renderTrustCenter(state.trustMetrics, state.trustExports);
 }
 
-async function loadProductOverview() {
+async function loadProductOverview({ restore = false, refresh = false } = {}) {
   try {
-    applyProductOverviewPayload(await api("/api/product/overview"));
+    applyProductOverviewPayload(await api(`/api/product/overview${refresh ? "?refresh=true" : ""}`));
+    if (restore) {
+      await restoreInitialProject();
+    }
   } catch (error) {
     if (els.autoJobCenter) {
       els.autoJobCenter.innerHTML = `<p class="status">后台任务中心暂不可用：${escapeHtml(error.message)}</p>`;
@@ -3794,8 +3802,7 @@ function folderNameFromFiles(files) {
 els.refresh.addEventListener("click", async () => {
   els.refresh.disabled = true;
   try {
-    await loadProjects({ refresh: true });
-    await loadProductOverview();
+    await loadProductOverview({ refresh: true });
     showToast("项目列表已刷新", "success");
   } catch (error) {
     showToast(`刷新项目失败：${error.message}`, "error");
@@ -5601,9 +5608,6 @@ els.runLlmAnalysis.addEventListener("click", async () => {
 initThemeToggle();
 initModuleTabs();
 checkHealth();
-loadProjects({ restore: true }).catch((error) => {
-  showToast(`项目列表加载失败：${error.message}`, "error");
-});
-loadProductOverview().catch((error) => {
+loadProductOverview({ restore: true }).catch((error) => {
   showToast(`首页状态加载失败：${error.message}`, "warning");
 });
