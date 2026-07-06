@@ -654,6 +654,22 @@ function renderProjectEmptyState(onboarding = {}) {
   `;
 }
 
+const GUIDE_ACTION_ALIASES = {
+  resume_auto_workflow: "resume_auto",
+  fix_completeness_gate: "resume_auto",
+  run_auto_workflow: "start_auto",
+  start_auto_workflow: "start_auto",
+  compile_latex: "compile",
+  review_paper: "review",
+  continue_review: "open_outputs",
+  inspect_failure_evidence: "open_outputs",
+};
+
+function guideActionId(actionId = "") {
+  const id = String(actionId || "");
+  return GUIDE_ACTION_ALIASES[id] || id;
+}
+
 function normalizedGuideActions(actions = [], fallback = []) {
   const source = Array.isArray(actions) && actions.length ? actions : fallback;
   return source
@@ -672,15 +688,18 @@ function normalizedGuideActions(actions = [], fallback = []) {
 }
 
 function guideActionOutcome(actionId = "") {
-  return state.actionCatalog?.[String(actionId || "")] || "";
+  const id = String(actionId || "");
+  return state.actionCatalog?.[id] || state.actionCatalog?.[guideActionId(id)] || "";
 }
 
 function guideActionProgress(actionId = "") {
-  return state.actionProgressCatalog?.[String(actionId || "")] || "";
+  const id = String(actionId || "");
+  return state.actionProgressCatalog?.[id] || state.actionProgressCatalog?.[guideActionId(id)] || "";
 }
 
 function guideActionSuccess(actionId = "") {
-  return state.actionSuccessCatalog?.[String(actionId || "")] || "";
+  const id = String(actionId || "");
+  return state.actionSuccessCatalog?.[id] || state.actionSuccessCatalog?.[guideActionId(id)] || "";
 }
 
 function reportGuideActionError(error, label = "执行下一步失败") {
@@ -3589,8 +3608,10 @@ els.projectReadiness?.addEventListener("click", async (event) => {
 });
 
 async function runGuideAction(action, options = {}) {
+  const originalAction = String(action || "");
+  action = guideActionId(originalAction);
   const projectId = state.currentProject?.metadata?.id || "";
-  const progress = options.progress || guideActionProgress(action);
+  const progress = options.progress || guideActionProgress(originalAction) || guideActionProgress(action);
   if (progress && els.guideOutcome) {
     els.guideOutcome.textContent = progress;
     els.guideOutcome.hidden = false;
@@ -3638,6 +3659,17 @@ async function runGuideAction(action, options = {}) {
     scrollIntoViewIfPossible(els.autoWorkflowProgress || els.artifacts);
     return;
   }
+  if (action === "analyze_project") {
+    if (!projectId) {
+      showToast("请先打开一个项目。", "warning");
+      return false;
+    }
+    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/analyze`, { method: "POST" });
+    renderProject(payload.project);
+    await loadProjects();
+    activateModuleTab("problems", { focus: true });
+    return true;
+  }
   if (action === "start_auto") {
     if (!projectId) {
       showToast("请先打开一个项目。", "warning");
@@ -3675,6 +3707,15 @@ async function runGuideAction(action, options = {}) {
     els.refreshDeliveryReadiness?.click();
     return;
   }
+  if (action === "refresh_diagnostics") {
+    if (!projectId) {
+      showToast("请先打开一个项目。", "warning");
+      return false;
+    }
+    activateModuleTab("outputs");
+    await refreshDiagnosticsForProject(projectId);
+    return;
+  }
   if (action === "refresh_repair") {
     activateModuleTab("outputs");
     els.refreshRepairCenter?.click();
@@ -3699,6 +3740,14 @@ async function runGuideAction(action, options = {}) {
     const path = options.path || metadata.primary_output_path || metadata.artifact_summary?.latest_path || "";
     await openProjectLocation(projectId, path);
     showToast("已打开输出文件位置", "success");
+    return;
+  }
+  if (action === "download_support_zip") {
+    if (!projectId) {
+      showToast("请先打开一个项目。", "warning");
+      return false;
+    }
+    window.open(`/api/projects/${encodeURIComponent(projectId)}/download/support.zip`, "_blank", "noopener");
     return;
   }
   if (action === "select_analyzed") {

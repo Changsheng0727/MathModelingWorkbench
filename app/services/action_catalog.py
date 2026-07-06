@@ -82,6 +82,48 @@ ACTION_SUCCESS: dict[str, str] = {
 }
 
 
+ACTION_ALIASES: dict[str, str] = {
+    "resume_auto_workflow": "resume_auto",
+    "fix_completeness_gate": "resume_auto",
+    "run_auto_workflow": "start_auto",
+    "start_auto_workflow": "start_auto",
+    "compile_latex": "compile",
+    "review_paper": "review",
+    "continue_review": "open_outputs",
+    "inspect_failure_evidence": "open_outputs",
+}
+
+ACTION_OUTCOMES.update(
+    {
+        "analyze_project": "会重新读取题目和附件，刷新赛题分析、候选问题和下一步建议。",
+        "refresh_diagnostics": "会刷新失败诊断、性能健康和可继续修复建议。",
+        "download_support_zip": "会下载当前项目的支撑材料压缩包。",
+    }
+)
+ACTION_PROGRESS.update(
+    {
+        "analyze_project": "正在重建赛题分析。",
+        "refresh_diagnostics": "正在刷新诊断信息。",
+        "download_support_zip": "正在打开支撑材料包下载。",
+    }
+)
+ACTION_SUCCESS.update(
+    {
+        "analyze_project": "赛题分析已刷新，请查看选题页和下一步建议。",
+        "refresh_diagnostics": "诊断信息已刷新，请查看修复建议。",
+        "download_support_zip": "已打开支撑材料包下载。",
+    }
+)
+
+for alias, target in ACTION_ALIASES.items():
+    if target in ACTION_OUTCOMES:
+        ACTION_OUTCOMES.setdefault(alias, ACTION_OUTCOMES[target])
+    if target in ACTION_PROGRESS:
+        ACTION_PROGRESS.setdefault(alias, ACTION_PROGRESS[target])
+    if target in ACTION_SUCCESS:
+        ACTION_SUCCESS.setdefault(alias, ACTION_SUCCESS[target])
+
+
 def action_outcome(action_id: str) -> str:
     return ACTION_OUTCOMES.get(str(action_id or ""), "")
 
