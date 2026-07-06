@@ -1916,6 +1916,10 @@ def project_auto_workflow_status(project_id: str) -> dict:
 
 @app.get("/api/auto/jobs")
 def auto_workflow_jobs() -> dict:
+    return build_auto_jobs_response()
+
+
+def build_auto_jobs_response() -> dict:
     return {
         "auto_jobs": list_auto_workflow_jobs(),
         "delivery_batch_jobs": list_delivery_batch_jobs(),
@@ -2114,7 +2118,7 @@ def auto_workflow_job(job_id: str) -> dict:
 
 
 @app.get("/api/projects/{project_id}/progress")
-def project_progress(project_id: str, include_overview: bool = False) -> dict:
+def project_progress(project_id: str, include_overview: bool = False, include_jobs: bool = False) -> dict:
     try:
         root = project_root(project_id)
     except FileNotFoundError as exc:
@@ -2186,6 +2190,8 @@ def project_progress(project_id: str, include_overview: bool = False) -> dict:
     if include_overview:
         response["project"] = project_detail(project_id)
         response["overview"] = build_product_overview_response()
+    elif include_jobs:
+        response.update(build_auto_jobs_response())
     return response
 
 

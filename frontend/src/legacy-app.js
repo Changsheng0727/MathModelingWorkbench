@@ -640,15 +640,21 @@ async function loadAutoJobs() {
     return;
   }
   try {
-    const payload = await api("/api/auto/jobs");
-    state.autoJobs = payload.auto_jobs || {};
-    state.deliveryBatchJobs = payload.delivery_batch_jobs || {};
-    state.capacitySettings = payload.capacity_settings || state.autoJobs.capacity_settings || state.deliveryBatchJobs.capacity_settings || null;
-    state.capacityAutotune = payload.capacity_autotune || state.capacityAutotune || null;
-    renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
+    applyAutoJobsPayload(await api("/api/auto/jobs"));
   } catch (error) {
     els.autoJobCenter.innerHTML = `<p class="status">后台任务中心暂不可用：${escapeHtml(error.message)}</p>`;
   }
+}
+
+function applyAutoJobsPayload(payload = {}) {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+  state.autoJobs = payload.auto_jobs || state.autoJobs || {};
+  state.deliveryBatchJobs = payload.delivery_batch_jobs || state.deliveryBatchJobs || {};
+  state.capacitySettings = payload.capacity_settings || state.autoJobs.capacity_settings || state.deliveryBatchJobs.capacity_settings || null;
+  state.capacityAutotune = payload.capacity_autotune || state.capacityAutotune || null;
+  renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
 }
 
 function applyProductOverviewPayload(payload = {}) {
@@ -4885,7 +4891,14 @@ async function waitForAutoWorkflowCompletion(projectId) {
     updateAutoWorkflowButtons(latest.status, latest.progress || {});
     ticks += 1;
     if (ticks % 4 === 0) {
-      await loadAutoJobs();
+      try {
+        latest = await api(`${progressPath}?include_jobs=true`);
+        applyAutoJobsPayload(latest);
+        renderAutoWorkflowProgress(latest.progress);
+        updateAutoWorkflowButtons(latest.status, latest.progress || {});
+      } catch {
+        // Progress polling should keep running even if the task-center snapshot is briefly unavailable.
+      }
     }
     if (!isAutoWorkflowActive(latest.status, latest.progress || {})) {
       try {
