@@ -649,6 +649,7 @@ function normalizedGuideActions(actions = [], fallback = []) {
       primary: Boolean(action.primary),
       detail: action.detail ? String(action.detail) : "",
       path: action.path ? String(action.path) : "",
+      problemId: action.problem_id || action.problemId ? String(action.problem_id || action.problemId) : "",
     }));
 }
 
@@ -856,11 +857,13 @@ function renderProjectQuickAction(project = {}) {
   const hint = project.readiness_action_hint || action.hint || action.detail || project.readiness_action_detail || project.readiness_summary || "";
   const title = hint || label;
   const outputPath = action.path || project.primary_output_path || project.artifact_summary?.latest_path || "";
+  const problemId = action.problem_id || project.readiness_top_action_problem_id || "";
   const pathAttribute = outputPath ? ` data-project-path="${escapeHtml(outputPath)}"` : "";
+  const problemAttribute = problemId ? ` data-project-problem-id="${escapeHtml(problemId)}"` : "";
   const ariaLabel = `${project.name || project.id}：${label}${hint ? `。${hint}` : ""}`;
   return `
     <span class="project-action-cell">
-      <button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}"${pathAttribute} title="${escapeHtml(title)}" aria-label="${escapeHtml(ariaLabel)}">${escapeHtml(label)}</button>
+      <button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute} title="${escapeHtml(title)}" aria-label="${escapeHtml(ariaLabel)}">${escapeHtml(label)}</button>
       ${hint ? `<span class="project-action-hint">${escapeHtml(hint)}</span>` : ""}
     </span>
   `;
@@ -1181,6 +1184,7 @@ function syncTopbarProjectAction(metadata = {}) {
     button.disabled = true;
     button.dataset.guideAction = "";
     button.dataset.guidePath = "";
+    button.dataset.guideProblemId = "";
     if (els.projectNextActionWrap) {
       els.projectNextActionWrap.dataset.tone = "";
       els.projectNextActionWrap.dataset.urgency = "";
@@ -1194,11 +1198,13 @@ function syncTopbarProjectAction(metadata = {}) {
   const tone = metadata.readiness_top_action_tone || statusTone(metadata.readiness_next_step_tone || metadata.readiness_status || metadata.auto_workflow_status || "");
   const urgency = metadata.readiness_top_action_urgency || metadata.readiness_next_step_urgency || "";
   const path = metadata.readiness_top_action_path || metadata.readiness_action?.path || metadata.primary_output_path || "";
+  const problemId = metadata.readiness_top_action_problem_id || metadata.readiness_action?.problem_id || "";
   button.textContent = actionLabel;
   button.title = reason || actionLabel;
   button.setAttribute("aria-label", reason ? `${actionLabel}：${reason}` : actionLabel);
   button.dataset.guideAction = actionId;
   button.dataset.guidePath = path;
+  button.dataset.guideProblemId = problemId;
   button.disabled = false;
   if (els.projectNextActionWrap) {
     els.projectNextActionWrap.dataset.tone = tone;
@@ -1457,8 +1463,9 @@ function renderProjectReadiness(readiness = {}) {
   const action = readiness.primary_action || {};
   const actionTitle = action.detail || action.path || action.label || "";
   const actionPath = action.path ? ` data-readiness-path="${escapeHtml(action.path)}"` : "";
+  const actionProblem = action.problem_id ? ` data-readiness-problem-id="${escapeHtml(action.problem_id)}"` : "";
   const actionButton = action.id
-    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}"${actionPath} title="${escapeHtml(actionTitle)}">${escapeHtml(action.label || "继续")}</button>`
+    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}"${actionPath}${actionProblem} title="${escapeHtml(actionTitle)}">${escapeHtml(action.label || "继续")}</button>`
     : "";
   const next = readiness.next_step || {};
   const phase = readiness.phase || {};
@@ -1542,11 +1549,13 @@ function renderReadinessTodo(item = {}) {
   const actionId = item.action_id || action.id || "";
   const actionLabel = item.action_label || action.label || "";
   const actionPath = item.action_path || action.path || "";
+  const actionProblemId = item.action_problem_id || action.problem_id || "";
   const status = statusTone(item.status);
   const required = item.required ? '<b>必需</b>' : "";
   const pathAttribute = actionPath ? ` data-readiness-path="${escapeHtml(actionPath)}"` : "";
+  const problemAttribute = actionProblemId ? ` data-readiness-problem-id="${escapeHtml(actionProblemId)}"` : "";
   const actionButton = actionId && actionLabel
-    ? `<button class="readiness-todo-action" type="button" data-readiness-action="${escapeHtml(actionId)}"${pathAttribute}>${escapeHtml(actionLabel)}</button>`
+    ? `<button class="readiness-todo-action" type="button" data-readiness-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute}>${escapeHtml(actionLabel)}</button>`
     : "";
   return `
     <li data-status="${escapeHtml(status)}">
@@ -1890,8 +1899,9 @@ function renderExperienceGuide(experience = {}) {
     els.guideActions.innerHTML = step.actions
       .map((action) => {
         const path = action.path ? ` data-guide-path="${escapeHtml(action.path)}"` : "";
+        const problemId = action.problemId ? ` data-guide-problem-id="${escapeHtml(action.problemId)}"` : "";
         const title = action.detail ? ` title="${escapeHtml(action.detail)}"` : "";
-        return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${path}${title}>${escapeHtml(action.label)}</button>`;
+        return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${path}${problemId}${title}>${escapeHtml(action.label)}</button>`;
       })
       .join("");
   }
@@ -2723,13 +2733,13 @@ async function selectProblem(problemId) {
     if (els.problemSelectionStatus) {
       els.problemSelectionStatus.textContent = "请先打开一个项目。";
     }
-    return;
+    return false;
   }
   if (!problemId) {
     if (els.problemSelectionStatus) {
       els.problemSelectionStatus.textContent = "未识别到要选择的题号。";
     }
-    return;
+    return false;
   }
   if (els.problemSelectionStatus) {
     els.problemSelectionStatus.textContent = `正在选择 ${problemId} 题。`;
@@ -2745,10 +2755,12 @@ async function selectProblem(problemId) {
       els.problemSelectionStatus.textContent = `已选择 ${problemId} 题，后续一键流程会以该题为准。`;
     }
     await loadProjects();
+    return true;
   } catch (error) {
     if (els.problemSelectionStatus) {
       els.problemSelectionStatus.textContent = `选择失败：${error.message}`;
     }
+    return false;
   }
 }
 
@@ -3194,14 +3206,15 @@ els.form.addEventListener("submit", async (event) => {
     if (els.autoRunAfterUpload?.checked) {
       const rec = detail.analysis?.recommended_problem || {};
       if (rec.id) {
-        await selectProblem(rec.id);
-        await runAutoWorkflow(
-          detail.metadata.id,
-          {
-            initialMessage:
-              "上传分析完成，已按系统推荐题目确认选择，正在调用大模型生成并运行代码，随后回填结果、撰写论文和审查。",
-          },
-        );
+        if (await selectProblem(rec.id)) {
+          await runAutoWorkflow(
+            detail.metadata.id,
+            {
+              initialMessage:
+                "上传分析完成，已按系统推荐题目确认选择，正在调用大模型生成并运行代码，随后回填结果、撰写论文和审查。",
+            },
+          );
+        }
       } else {
         els.status.textContent = "分析完成，但未识别到可自动确认的推荐题目，请在选题模块手动选择。";
       }
@@ -3457,7 +3470,7 @@ els.experienceGuide?.addEventListener("click", async (event) => {
   }
   button.disabled = true;
   try {
-    await runGuideAction(button.dataset.guideAction, { path: button.dataset.guidePath || "" });
+    await runGuideAction(button.dataset.guideAction, { path: button.dataset.guidePath || "", problemId: button.dataset.guideProblemId || "" });
   } finally {
     button.disabled = false;
   }
@@ -3470,7 +3483,7 @@ els.projectReadiness?.addEventListener("click", async (event) => {
   }
   button.disabled = true;
   try {
-    await runGuideAction(button.dataset.readinessAction, { path: button.dataset.readinessPath || "" });
+    await runGuideAction(button.dataset.readinessAction, { path: button.dataset.readinessPath || "", problemId: button.dataset.readinessProblemId || "" });
   } finally {
     button.disabled = false;
   }
@@ -3499,6 +3512,20 @@ async function runGuideAction(action, options = {}) {
   }
   if (action === "open_problems") {
     activateModuleTab("problems", { focus: true });
+    return;
+  }
+  if (action === "confirm_recommended_problem") {
+    if (!projectId) {
+      showToast("请先打开一个项目。", "warning");
+      return;
+    }
+    if (!options.problemId) {
+      activateModuleTab("problems", { focus: true });
+      return;
+    }
+    if (await selectProblem(options.problemId)) {
+      showToast(`已确认 ${options.problemId} 题`, "success");
+    }
     return;
   }
   if (action === "open_outputs" || action === "watch_auto") {
@@ -3746,7 +3773,7 @@ els.projectList?.addEventListener("click", async (event) => {
       return;
     }
     await openProject(projectId);
-    await runGuideAction(action);
+    await runGuideAction(action, { path: button.dataset.projectPath || "", problemId: button.dataset.projectProblemId || "" });
   } catch (error) {
     showToast(`执行下一步失败：${error.message}`, "error");
   } finally {
@@ -3800,7 +3827,7 @@ if (els.projectNextAction) {
     }
     els.projectNextAction.disabled = true;
     try {
-      await runGuideAction(action, { path: els.projectNextAction.dataset.guidePath || "" });
+      await runGuideAction(action, { path: els.projectNextAction.dataset.guidePath || "", problemId: els.projectNextAction.dataset.guideProblemId || "" });
     } catch (error) {
       showToast(`执行下一步失败：${error.message}`, "error");
     } finally {

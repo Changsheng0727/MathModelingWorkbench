@@ -155,20 +155,23 @@ def check_problem(metadata: dict[str, Any], analysis: dict[str, Any] | None) -> 
     if problem_id:
         detail = f"当前已确认使用 {problem_id} 题。"
         status = "pass"
+        action = {"id": "open_problems", "label": "查看选题"}
     elif recommended_id:
         title = f"：{recommended_title}" if recommended_title else ""
         detail = f"系统推荐 {recommended_id} 题{title}，请确认后再开始求解。"
         status = "fail"
+        action = {"id": "confirm_recommended_problem", "label": f"确认 {recommended_id} 题", "problem_id": str(recommended_id)}
     else:
         detail = "尚未确认最终选题。"
         status = "fail"
+        action = {"id": "open_problems", "label": "确认选题"}
     return readiness_check(
         "problem",
         "选题确认",
         status,
         detail,
         required=True,
-        action={"id": "open_problems", "label": "确认选题"},
+        action=action,
     )
 
 
@@ -314,6 +317,7 @@ def readiness_next_step(action: dict[str, Any], item: dict[str, Any] | None) -> 
         "tone": tone,
         "urgency": "high" if tone == "failed" and required else "medium" if tone in {"failed", "warning"} else "low",
         "path": str(action.get("path") or ""),
+        "problem_id": str(action.get("problem_id") or ""),
     }
 
 
@@ -381,6 +385,7 @@ def readiness_todo_items(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "action_id": str(action.get("id") or ""),
                 "action_label": str(action.get("label") or ""),
                 "action_path": str(action.get("path") or ""),
+                "action_problem_id": str(action.get("problem_id") or ""),
             }
         )
     return rows

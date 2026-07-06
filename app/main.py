@@ -716,6 +716,7 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_top_action_detail"] = action.get("detail", "")
     project["readiness_top_action_hint"] = action_hint
     project["readiness_top_action_path"] = action.get("path", "")
+    project["readiness_top_action_problem_id"] = action.get("problem_id", "")
     next_step = readiness.get("next_step", {})
     next_step = next_step if isinstance(next_step, dict) else {}
     project["readiness_next_step"] = next_step
@@ -962,6 +963,7 @@ def project_readiness_guide_actions(project: dict) -> list[dict]:
     add_readiness_guide_action(actions, action, primary=True)
     secondary_actions = {
         "focus_llm": {"id": "test_llm", "label": "测试连接"},
+        "confirm_recommended_problem": {"id": "open_problems", "label": "查看评分"},
         "start_auto": {"id": "open_outputs", "label": "查看输出区"},
         "watch_auto": {"id": "cancel_auto", "label": "中断流程"},
         "resume_auto": {"id": "open_outputs", "label": "查看日志"},
@@ -984,10 +986,13 @@ def add_readiness_guide_action(actions: list[dict], action: dict, *, primary: bo
     row = {"id": action_id, "label": label, "primary": primary}
     detail = str(action.get("detail") or "").strip()
     path = str(action.get("path") or "").strip()
+    problem_id = str(action.get("problem_id") or "").strip()
     if detail:
         row["detail"] = detail
     if path:
         row["path"] = path
+    if problem_id:
+        row["problem_id"] = problem_id
     actions.append(row)
 
 
@@ -1007,6 +1012,7 @@ def project_readiness_action_hint(action: dict, project: dict) -> str:
         "build_delivery_package": "生成最终提交压缩包。",
         "open_project_root": "打开本地项目文件夹。",
         "open_primary_output": "打开最新输出文件位置。",
+        "confirm_recommended_problem": "直接确认系统推荐题，后续求解和论文都会以该题为准。",
     }
     return hints.get(action_id) or detail or str(project.get("readiness_summary") or "").strip()
 
