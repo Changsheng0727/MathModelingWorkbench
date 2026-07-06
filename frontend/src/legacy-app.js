@@ -1235,8 +1235,9 @@ function renderProjectReadiness(readiness = {}) {
   const checks = readiness.checks.slice(0, 7);
   const action = readiness.primary_action || {};
   const actionTitle = action.detail || action.path || action.label || "";
+  const actionPath = action.path ? ` data-readiness-path="${escapeHtml(action.path)}"` : "";
   const actionButton = action.id
-    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}" title="${escapeHtml(actionTitle)}">${escapeHtml(action.label || "继续")}</button>`
+    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}"${actionPath} title="${escapeHtml(actionTitle)}">${escapeHtml(action.label || "继续")}</button>`
     : "";
   els.projectReadiness.dataset.status = status;
   els.projectReadiness.innerHTML = `
@@ -3116,13 +3117,13 @@ els.projectReadiness?.addEventListener("click", async (event) => {
   }
   button.disabled = true;
   try {
-    await runGuideAction(button.dataset.readinessAction);
+    await runGuideAction(button.dataset.readinessAction, { path: button.dataset.readinessPath || "" });
   } finally {
     button.disabled = false;
   }
 });
 
-async function runGuideAction(action) {
+async function runGuideAction(action, options = {}) {
   const projectId = state.currentProject?.metadata?.id || "";
   if (action === "focus_upload") {
     scrollIntoViewIfPossible(els.form);
@@ -3210,7 +3211,7 @@ async function runGuideAction(action) {
   }
   if (action === "open_primary_output") {
     const metadata = state.currentProject?.metadata || {};
-    const path = metadata.primary_output_path || metadata.artifact_summary?.latest_path || "";
+    const path = options.path || metadata.primary_output_path || metadata.artifact_summary?.latest_path || "";
     await openProjectLocation(projectId, path);
     showToast("已打开输出文件位置", "success");
     return;

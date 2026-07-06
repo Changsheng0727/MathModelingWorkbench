@@ -31,6 +31,8 @@ def build_project_readiness(
     score = score_checks(checks)
     status = "failed" if blockers else "warning" if warnings or score < 86 else "success"
     primary_action = next((action_with_detail(item) for item in checks if item.get("status") == "fail" and item.get("action")), None)
+    if not primary_action and delivery_is_packaged(metadata, package or {}):
+        primary_action = output_action(metadata, "打开交付包")
     if not primary_action:
         primary_action = next((action_with_detail(item) for item in checks if item.get("status") == "warning" and item.get("action")), None)
     primary_action = primary_action or output_action(metadata, "打开最新输出")
@@ -159,7 +161,7 @@ def check_pdf(root: Path, metadata: dict[str, Any]) -> dict[str, Any]:
 
 def check_delivery(metadata: dict[str, Any], delivery: dict[str, Any], package: dict[str, Any]) -> dict[str, Any]:
     status_value = str(delivery.get("status") or metadata.get("delivery_readiness_status") or "")
-    packaged = bool(package) or metadata.get("delivery_package_status") == "success" or bool(metadata.get("delivery_package_sha256"))
+    packaged = delivery_is_packaged(metadata, package)
     if packaged:
         status = "pass"
         detail = "正式交付包已生成。"
@@ -173,6 +175,10 @@ def check_delivery(metadata: dict[str, Any], delivery: dict[str, Any], package: 
         detail = "交付检查尚未完成。"
         action = {"id": "refresh_delivery", "label": "检查交付"}
     return readiness_check("delivery", "交付文件", status, detail, required=False, action=action)
+
+
+def delivery_is_packaged(metadata: dict[str, Any], package: dict[str, Any]) -> bool:
+    return bool(package) or metadata.get("delivery_package_status") == "success" or bool(metadata.get("delivery_package_sha256"))
 
 
 def output_action(metadata: dict[str, Any], label: str, fallback: dict[str, str] | None = None) -> dict[str, str]:
