@@ -3612,8 +3612,11 @@ async function refreshModelAssistantProgress(projectId) {
   try {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/model-assistant/progress`);
     renderModelAssistantProgress(payload.progress);
-  } catch {
-    // Progress polling is best-effort; the main action will report hard failures.
+  } catch (error) {
+    renderModelAssistantProgress({
+      status: "warning",
+      detail: `模型辅助进度暂不可用：${error.message}`,
+    });
   }
 }
 

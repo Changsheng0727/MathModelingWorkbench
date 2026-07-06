@@ -1708,12 +1708,22 @@ def project_model_assistant_progress(project_id: str) -> dict:
         raise HTTPException(status_code=404, detail="项目不存在。") from exc
     meta = load_json(root / "metadata.json")
     progress_path = root / MODEL_ASSISTANT_PROGRESS_RELATIVE
-    progress = load_json(progress_path) if progress_path.exists() else {}
-    if isinstance(progress, dict):
-        progress = dict(progress)
-        live_stream = load_llm_live_stream(root)
-        if live_stream.get("channel") == "model_assistant":
-            progress["live_stream"] = live_stream
+    progress_error = ""
+    try:
+        progress = load_json(progress_path) if progress_path.exists() else {}
+    except Exception as exc:
+        progress = {}
+        progress_error = f"{type(exc).__name__}: {exc}"
+    if not isinstance(progress, dict):
+        progress = {}
+    progress = dict(progress)
+    if progress_error:
+        progress["status"] = meta.get("model_assistant_status") or "warning"
+        progress["progress_error"] = progress_error
+        progress["detail"] = "模型辅助进度文件暂时读取失败，稍后会自动刷新。"
+    live_stream = load_llm_live_stream(root)
+    if live_stream.get("channel") == "model_assistant":
+        progress["live_stream"] = live_stream
     return {
         "project_id": project_id,
         "status": meta.get("model_assistant_status") or progress.get("status") or "idle",
