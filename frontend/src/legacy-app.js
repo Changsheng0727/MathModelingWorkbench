@@ -698,6 +698,14 @@ async function loadProductOverview({ restore = false, refresh = false } = {}) {
   }
 }
 
+async function syncOverviewAfterAction(payload = {}) {
+  if (payload?.overview) {
+    applyProductOverviewPayload(payload.overview);
+  } else {
+    await loadProjects();
+  }
+}
+
 async function loadGrowthMetrics() {
   if (!els.growthCenter) {
     return;
@@ -5182,7 +5190,7 @@ if (els.cancelAutoWorkflow) {
       renderProject(payload.project);
       await refreshAutoProgress(projectId);
       await loadAutoJobs();
-      await loadProjects();
+      await syncOverviewAfterAction(payload);
       await loadTrustCenter();
     } catch (error) {
       els.autoWorkflowStatus.textContent = `中断请求失败：${error.message}`;
@@ -5204,7 +5212,7 @@ async function refreshDiagnosticsForProject(projectId) {
     const repairText = repair.label ? `，修复中心：${repair.label}` : "";
     els.diagnosticsStatus.textContent = `诊断资产已刷新：${health.label || "已完成"}${scoreText}${repairText}。`;
     showToast("诊断与性能报告已刷新", "success");
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
     await loadTrustCenter();
   } catch (error) {
     els.diagnosticsStatus.textContent = `诊断刷新失败：${error.message}`;
@@ -5238,7 +5246,7 @@ async function refreshRepairCenterForProject(projectId) {
       els.repairCenterStatus.textContent = `修复中心已刷新：${label}。`;
     }
     showToast("自动修复中心已刷新", "success");
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
     await loadTrustCenter();
   } catch (error) {
     if (els.repairCenterStatus) {
@@ -5398,7 +5406,7 @@ els.deliveryCenter?.addEventListener("click", async (event) => {
       const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/analyze`, { method: "POST" });
       renderProject(payload.project);
       await refreshDeliveryReadinessForProject(projectId);
-      await loadProjects();
+      await syncOverviewAfterAction(payload);
       setDeliveryStatus(success);
       return;
     }
@@ -5433,7 +5441,7 @@ els.deliveryCenter?.addEventListener("click", async (event) => {
       const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/compile`, { method: "POST" });
       renderProject(payload.project);
       els.compileStatus.textContent = payload.compile.success ? "编译完成：已生成 PDF，并导出 Word 文档。" : "编译失败，请查看编译日志和 Word 导出日志。";
-      await loadProjects();
+      await syncOverviewAfterAction(payload);
       setDeliveryStatus(success);
       return;
     }
@@ -5442,7 +5450,7 @@ els.deliveryCenter?.addEventListener("click", async (event) => {
       const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/paper/review`, { method: "POST" });
       renderProject(payload.project);
       els.paperReviewStatus.textContent = "论文审查完成，可查看审查报告。";
-      await loadProjects();
+      await syncOverviewAfterAction(payload);
       setDeliveryStatus(success);
       return;
     }
@@ -5472,7 +5480,7 @@ els.generateSkillReport.addEventListener("click", async () => {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/skills/report`, { method: "POST" });
     renderProject(payload.project);
     els.skillReportStatus.textContent = "技能库与诚信门禁报告已生成，可在生成文件中查看。";
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     els.skillReportStatus.textContent = `技能库与诚信门禁报告生成失败：${error.message}`;
   } finally {
@@ -5512,7 +5520,7 @@ els.fillPaper.addEventListener("click", async () => {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/paper/fill`, { method: "POST" });
     renderProject(payload.project);
     els.paperFillStatus.textContent = "论文回填完成，可继续编译 LaTeX。";
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     els.paperFillStatus.textContent = `回填失败：${error.message}`;
   } finally {
@@ -5534,7 +5542,7 @@ els.compile.addEventListener("click", async () => {
     els.compileStatus.textContent = payload.compile.success
       ? "编译完成：已生成 PDF，并导出 Word 文档。"
       : "编译失败，请查看编译日志和 Word 导出日志。";
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     els.compileStatus.textContent = `编译失败：${error.message}`;
   } finally {
@@ -5554,7 +5562,7 @@ els.reviewPaper.addEventListener("click", async () => {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/paper/review`, { method: "POST" });
     renderProject(payload.project);
     els.paperReviewStatus.textContent = "论文审查完成，可查看审查报告。";
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     els.paperReviewStatus.textContent = `审查失败：${error.message}`;
   } finally {

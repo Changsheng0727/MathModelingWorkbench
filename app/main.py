@@ -548,7 +548,7 @@ def write_project_backend_skill_report(project_id: str) -> dict:
     artifacts = write_backend_skill_report(root)
     meta.setdefault("artifacts", {}).update(artifacts)
     save_json(root / "metadata.json", meta)
-    return {"artifacts": artifacts, "project": project_detail(project_id)}
+    return {"artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/codegraph/report")
@@ -1534,7 +1534,7 @@ def compile_project(project_id: str) -> dict:
     meta["compile_status"] = "success" if result["success"] else "failed"
     attach_artifacts_safely(meta, write_delivery_readiness_report(root, meta))
     save_json(root / "metadata.json", meta)
-    return {"compile": result, "project": project_detail(project_id)}
+    return {"compile": result, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/model/generate")
@@ -1648,7 +1648,7 @@ def fill_paper(project_id: str) -> dict:
     meta["paper_fill_status"] = "success"
     attach_artifacts_safely(meta, write_delivery_readiness_report(root, meta))
     save_json(root / "metadata.json", meta)
-    return {"artifacts": artifacts, "project": project_detail(project_id)}
+    return {"artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/computed/run")
@@ -1675,7 +1675,7 @@ def run_project_computed_solution(project_id: str) -> dict:
     attach_artifacts_safely(meta, write_performance_health_report(root, meta))
     attach_artifacts_safely(meta, write_delivery_readiness_report(root, meta))
     save_json(root / "metadata.json", meta)
-    return {"artifacts": artifacts, "project": project_detail(project_id)}
+    return {"artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/paper/review")
@@ -1693,7 +1693,7 @@ def review_project_paper(project_id: str) -> dict:
     meta["paper_review_status"] = "success"
     attach_artifacts_safely(meta, write_delivery_readiness_report(root, meta))
     save_json(root / "metadata.json", meta)
-    return {"artifacts": artifacts, "project": project_detail(project_id)}
+    return {"artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/diagnostics/refresh")
