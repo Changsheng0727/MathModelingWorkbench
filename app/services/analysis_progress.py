@@ -135,7 +135,13 @@ def load_analysis_progress(progress_id: str) -> dict[str, Any]:
         payload = json.loads(path.read_text(encoding="utf-8"))
         return payload if isinstance(payload, dict) else {}
     except Exception as exc:
-        return {"id": safe_progress_id(progress_id), "status": "unreadable", "error": f"{type(exc).__name__}: {exc}"}
+        error = f"{type(exc).__name__}: {exc}"
+        return {
+            "id": safe_progress_id(progress_id),
+            "status": "warning",
+            "progress_error": error,
+            "detail": "赛题分析进度文件暂时读取失败，稍后会自动刷新。",
+        }
 
 
 def compact_step(step: dict[str, Any] | None) -> dict[str, Any] | None:

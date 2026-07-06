@@ -2851,7 +2851,11 @@ async function refreshUploadProgress(progressId) {
     }
     renderProgressPanel(els.uploadProgress, progress, 7);
     return ["success", "failed", "completed_with_warnings"].includes(progress.status);
-  } catch {
+  } catch (error) {
+    renderProgressPanel(els.uploadProgress, {
+      status: "warning",
+      detail: `赛题分析进度暂不可用：${error.message}`,
+    }, 7);
     return false;
   }
 }
