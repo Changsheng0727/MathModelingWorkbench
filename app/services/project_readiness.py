@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.services.action_catalog import action_outcome, action_progress, action_success
+from app.services.action_catalog import action_button, action_outcome, action_progress, action_success
 
 
 READINESS_PHASE_TOTAL = 10
@@ -298,6 +298,9 @@ def action_with_detail(item: dict[str, Any]) -> dict[str, str]:
     success = action_success(str(action.get("id") or ""))
     if success:
         action.setdefault("success", success)
+    button_label = action_button(str(action.get("id") or ""))
+    if button_label:
+        action.setdefault("button_label", button_label)
     return action
 
 
@@ -400,6 +403,7 @@ def readiness_todo_items(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "action_outcome": str(action.get("outcome") or ""),
                 "action_progress": str(action.get("progress") or ""),
                 "action_success": str(action.get("success") or ""),
+                "action_button_label": str(action.get("button_label") or ""),
             }
         )
     return rows

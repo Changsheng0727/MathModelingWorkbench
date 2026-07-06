@@ -651,7 +651,8 @@ function renderProjectEmptyState(onboarding = {}) {
           const titleAttr = titleText ? ` title="${escapeHtml(titleText)}"` : "";
           const progressAttr = action.progress ? ` data-guide-progress="${escapeHtml(action.progress)}"` : "";
           const successAttr = action.success ? ` data-guide-success="${escapeHtml(action.success)}"` : "";
-          return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${progressAttr}${successAttr}${titleAttr}>${escapeHtml(action.label)}</button>`;
+          const buttonLabel = action.buttonLabel || action.label;
+          return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${progressAttr}${successAttr}${titleAttr}>${escapeHtml(buttonLabel)}</button>`;
         }).join("")}
       </div>
     </div>
@@ -960,6 +961,7 @@ function renderProjectQuickAction(project = {}) {
   if (!project.id || !actionId || !label) {
     return "";
   }
+  const buttonLabel = project.readiness_action_button_label || action.button_label || action.buttonLabel || guideActionButtonLabel(actionId) || label;
   const hint = project.readiness_action_hint || action.hint || action.detail || project.readiness_action_detail || project.readiness_summary || "";
   const outcome = project.readiness_action_outcome || "";
   const progress = project.readiness_action_progress || action.progress || guideActionProgress(actionId);
@@ -974,7 +976,7 @@ function renderProjectQuickAction(project = {}) {
   const ariaLabel = `${project.name || project.id}：${label}${hint ? `。${hint}` : ""}`;
   return `
     <span class="project-action-cell">
-      <button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute}${progressAttribute}${successAttribute} title="${escapeHtml(title)}" aria-label="${escapeHtml(ariaLabel)}">${escapeHtml(label)}</button>
+      <button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute}${progressAttribute}${successAttribute} title="${escapeHtml(title)}" aria-label="${escapeHtml(ariaLabel)}">${escapeHtml(buttonLabel)}</button>
       ${outcome || hint ? `<span class="project-action-hint">${escapeHtml(outcome || hint)}</span>` : ""}
     </span>
   `;
@@ -1314,10 +1316,11 @@ function syncTopbarProjectAction(metadata = {}) {
   const problemId = metadata.readiness_top_action_problem_id || metadata.readiness_action?.problem_id || "";
   const progress = metadata.readiness_top_action_progress || metadata.readiness_action_progress || metadata.readiness_action?.progress || guideActionProgress(actionId);
   const success = metadata.readiness_top_action_success || metadata.readiness_action_success || metadata.readiness_action?.success || guideActionSuccess(actionId);
-  button.textContent = actionLabel;
+  const buttonLabel = metadata.readiness_top_action_button_label || metadata.readiness_action_button_label || metadata.readiness_action?.button_label || guideActionButtonLabel(actionId) || actionLabel;
+  button.textContent = buttonLabel;
   button.title = reason || actionLabel;
-  button.setAttribute("aria-label", reason ? `${actionLabel}：${reason}` : actionLabel);
   button.dataset.guideAction = actionId;
+  button.setAttribute("aria-label", reason ? `${buttonLabel}: ${reason}` : buttonLabel);
   button.dataset.guidePath = path;
   button.dataset.guideProblemId = problemId;
   button.dataset.guideProgress = progress;
@@ -1583,8 +1586,9 @@ function renderProjectReadiness(readiness = {}) {
   const actionProblem = action.problem_id ? ` data-readiness-problem-id="${escapeHtml(action.problem_id)}"` : "";
   const actionProgress = action.progress ? ` data-readiness-progress="${escapeHtml(action.progress)}"` : "";
   const actionSuccess = action.success ? ` data-readiness-success="${escapeHtml(action.success)}"` : "";
+  const actionButtonLabel = action.button_label || action.buttonLabel || guideActionButtonLabel(action.id) || action.label || "继续";
   const actionButton = action.id
-    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}"${actionPath}${actionProblem}${actionProgress}${actionSuccess} title="${escapeHtml(actionTitle)}">${escapeHtml(action.label || "继续")}</button>`
+    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}"${actionPath}${actionProblem}${actionProgress}${actionSuccess} title="${escapeHtml(actionTitle)}">${escapeHtml(actionButtonLabel)}</button>`
     : "";
   const next = readiness.next_step || {};
   const phase = readiness.phase || {};
@@ -1672,6 +1676,7 @@ function renderReadinessTodo(item = {}) {
   const actionOutcome = item.action_outcome || action.outcome || guideActionOutcome(actionId);
   const actionProgress = item.action_progress || action.progress || guideActionProgress(actionId);
   const actionSuccess = item.action_success || action.success || guideActionSuccess(actionId);
+  const actionButtonLabel = item.action_button_label || action.button_label || action.buttonLabel || guideActionButtonLabel(actionId) || actionLabel;
   const status = statusTone(item.status);
   const required = item.required ? '<b>必需</b>' : "";
   const pathAttribute = actionPath ? ` data-readiness-path="${escapeHtml(actionPath)}"` : "";
@@ -1681,7 +1686,7 @@ function renderReadinessTodo(item = {}) {
   const actionTitle = [action.detail || item.detail, actionProgress, actionOutcome ? `点击后：${actionOutcome}` : ""].filter(Boolean).join("；");
   const titleAttribute = actionTitle ? ` title="${escapeHtml(actionTitle)}"` : "";
   const actionButton = actionId && actionLabel
-    ? `<button class="readiness-todo-action" type="button" data-readiness-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute}${progressAttribute}${successAttribute}${titleAttribute}>${escapeHtml(actionLabel)}</button>`
+    ? `<button class="readiness-todo-action" type="button" data-readiness-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute}${progressAttribute}${successAttribute}${titleAttribute}>${escapeHtml(actionButtonLabel)}</button>`
     : "";
   return `
     <li data-status="${escapeHtml(status)}">
@@ -2035,7 +2040,8 @@ function renderExperienceGuide(experience = {}) {
         const success = action.success ? ` data-guide-success="${escapeHtml(action.success)}"` : "";
         const titleText = [action.detail, action.outcome ? `点击后：${action.outcome}` : ""].filter(Boolean).join("；");
         const title = titleText ? ` title="${escapeHtml(titleText)}"` : "";
-        return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${path}${problemId}${progress}${success}${title}>${escapeHtml(action.label)}</button>`;
+        const buttonLabel = action.buttonLabel || action.button_label || guideActionButtonLabel(action.id) || action.label;
+        return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${path}${problemId}${progress}${success}${title}>${escapeHtml(buttonLabel)}</button>`;
       })
       .join("");
   }

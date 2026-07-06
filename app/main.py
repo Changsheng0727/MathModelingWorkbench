@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.services.analyzer import apply_problem_selection, build_analysis
-from app.services.action_catalog import ACTION_ALIASES, ACTION_BUTTONS, ACTION_OUTCOMES, ACTION_PROGRESS, ACTION_SUCCESS, action_outcome, action_progress, action_success
+from app.services.action_catalog import ACTION_ALIASES, ACTION_BUTTONS, ACTION_OUTCOMES, ACTION_PROGRESS, ACTION_SUCCESS, action_button, action_outcome, action_progress, action_success
 from app.services.analysis_progress import AnalysisProgress, load_analysis_progress
 from app.services.auto_workflow import diagnose_auto_workflow_exception, request_auto_workflow_cancel, run_auto_workflow
 from app.services.auto_workflow_jobs import (
@@ -721,6 +721,8 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_action_progress"] = progress
     success = action_success(str(action.get("id") or ""))
     project["readiness_action_success"] = success
+    button_label = action.get("button_label") or action_button(str(action.get("id") or ""))
+    project["readiness_action_button_label"] = button_label
     action_hint = project_readiness_action_hint(action, project)
     project["readiness_action_hint"] = action_hint
     project["readiness_top_action_id"] = action.get("id", "")
@@ -730,6 +732,7 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_top_action_outcome"] = outcome
     project["readiness_top_action_progress"] = progress
     project["readiness_top_action_success"] = success
+    project["readiness_top_action_button_label"] = button_label
     project["readiness_top_action_path"] = action.get("path", "")
     project["readiness_top_action_problem_id"] = action.get("problem_id", "")
     next_step = readiness.get("next_step", {})
@@ -1006,6 +1009,7 @@ def add_readiness_guide_action(actions: list[dict], action: dict, *, primary: bo
     outcome = action_outcome(action_id)
     progress = action_progress(action_id)
     success = action_success(action_id)
+    button_label = str(action.get("button_label") or action_button(action_id) or "").strip()
     if detail:
         row["detail"] = detail
     if outcome:
@@ -1014,6 +1018,8 @@ def add_readiness_guide_action(actions: list[dict], action: dict, *, primary: bo
         row["progress"] = progress
     if success:
         row["success"] = success
+    if button_label:
+        row["button_label"] = button_label
     if path:
         row["path"] = path
     if problem_id:
