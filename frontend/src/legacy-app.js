@@ -730,33 +730,6 @@ async function loadGrowthMetrics() {
   }
 }
 
-async function loadExperienceCenter() {
-  if (!els.experienceGuide) {
-    return;
-  }
-  try {
-    const payload = await api("/api/product/experience");
-    state.actionAliasCatalog = payload.action_alias_catalog || state.actionAliasCatalog || {};
-    state.actionCatalog = payload.action_catalog || state.actionCatalog || {};
-    state.actionProgressCatalog = payload.action_progress_catalog || state.actionProgressCatalog || {};
-    state.actionSuccessCatalog = payload.action_success_catalog || state.actionSuccessCatalog || {};
-    state.actionButtonCatalog = payload.action_button_catalog || state.actionButtonCatalog || {};
-    state.experience = payload.experience || {};
-    renderExperienceGuide(state.experience);
-    if (!state.projects?.length) {
-      renderProjectList();
-    }
-  } catch (error) {
-    renderExperienceGuide({
-      status: "warning",
-      label: "本地向导",
-      summary: `体验向导暂不可用：${error.message}`,
-      signals: {},
-      actions: [{ id: "refresh_all", label: "刷新状态", detail: "重新读取本地项目状态。", tone: "neutral" }],
-    });
-  }
-}
-
 async function loadTrustCenter() {
   if (!els.trustCenter) {
     return;
@@ -4259,7 +4232,7 @@ async function runGuideAction(action, options = {}) {
     return;
   }
   if (action === "refresh_all") {
-    await Promise.all([loadProjects(), loadExperienceCenter(), loadAutoJobs(), loadGrowthMetrics(), loadTrustCenter()]);
+    await loadProductOverview({ refresh: true });
     showToast("产品状态已刷新", "success");
     return;
   }
@@ -4944,9 +4917,7 @@ async function runAutoWorkflow(
   } finally {
     if (!syncedAfterCompletion) {
       await refreshAutoProgress(projectId);
-      await loadAutoJobs();
-      await loadGrowthMetrics();
-      await loadTrustCenter();
+      await loadProductOverview();
     }
     els.runAutoWorkflow.disabled = false;
     if (els.cancelAutoWorkflow) els.cancelAutoWorkflow.disabled = true;
