@@ -982,7 +982,9 @@ def project_detail(project_id: str) -> dict:
     delivery = load_optional_project_json(root, delivery_path, meta, "交付检查")
     package_path = root / DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE
     package = load_optional_project_json(root, package_path, meta, "交付包清单")
-    meta["artifact_status"] = build_artifact_status(root, meta.get("artifacts"))
+    artifact_status = build_artifact_status(root, meta.get("artifacts"))
+    meta["artifact_status"] = artifact_status
+    meta["artifact_summary"] = summarize_artifact_status(artifact_status)
     readiness = build_project_readiness(
         root,
         meta,
@@ -1016,6 +1018,18 @@ def build_artifact_status(root: Path, artifacts: object) -> dict[str, dict[str, 
         "missing_reason": "",
     }
     return statuses
+
+
+def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[str, int]:
+    total = len(statuses)
+    available = sum(1 for item in statuses.values() if item.get("exists") is not False and item.get("is_file") is not False)
+    unsafe = sum(1 for item in statuses.values() if item.get("unsafe_path"))
+    return {
+        "total": total,
+        "available": available,
+        "missing": total - available,
+        "unsafe": unsafe,
+    }
 
 
 def inspect_project_artifact(root: Path, relative_path: str) -> dict[str, object]:

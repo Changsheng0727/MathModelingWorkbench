@@ -1309,6 +1309,10 @@ function renderRepairReportLinks(metadata = {}, projectId = "") {
     .filter(([key]) => projectId && artifacts[key])
     .map(([key, label]) => {
       const path = artifacts[key];
+      if (!artifactIsAvailable(metadata, key)) {
+        const reason = escapeHtml(artifactMissingReason(metadata, key));
+        return `<span class="report-link-missing" title="${reason}">${escapeHtml(label)} · 未生成</span>`;
+      }
       return `<a href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(path)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
     });
   return links.length ? `<div class="repair-links">${links.join("")}</div>` : "";
@@ -1444,9 +1448,22 @@ function renderDeliveryReportLinks(metadata = {}, projectId = "") {
     .filter(([key]) => projectId && (key === "support_zip" || artifacts[key]))
     .map(([key, label]) => {
       const path = key === "support_zip" ? "support.zip" : artifacts[key];
+      if (!artifactIsAvailable(metadata, key)) {
+        const reason = escapeHtml(artifactMissingReason(metadata, key));
+        return `<span class="report-link-missing" title="${reason}">${escapeHtml(label)} · 未生成</span>`;
+      }
       return `<a href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(path)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
     });
   return links.length ? `<div class="delivery-links">${links.join("")}</div>` : "";
+}
+
+function artifactIsAvailable(metadata = {}, key = "") {
+  const status = metadata.artifact_status?.[key];
+  return !status || (status.exists !== false && status.is_file !== false);
+}
+
+function artifactMissingReason(metadata = {}, key = "") {
+  return metadata.artifact_status?.[key]?.missing_reason || "文件尚未生成或已被移动";
 }
 
 function renderExperienceGuide(experience = {}) {
@@ -2337,6 +2354,7 @@ function summarizeSchema(schema) {
 function renderArtifacts(metadata, projectId) {
   const artifacts = metadata.artifacts || {};
   const artifactStatus = metadata.artifact_status || {};
+  const artifactSummary = metadata.artifact_summary || {};
   const items = [
     ["analysis_report", "分析报告"],
     ["outline", "论文提纲"],
@@ -2428,7 +2446,8 @@ function renderArtifacts(metadata, projectId) {
     }
     grouped.get(group).push([key, label, path, status]);
   });
-  els.artifacts.innerHTML = Array.from(grouped.entries())
+  const summaryHtml = renderArtifactSummary(artifactSummary);
+  const foldersHtml = Array.from(grouped.entries())
     .map(([group, groupItems], groupIndex) => {
       const links = groupItems
         .map(([key, label, path, status]) => renderArtifactItem(projectId, key, label, path, status))
@@ -2451,6 +2470,23 @@ function renderArtifacts(metadata, projectId) {
       `;
     })
     .join("");
+  els.artifacts.innerHTML = `${summaryHtml}${foldersHtml}`;
+}
+
+function renderArtifactSummary(summary = {}) {
+  const total = Number(summary.total || 0);
+  if (!total) {
+    return "";
+  }
+  const available = Number(summary.available || 0);
+  const missing = Number(summary.missing || 0);
+  const unsafe = Number(summary.unsafe || 0);
+  const status = missing || unsafe ? "warning" : "success";
+  const text = missing
+    ? `可打开 ${available}/${total} 个文件，${missing} 个文件尚未生成或已移动。`
+    : `可打开 ${available}/${total} 个文件。`;
+  const unsafeText = unsafe ? ` · ${unsafe} 个路径异常` : "";
+  return `<p class="artifact-summary" data-status="${status}">${escapeHtml(text + unsafeText)}</p>`;
 }
 
 function artifactFolderKinds(items = []) {

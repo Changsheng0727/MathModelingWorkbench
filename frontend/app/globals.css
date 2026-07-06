@@ -3306,7 +3306,8 @@ p {
 }
 
 .repair-meta span,
-.repair-links a {
+.repair-links a,
+.report-link-missing {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
@@ -3366,9 +3367,16 @@ p {
   text-decoration: none;
 }
 
-.repair-links a:hover {
+.repair-links a:hover,
+.delivery-links a:hover {
   border-color: var(--primary);
   background: var(--primary-soft);
+}
+
+.report-link-missing {
+  color: var(--muted);
+  cursor: not-allowed;
+  background: var(--panel-soft);
 }
 
 .delivery-center {
@@ -3553,11 +3561,6 @@ p {
 .delivery-links a {
   color: var(--primary);
   text-decoration: none;
-}
-
-.delivery-links a:hover {
-  border-color: var(--primary);
-  background: var(--primary-soft);
 }
 
 .status-dot {
@@ -4228,6 +4231,32 @@ ul.problem-meta {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 12px;
+}
+
+.artifact-summary {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(185, 200, 216, 0.62);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.artifact-summary[data-status="success"] {
+  border-color: color-mix(in oklch, var(--teal) 24%, transparent);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.artifact-summary[data-status="warning"] {
+  border-color: color-mix(in oklch, var(--amber) 28%, transparent);
+  background: var(--amber-soft);
+  color: var(--amber);
 }
 
 .artifact-folder {
