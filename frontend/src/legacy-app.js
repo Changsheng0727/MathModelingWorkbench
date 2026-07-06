@@ -571,6 +571,7 @@ function renderProjectList() {
         const phase = renderProjectPhase(project);
         const nextStep = renderProjectNextStep(project);
         const requiredProgress = renderProjectRequiredProgress(project);
+        const gapSummary = renderProjectGapSummary(project);
         const quickAction = renderProjectQuickAction(project);
         const deliveryBadge = renderProjectDeliveryBadge(project);
         const artifactBadge = renderProjectArtifactBadge(project);
@@ -599,6 +600,7 @@ function renderProjectList() {
             ${artifactMeta}
             ${phase}
             ${requiredProgress}
+            ${gapSummary}
             ${nextStep}
           </button>
           ${quickAction}
@@ -794,6 +796,23 @@ function renderProjectRequiredProgress(project = {}) {
   `;
 }
 
+function renderProjectGapSummary(project = {}) {
+  const label = project.readiness_gap_label || "";
+  if (!label) {
+    return "";
+  }
+  const gapCount = Number(project.readiness_gap_count || 0);
+  const tone = gapCount > 0 ? "failed" : "warning";
+  const sourceItems = gapCount > 0 ? project.readiness_gap_preview : project.readiness_todo_preview;
+  const detail = Array.isArray(sourceItems)
+    ? sourceItems
+        .map((item) => [item.label, item.detail].filter(Boolean).join("："))
+        .filter(Boolean)
+        .join("\n")
+    : "";
+  return `<span class="project-gaps" data-tone="${escapeHtml(tone)}" title="${escapeHtml(detail || label)}">${escapeHtml(label)}</span>`;
+}
+
 function renderProjectPhase(project = {}) {
   const phase = project.readiness_phase || {};
   const label = project.readiness_phase_label || phase.label || "";
@@ -972,6 +991,9 @@ function projectSearchText(project = {}) {
     project.readiness_completion?.label,
     project.readiness_completion_label,
     project.readiness_todo_count ? `待办 ${project.readiness_todo_count}` : "",
+    project.readiness_gap_label,
+    project.readiness_gap_count ? `必需缺口 ${project.readiness_gap_count}` : "",
+    ...(Array.isArray(project.readiness_gap_preview) ? project.readiness_gap_preview.flatMap((item) => [item.label, item.detail, item.action_label || item.action?.label]) : []),
     ...(Array.isArray(project.readiness_todo_preview) ? project.readiness_todo_preview.flatMap((item) => [item.label, item.detail, item.action_label || item.action?.label]) : []),
     project.readiness_action?.label,
     project.readiness_action?.detail,

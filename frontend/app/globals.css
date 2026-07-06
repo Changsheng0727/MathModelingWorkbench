@@ -1098,6 +1098,25 @@ p {
   background: var(--primary);
 }
 
+.project-gaps {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 680;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-gaps[data-tone="failed"] {
+  color: var(--red);
+}
+
+.project-gaps[data-tone="warning"] {
+  color: var(--amber);
+}
+
 .project-badges {
   display: flex;
   flex-wrap: wrap;

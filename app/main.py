@@ -710,8 +710,14 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_completion_label"] = completion.get("label", "")
     todo_items = readiness.get("todo_items", [])
     todo_items = todo_items if isinstance(todo_items, list) else []
+    gap_items = [item for item in todo_items if isinstance(item, dict) and item.get("required")]
+    warning_todos = [item for item in todo_items if isinstance(item, dict) and not item.get("required")]
     project["readiness_todo_count"] = len(todo_items)
     project["readiness_todo_preview"] = todo_items[:3]
+    project["readiness_gap_count"] = len(gap_items)
+    project["readiness_gap_preview"] = gap_items[:3]
+    project["readiness_warning_todo_count"] = len(warning_todos)
+    project["readiness_gap_label"] = project_readiness_gap_label(gap_items, warning_todos)
     project["readiness_required_passed"] = readiness.get("required_passed", 0)
     project["readiness_required_total"] = readiness.get("required_total", 0)
     required_total = int(project["readiness_required_total"] or 0)
@@ -773,6 +779,18 @@ def project_readiness_bucket_label(bucket: str) -> str:
         "deliverable": "可交付",
         "normal": "普通",
     }.get(bucket, "普通")
+
+
+def project_readiness_gap_label(gap_items: list[dict], warning_todos: list[dict]) -> str:
+    if gap_items:
+        labels = "、".join(filter(None, (str(item.get("label") or item.get("id") or "").strip() for item in gap_items[:3])))
+        suffix = "等" if len(gap_items) > 3 else ""
+        return f"必需缺口 {len(gap_items)} 项" + (f"：{labels}{suffix}" if labels else "")
+    if warning_todos:
+        labels = "、".join(filter(None, (str(item.get("label") or item.get("id") or "").strip() for item in warning_todos[:3])))
+        suffix = "等" if len(warning_todos) > 3 else ""
+        return f"建议处理 {len(warning_todos)} 项" + (f"：{labels}{suffix}" if labels else "")
+    return ""
 
 
 def project_attention_rank(project: dict) -> int:
