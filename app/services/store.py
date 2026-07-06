@@ -11,6 +11,20 @@ from typing import Any
 from app.config import PROJECTS_ROOT
 
 
+PRIMARY_OUTPUT_KEYS = [
+    "delivery_package",
+    "paper_pdf",
+    "paper_docx",
+    "paper_llm",
+    "paper_autofilled",
+    "paper_result_filled",
+    "computed_summary",
+    "computed_manifest",
+    "auto_workflow_report",
+    "analysis_report",
+]
+
+
 def slugify(text: str) -> str:
     text = re.sub(r"[^\w\-\u4e00-\u9fff]+", "-", text, flags=re.UNICODE).strip("-")
     return text[:48] or "project"
@@ -87,6 +101,7 @@ def attach_project_artifact_fields(meta: dict[str, Any], root: Path, include_sta
     if include_status:
         meta["artifact_status"] = artifact_status
     meta["artifact_summary"] = artifact_summary
+    meta["primary_output_path"] = primary_output_path(artifact_status)
     meta.update(describe_artifact_health(artifact_summary))
     return meta
 
@@ -113,18 +128,39 @@ def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[st
     unsafe = sum(1 for item in statuses.values() if item.get("unsafe_path"))
     size_bytes = sum(int(item.get("size_bytes") or 0) for item in statuses.values())
     modified = [
-        str(item.get("modified_at"))
-        for item in statuses.values()
-        if item.get("modified_at")
+        (str(item.get("modified_at")), key, str(item.get("path") or ""))
+        for key, item in statuses.items()
+        if is_available_artifact(item) and item.get("modified_at")
     ]
+    latest = max(modified) if modified else ("", "", "")
     return {
         "total": total,
         "available": available,
         "missing": total - available,
         "unsafe": unsafe,
         "size_bytes": size_bytes,
-        "latest_modified_at": max(modified) if modified else "",
+        "latest_modified_at": latest[0],
+        "latest_key": latest[1],
+        "latest_path": latest[2],
     }
+
+
+def is_available_artifact(item: dict[str, object]) -> bool:
+    return (
+        item.get("exists") is not False
+        and item.get("is_file") is not False
+        and not item.get("unsafe_path")
+        and not item.get("generated_on_demand")
+    )
+
+
+def primary_output_path(statuses: dict[str, dict[str, object]]) -> str:
+    for key in PRIMARY_OUTPUT_KEYS:
+        item = statuses.get(key) or {}
+        if is_available_artifact(item):
+            return str(item.get("path") or "")
+    summary = summarize_artifact_status(statuses)
+    return str(summary.get("latest_path") or "")
 
 
 def format_artifact_size(size_bytes: object) -> str:
@@ -244,7 +280,17 @@ def project_metadata_error_stub(root: Path, exc: Exception) -> dict[str, Any]:
         "root": str(root),
         "status": "metadata_error",
         "metadata_error": error,
-        "artifact_summary": {"total": 0, "available": 0, "missing": 0, "unsafe": 0, "size_bytes": 0, "latest_modified_at": ""},
+        "artifact_summary": {
+            "total": 0,
+            "available": 0,
+            "missing": 0,
+            "unsafe": 0,
+            "size_bytes": 0,
+            "latest_modified_at": "",
+            "latest_key": "",
+            "latest_path": "",
+        },
+        "primary_output_path": "",
         "artifact_health_status": "error",
         "artifact_health_label": "元数据异常",
         "artifact_health_summary": f"metadata.json 无法读取：{error}",

@@ -778,7 +778,9 @@ function renderProjectQuickAction(project = {}) {
     return "";
   }
   const title = action.detail || project.readiness_action_detail || project.readiness_summary || label;
-  return `<button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}" title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+  const outputPath = action.path || project.primary_output_path || project.artifact_summary?.latest_path || "";
+  const pathAttribute = outputPath ? ` data-project-path="${escapeHtml(outputPath)}"` : "";
+  return `<button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}"${pathAttribute} title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
 }
 
 function pruneSelectedProjects() {
@@ -982,6 +984,13 @@ async function openProjectRoot(projectId = "") {
       }, 250);
     }
   }
+}
+
+async function openProjectLocation(projectId, path) {
+  if (!projectId || !path) {
+    throw new Error("没有可打开的输出文件。");
+  }
+  await api(`/api/projects/${encodeURIComponent(projectId)}/open-location/${encodeRelativePath(path)}`, { method: "POST" });
 }
 
 function renderProject(detail) {
@@ -2679,7 +2688,7 @@ els.artifacts.addEventListener("click", async (event) => {
   const originalText = button.textContent;
   button.textContent = "打开中";
   try {
-    await api(`/api/projects/${encodeURIComponent(projectId)}/open-location/${encodeRelativePath(path)}`, { method: "POST" });
+    await openProjectLocation(projectId, path);
     button.textContent = "已打开";
     showToast("已打开文件所在位置", "success");
     window.setTimeout(() => {
@@ -3198,6 +3207,13 @@ async function runGuideAction(action) {
     await openProjectRoot(projectId);
     return;
   }
+  if (action === "open_primary_output") {
+    const metadata = state.currentProject?.metadata || {};
+    const path = metadata.primary_output_path || metadata.artifact_summary?.latest_path || "";
+    await openProjectLocation(projectId, path);
+    showToast("已打开输出文件位置", "success");
+    return;
+  }
   if (action === "select_analyzed") {
     els.selectAnalyzedProjects?.click();
     scrollIntoViewIfPossible(els.batchStartProjects);
@@ -3357,6 +3373,11 @@ els.projectList?.addEventListener("click", async (event) => {
   try {
     if (action === "open_project_root") {
       await openProjectRoot(projectId);
+      return;
+    }
+    if (action === "open_primary_output") {
+      await openProjectLocation(projectId, button.dataset.projectPath || "");
+      showToast("已打开输出文件位置", "success");
       return;
     }
     await openProject(projectId);

@@ -163,7 +163,7 @@ def check_delivery(metadata: dict[str, Any], delivery: dict[str, Any], package: 
     if packaged:
         status = "pass"
         detail = "正式交付包已生成。"
-        action = {"id": "open_project_root", "label": "打开文件夹"}
+        action = {"id": "open_primary_output", "label": "打开交付包"}
     elif status_value in {"ready", "success", "deliverable", "review"}:
         status = "warning"
         detail = "论文已接近可交付，建议生成交付包。"
