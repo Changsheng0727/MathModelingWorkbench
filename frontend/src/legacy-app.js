@@ -2,6 +2,7 @@ const state = {
   currentProject: null,
   projects: [],
   projectQuery: "",
+  projectFilter: "all",
   selectedProjectIds: new Set(),
   templates: [],
   llmSettings: null,
@@ -31,6 +32,7 @@ const els = {
   uploadProgress: document.querySelector("#upload-analysis-progress"),
   refresh: document.querySelector("#refresh-projects"),
   projectSearch: document.querySelector("#project-search"),
+  projectFilters: document.querySelector("#project-filters"),
   projectCount: document.querySelector("#project-count"),
   selectAnalyzedProjects: document.querySelector("#select-analyzed-projects"),
   clearProjectSelection: document.querySelector("#clear-project-selection"),
@@ -485,17 +487,21 @@ async function loadTrustCenter() {
 function renderProjectList() {
   const projects = state.projects || [];
   const query = normalizeSearch(state.projectQuery);
-  const filtered = query
-    ? projects.filter((project) => projectSearchText(project).includes(query))
-    : projects;
+  const filter = state.projectFilter || "all";
+  const filtered = projects.filter((project) => {
+    const matchesQuery = !query || projectSearchText(project).includes(query);
+    return matchesQuery && projectFilterMatches(project, filter);
+  });
+  renderProjectFilters(projects);
   const selectedCount = state.selectedProjectIds.size;
   const batchVisible = Boolean(els.projectBatchDetails?.open);
   els.projectList?.classList.toggle("is-batch-visible", batchVisible);
 
   if (els.projectCount) {
+    const filterText = projectFilterLabel(filter);
     els.projectCount.textContent = projects.length
-      ? query
-        ? `筛选出 ${filtered.length} / ${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}`
+      ? query || filter !== "all"
+        ? `${filterText}：${filtered.length} / ${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}`
         : `${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}`
       : "暂无项目";
   }
@@ -506,7 +512,7 @@ function renderProjectList() {
     return;
   }
   if (!filtered.length) {
-    els.projectList.innerHTML = '<p class="status">没有匹配的项目。</p>';
+    els.projectList.innerHTML = '<p class="status">没有匹配的项目，试试切换筛选或搜索词。</p>';
     updateProjectBatchControls(filtered);
     return;
   }
@@ -548,6 +554,47 @@ function renderProjectList() {
   els.projectList.querySelectorAll(".project-open").forEach((button) => {
     button.addEventListener("click", () => openProject(button.dataset.projectId));
   });
+}
+
+function renderProjectFilters(projects = []) {
+  if (!els.projectFilters) {
+    return;
+  }
+  const counts = projects.reduce(
+    (acc, project) => {
+      acc.all += 1;
+      const bucket = project.readiness_bucket || "normal";
+      if (bucket in acc) {
+        acc[bucket] += 1;
+      }
+      return acc;
+    },
+    { all: 0, needs_action: 0, running: 0, deliverable: 0 },
+  );
+  els.projectFilters.querySelectorAll("[data-project-filter]").forEach((button) => {
+    const filter = button.dataset.projectFilter || "all";
+    const active = filter === (state.projectFilter || "all");
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.textContent = `${projectFilterLabel(filter)} ${counts[filter] ?? 0}`;
+  });
+}
+
+function projectFilterMatches(project = {}, filter = "all") {
+  if (filter === "all") {
+    return true;
+  }
+  return (project.readiness_bucket || "normal") === filter;
+}
+
+function projectFilterLabel(filter = "all") {
+  const labels = {
+    all: "全部",
+    needs_action: "需处理",
+    running: "运行中",
+    deliverable: "可交付",
+  };
+  return labels[filter] || labels.all;
 }
 
 function renderProjectDeliveryBadge(project = {}) {
@@ -616,7 +663,10 @@ function updateProjectBatchControls(filteredProjects = null) {
 function currentFilteredProjects() {
   const projects = state.projects || [];
   const query = normalizeSearch(state.projectQuery);
-  return query ? projects.filter((project) => projectSearchText(project).includes(query)) : projects;
+  return projects.filter((project) => {
+    const matchesQuery = !query || projectSearchText(project).includes(query);
+    return matchesQuery && projectFilterMatches(project, state.projectFilter || "all");
+  });
 }
 
 async function startSelectedProjectsBatch() {
@@ -684,6 +734,7 @@ function projectSearchText(project = {}) {
     project.readiness_label,
     project.readiness_summary,
     project.readiness_action?.label,
+    projectFilterLabel(project.readiness_bucket),
     project.delivery_package_summary,
     project.delivery_package_sha256,
     project.last_failure_diagnosis?.label,
@@ -2940,6 +2991,15 @@ if (els.projectSearch) {
     renderProjectList();
   });
 }
+
+els.projectFilters?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-project-filter]");
+  if (!button) {
+    return;
+  }
+  state.projectFilter = button.dataset.projectFilter || "all";
+  renderProjectList();
+});
 
 els.projectBatchDetails?.addEventListener("toggle", () => {
   renderProjectList();

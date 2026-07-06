@@ -665,7 +665,26 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_action"] = readiness.get("primary_action", {})
     project["readiness_required_passed"] = readiness.get("required_passed", 0)
     project["readiness_required_total"] = readiness.get("required_total", 0)
+    project["readiness_bucket"] = project_readiness_bucket(project)
     return project
+
+
+def project_readiness_bucket(project: dict) -> str:
+    auto_status = str(project.get("auto_workflow_status") or "")
+    if auto_status in {"queued", "running", "between_steps", "cancel_requested"}:
+        return "running"
+    if project.get("delivery_package_status") == "success" or project.get("delivery_package_sha256"):
+        return "deliverable"
+    action = project.get("readiness_action") if isinstance(project.get("readiness_action"), dict) else {}
+    if project.get("readiness_status") == "failed" or action.get("id") in {"focus_llm", "focus_upload", "start_auto", "resume_auto"}:
+        return "needs_action"
+    try:
+        score = int(float(project.get("readiness_score") or 0))
+    except (TypeError, ValueError):
+        score = 0
+    if project.get("readiness_status") == "success" or score >= 90:
+        return "deliverable"
+    return "needs_action" if project.get("readiness_status") == "warning" else "normal"
 
 
 def summarize_analysis_for_metadata(analysis: dict) -> dict:

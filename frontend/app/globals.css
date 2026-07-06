@@ -657,6 +657,7 @@ p {
 .artifact-open:focus-visible,
 .job-open:focus-visible,
 .select-problem-button:focus-visible,
+.project-filter:focus-visible,
 .module-tab:focus-visible,
 .drop-zone:focus-within,
 .text-input:focus-visible,
@@ -797,6 +798,36 @@ p {
 .project-search .text-input {
   min-height: 38px;
   padding-left: 12px;
+}
+
+.project-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.project-filter {
+  min-height: 30px;
+  border: 1px solid rgba(185, 200, 216, 0.72);
+  border-radius: 7px;
+  background: linear-gradient(145deg, #ffffff, #f5f8fb);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+  box-shadow: var(--shadow-inset);
+}
+
+.project-filter:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.project-filter.is-active {
+  border-color: color-mix(in oklch, var(--primary) 42%, transparent);
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .project-count {
@@ -4436,6 +4467,7 @@ ul.problem-meta {
 :root[data-theme="dark"] .failure-diagnosis,
 :root[data-theme="dark"] .ghost,
 :root[data-theme="dark"] .project-button,
+:root[data-theme="dark"] .project-filter,
 :root[data-theme="dark"] .project-select-input,
 :root[data-theme="dark"] .status-card,
 :root[data-theme="dark"] .readiness-score,
@@ -4553,6 +4585,7 @@ ul.problem-meta {
 :root[data-theme="dark"] .drop-zone:focus-within,
 :root[data-theme="dark"] .ghost:hover,
 :root[data-theme="dark"] .project-button:hover,
+:root[data-theme="dark"] .project-filter:hover,
 :root[data-theme="dark"] .artifact-link:hover,
 :root[data-theme="dark"] .module-tab:hover {
   background:
@@ -4561,6 +4594,7 @@ ul.problem-meta {
 }
 
 :root[data-theme="dark"] .project-button.is-active,
+:root[data-theme="dark"] .project-filter.is-active,
 :root[data-theme="dark"] .problem-card.selected {
   background:
     linear-gradient(90deg, rgba(112, 164, 255, 0.14), rgba(71, 210, 190, 0.08)),
