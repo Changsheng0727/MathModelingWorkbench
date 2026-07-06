@@ -3273,7 +3273,7 @@ async function selectProblem(problemId) {
     if (els.problemSelectionStatus) {
       els.problemSelectionStatus.textContent = `已选择 ${problemId} 题，后续一键流程会以该题为准。`;
     }
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
     return true;
   } catch (error) {
     if (els.problemSelectionStatus) {
@@ -4120,7 +4120,7 @@ async function runGuideAction(action, options = {}) {
     }
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/analyze`, { method: "POST" });
     renderProject(payload.project);
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
     activateModuleTab("problems", { focus: true });
     return true;
   }
@@ -4705,7 +4705,7 @@ els.paperOptionsForm.addEventListener("submit", async (event) => {
     els.paperOptionsStatus.textContent = targetPages
       ? `已保存：正文不少于 ${targetPages} 页。`
       : "已保存：暂不约束正文页数。";
-    await loadProjects();
+    await syncOverviewAfterAction(result);
   } catch (error) {
     els.paperOptionsStatus.textContent = `保存失败：${error.message}`;
   } finally {
@@ -4745,7 +4745,7 @@ els.modelAssistantForm.addEventListener("submit", async (event) => {
     els.modelAssistantStatus.innerHTML = report
       ? `模型辅助方案已生成：<a href="/api/projects/${encodeURIComponent(projectId)}/download/${encodeRelativePath(report)}">查看报告</a>。`
       : "模型辅助方案已生成，可在生成文件中查看。";
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     els.modelAssistantStatus.textContent = `模型辅助失败：${error.message}`;
   } finally {
@@ -4805,7 +4805,7 @@ els.runModeling.addEventListener("click", async () => {
     els.modelingStatus.textContent = payload.modeling.success
       ? `建模完成：生成 ${tables} 个结果表、${figures} 张图。`
       : "建模失败，请查看日志。";
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     els.modelingStatus.textContent = `建模失败：${error.message}`;
   } finally {
@@ -4831,7 +4831,7 @@ els.runSpecialized.addEventListener("click", async () => {
     els.specializedStatus.textContent = payload.specialized.success
       ? `专项建模完成：${models} 个模型、${tables} 个结果表、${figures} 张图。`
       : "专项建模失败，请查看日志。";
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     els.specializedStatus.textContent = `专项建模失败：${error.message}`;
   } finally {
@@ -5517,7 +5517,7 @@ els.generateCodeGraph.addEventListener("click", async () => {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/codegraph/report`, { method: "POST" });
     renderProject(payload.project);
     els.codeGraphStatus.textContent = "代码图谱已生成，可在生成文件中查看。";
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     els.codeGraphStatus.textContent = `代码图谱生成失败：${error.message}`;
   } finally {
@@ -5630,7 +5630,7 @@ els.runLlmAnalysis.addEventListener("click", async () => {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/analyze`, { method: "POST" });
     renderProject(payload.project);
     els.llmAnalysisStatus.textContent = "大模型分析完成，可查看分析报告。";
-    await loadProjects();
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     els.llmAnalysisStatus.textContent = `大模型分析失败：${error.message}`;
   } finally {

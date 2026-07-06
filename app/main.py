@@ -561,7 +561,7 @@ def write_project_code_graph_report(project_id: str) -> dict:
     artifacts = write_code_graph_report(root)
     meta.setdefault("artifacts", {}).update(artifacts)
     save_json(root / "metadata.json", meta)
-    return {"artifacts": artifacts, "project": project_detail(project_id)}
+    return {"artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.get("/api/settings/llm")
@@ -1442,7 +1442,7 @@ async def reanalyze_project(project_id: str) -> dict:
         save_json(root / "metadata.json", meta)
         raise HTTPException(status_code=500, detail=meta["analysis_error"]) from exc
     save_json(root / "metadata.json", meta)
-    return {"project": project_detail(project_id)}
+    return {"project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.put("/api/projects/{project_id}/paper/options")
@@ -1464,7 +1464,7 @@ def update_paper_options(project_id: str, payload: PaperOptionsPayload) -> dict:
         "target_body_pages": target_pages,
     }
     save_json(root / "metadata.json", meta)
-    return {"paper_options": meta["paper_options"], "project": project_detail(project_id)}
+    return {"paper_options": meta["paper_options"], "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.put("/api/projects/{project_id}/problem/selection")
@@ -1494,7 +1494,7 @@ def select_project_problem(project_id: str, payload: ProblemSelectionPayload) ->
     artifacts = write_artifacts_without_latex(root, analysis)
     attach_artifacts_safely(meta, artifacts)
     save_json(root / "metadata.json", meta)
-    return {"selected_problem": final_problem, "project": project_detail(project_id)}
+    return {"selected_problem": final_problem, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 def write_artifacts_without_latex(root: Path, analysis: dict) -> dict[str, str]:
@@ -1582,7 +1582,7 @@ def run_model(project_id: str) -> dict:
         meta["artifacts"]["baseline_summary"] = result["outputs"]["summary_markdown"]
     meta["modeling_status"] = "success" if result["success"] else "failed"
     save_json(root / "metadata.json", meta)
-    return {"modeling": result, "project": project_detail(project_id)}
+    return {"modeling": result, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/specialized/generate")
@@ -1630,7 +1630,7 @@ def run_specialized(project_id: str) -> dict:
         meta["artifacts"]["specialized_summary"] = result["outputs"]["summary_markdown"]
     meta["specialized_status"] = "success" if result["success"] else "failed"
     save_json(root / "metadata.json", meta)
-    return {"specialized": result, "project": project_detail(project_id)}
+    return {"specialized": result, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/paper/fill")
@@ -2244,7 +2244,7 @@ def run_project_llm_analysis(project_id: str) -> dict:
     attach_artifacts_safely(meta, artifacts)
     meta["llm_analysis_status"] = "success"
     save_json(root / "metadata.json", meta)
-    return {"artifacts": artifacts, "project": project_detail(project_id)}
+    return {"artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/llm/model-assistant")
@@ -2284,7 +2284,7 @@ def run_project_model_assistant(project_id: str, payload: ModelAssistantPayload)
     meta["model_assistant_status"] = progress.get("status") or "success"
     meta["model_assistant_progress"] = progress
     save_json(root / "metadata.json", meta)
-    return {"artifacts": artifacts, "project": project_detail(project_id)}
+    return {"artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.get("/api/projects/{project_id}/download/{relative_path:path}")
