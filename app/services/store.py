@@ -189,6 +189,7 @@ def project_timestamp(path: Path, fallback: Path) -> str:
 def project_metadata_error_stub(root: Path, exc: Exception) -> dict[str, Any]:
     project_id, name = project_identity_from_folder(root.name)
     updated_at = project_timestamp(root / "metadata.json", root)
+    error = f"{type(exc).__name__}: {exc}"
     return {
         "id": project_id,
         "name": name,
@@ -197,7 +198,11 @@ def project_metadata_error_stub(root: Path, exc: Exception) -> dict[str, Any]:
         "project_updated_at": updated_at,
         "root": str(root),
         "status": "metadata_error",
-        "metadata_error": f"{type(exc).__name__}: {exc}",
+        "metadata_error": error,
+        "artifact_summary": {"total": 0, "available": 0, "missing": 0, "unsafe": 0},
+        "artifact_health_status": "error",
+        "artifact_health_label": "元数据异常",
+        "artifact_health_summary": f"metadata.json 无法读取：{error}",
     }
 
 

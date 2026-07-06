@@ -694,7 +694,7 @@ function renderProjectArtifactBadge(project = {}) {
 function hasArtifactIssue(project = {}) {
   const status = project.artifact_health_status || "";
   const summary = project.artifact_summary || {};
-  return status === "warning" || status === "error" || Number(summary.missing || 0) > 0 || Number(summary.unsafe || 0) > 0;
+  return Boolean(project.metadata_error) || status === "warning" || status === "error" || Number(summary.missing || 0) > 0 || Number(summary.unsafe || 0) > 0;
 }
 
 function renderProjectReadinessBadge(project = {}) {

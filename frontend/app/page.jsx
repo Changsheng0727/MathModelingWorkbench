@@ -104,7 +104,7 @@ export default function WorkbenchPage() {
             </div>
             <label className="project-search" htmlFor="project-search">
               <span className="sr-only">搜索项目</span>
-              <input id="project-search" className="text-input" type="search" placeholder="搜索项目名、状态、文件异常或时间" autoComplete="off" />
+              <input id="project-search" className="text-input" type="search" placeholder="搜索项目名、状态、文件/元数据异常或时间" autoComplete="off" />
             </label>
             <div id="project-filters" className="project-filters" role="group" aria-label="项目筛选">
               <button className="project-filter is-active" type="button" data-project-filter="all">全部</button>
