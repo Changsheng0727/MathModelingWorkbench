@@ -535,6 +535,7 @@ function renderProjectList() {
           ? `<span class="project-badge project-badge-error" title="${escapeHtml(diagnosis.suggested_action || diagnosis.repair_focus || diagnosis.evidence || "")}">${escapeHtml(diagnosis.label || diagnosis.category)}</span>`
           : "";
         const status = project.status || "-";
+        const updatedAt = project.project_updated_at || project.updated_at || project.created_at;
         const checked = state.selectedProjectIds.has(project.id) ? " checked" : "";
         const disabled = project.analysis_available ? "" : " disabled";
         return `
@@ -545,7 +546,7 @@ function renderProjectList() {
           </label>
           <button class="project-button project-open${active}" type="button" data-project-id="${escapeHtml(project.id)}">
             <span class="project-name">${escapeHtml(project.name)}</span>
-            <span class="project-meta">${escapeHtml(formatProjectTime(project.created_at))} · ${escapeHtml(status)}</span>
+            <span class="project-meta">更新 ${escapeHtml(formatProjectTime(updatedAt))} · ${escapeHtml(status)}</span>
             <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
             ${nextStep}
           </button>
@@ -747,6 +748,7 @@ function projectSearchText(project = {}) {
     project.name,
     project.original_name,
     project.created_at,
+    project.project_updated_at,
     project.status,
     project.auto_workflow_status,
     project.performance_health_label,

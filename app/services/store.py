@@ -60,17 +60,30 @@ def load_json(path: Path) -> Any:
         raise
 
 
+def attach_project_runtime_fields(meta: dict[str, Any], root: Path, meta_path: Path | None = None) -> dict[str, Any]:
+    meta = dict(meta)
+    meta["project_updated_at"] = project_timestamp(meta_path or root / "metadata.json", root) or meta.get("created_at", "")
+    return meta
+
+
+def project_timestamp(path: Path, fallback: Path) -> str:
+    for target in [path, fallback]:
+        try:
+            return datetime.fromtimestamp(target.stat().st_mtime).isoformat(timespec="seconds")
+        except OSError:
+            continue
+    return ""
+
+
 def project_metadata_error_stub(root: Path, exc: Exception) -> dict[str, Any]:
     project_id, name = project_identity_from_folder(root.name)
-    try:
-        created_at = datetime.fromtimestamp(root.stat().st_mtime).isoformat(timespec="seconds")
-    except OSError:
-        created_at = ""
+    updated_at = project_timestamp(root / "metadata.json", root)
     return {
         "id": project_id,
         "name": name,
         "original_name": root.name,
-        "created_at": created_at,
+        "created_at": updated_at,
+        "project_updated_at": updated_at,
         "root": str(root),
         "status": "metadata_error",
         "metadata_error": f"{type(exc).__name__}: {exc}",
@@ -99,7 +112,8 @@ def list_projects() -> list[dict[str, Any]]:
             analysis_path = root / "artifacts" / "analysis.json"
             if analysis_path.exists():
                 meta["analysis_available"] = True
-            projects.append(meta)
+            projects.append(attach_project_runtime_fields(meta, root, meta_path))
+    projects.sort(key=lambda item: item.get("project_updated_at") or item.get("created_at") or "", reverse=True)
     return projects
 
 

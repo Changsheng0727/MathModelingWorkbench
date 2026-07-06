@@ -75,6 +75,7 @@ from app.services.reviewer import review_paper
 from app.services.runner import compile_latex
 from app.services.specialized import generate_specialized_script, run_specialized_script
 from app.services.store import (
+    attach_project_runtime_fields,
     create_project,
     list_projects,
     load_json,
@@ -958,6 +959,7 @@ def project_detail(project_id: str) -> dict:
             raise ValueError("metadata.json must contain a JSON object")
     except Exception as exc:
         meta = project_metadata_error_stub(root, exc)
+    meta = attach_project_runtime_fields(meta, root)
     analysis_path = root / "artifacts" / "analysis.json"
     analysis = None
     if analysis_path.exists() and not meta.get("metadata_error"):
