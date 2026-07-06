@@ -2422,7 +2422,7 @@ function renderRepairCampaignPanel(latest = {}) {
         <p>${escapeHtml(latestText)}</p>
       </div>
       <div class="trust-campaign-actions">
-        <button class="trust-campaign-button" type="button" data-trust-action="repair_campaign">运行修复行动</button>
+        ${renderTrustCommandButton({ id: "repair_campaign", label: "运行修复行动" }, "trust-campaign-button")}
       </div>
     </section>
   `;
@@ -2442,7 +2442,7 @@ function renderTrustExportPanel(latest = {}) {
         <p>${escapeHtml(latestText)}</p>
       </div>
       <div class="trust-export-actions">
-        <button class="trust-export-button" type="button" data-trust-action="export_audit">导出审计包</button>
+        ${renderTrustCommandButton({ id: "export_audit", label: "导出审计包" }, "trust-export-button")}
         ${hasLatest ? `<a class="trust-export-link" href="${escapeHtml(latest.download_url)}" target="_blank" rel="noreferrer">下载最新包</a>` : ""}
       </div>
     </section>
@@ -2496,7 +2496,7 @@ function renderTrustAction(action = {}) {
   const command = guideActionId(action.id || "");
   const buttonLabel = action.button_label || action.buttonLabel || guideActionButtonLabel(action.id || command) || "执行";
   const actionButton = ["repair_campaign", "export_audit"].includes(command)
-    ? `<button class="trust-action-button" type="button" data-trust-action="${escapeHtml(command)}">${escapeHtml(buttonLabel)}</button>`
+    ? renderTrustCommandButton({ ...action, id: action.id || command, label: buttonLabel }, "trust-action-button")
     : renderGuideActionButton(action, "trust-action-button");
   return `
     <article>
@@ -2507,6 +2507,23 @@ function renderTrustAction(action = {}) {
       ${actionButton}
     </article>
   `;
+}
+
+function renderTrustCommandButton(action = {}, className = "trust-action-button") {
+  const actionId = String(action.id || "");
+  const command = guideActionId(actionId);
+  if (!["repair_campaign", "export_audit"].includes(command)) {
+    return "";
+  }
+  const buttonLabel = action.button_label || action.buttonLabel || guideActionButtonLabel(actionId || command) || action.label || "执行";
+  const progress = action.progress || guideActionProgress(actionId || command);
+  const success = action.success || guideActionSuccess(actionId || command);
+  const outcome = action.outcome || guideActionOutcome(actionId || command);
+  const titleText = [action.detail, outcome ? `点击后：${outcome}` : ""].filter(Boolean).join("；");
+  const titleAttr = titleText ? ` title="${escapeHtml(titleText)}"` : "";
+  const progressAttr = progress ? ` data-trust-progress="${escapeHtml(progress)}"` : "";
+  const successAttr = success ? ` data-trust-success="${escapeHtml(success)}"` : "";
+  return `<button class="${escapeHtml(className)}" type="button" data-trust-action="${escapeHtml(command)}" data-trust-action-id="${escapeHtml(actionId || command)}"${progressAttr}${successAttr}${titleAttr}>${escapeHtml(buttonLabel)}</button>`;
 }
 
 function renderAutoJobCenter(snapshot = {}, deliverySnapshot = {}) {
@@ -3614,10 +3631,16 @@ els.trustCenter?.addEventListener("click", async (event) => {
   if (!["export_audit", "repair_campaign"].includes(command)) {
     return;
   }
+  const actionId = button.dataset.trustActionId || command;
+  const progress = button.dataset.trustProgress || guideActionProgress(actionId || command);
+  const success = button.dataset.trustSuccess || guideActionSuccess(actionId || command);
+  const setTrustStatus = (message) => {
+    if (message && els.trustCenterStatus) {
+      els.trustCenterStatus.textContent = message;
+    }
+  };
   button.disabled = true;
-  if (els.trustCenterStatus) {
-    els.trustCenterStatus.textContent = command === "repair_campaign" ? "正在运行修复行动。" : "正在导出信任审计包。";
-  }
+  setTrustStatus(progress);
   try {
     if (command === "repair_campaign") {
       const payload = await api("/api/product/trust/repair-campaign/start", {
@@ -3636,9 +3659,7 @@ els.trustCenter?.addEventListener("click", async (event) => {
         renderGrowthCenter(state.growthMetrics);
       }
       const campaign = payload.repair_campaign || {};
-      if (els.trustCenterStatus) {
-        els.trustCenterStatus.textContent = campaign.summary || "修复行动已完成。";
-      }
+      setTrustStatus(campaign.summary || success || "修复行动已完成。");
       showToast("修复行动已完成", "success");
       return;
     }
@@ -3647,19 +3668,16 @@ els.trustCenter?.addEventListener("click", async (event) => {
     state.trustExports = payload.trust_exports || state.trustExports || null;
     renderTrustCenter(state.trustMetrics, state.trustExports);
     const report = payload.trust_report || {};
-    if (els.trustCenterStatus) {
-      const sizeText = report.size ? ` · ${report.size}` : "";
-      els.trustCenterStatus.textContent = `信任审计包已导出：${report.filename || report.id || "压缩包"}${sizeText}`;
-    }
+    const sizeText = report.size ? ` · ${report.size}` : "";
+    setTrustStatus(report.filename || report.id ? `信任审计包已导出：${report.filename || report.id}${sizeText}` : success);
     if (report.download_url) {
       window.open(report.download_url, "_blank", "noopener");
     }
     showToast("信任审计包已就绪", "success");
   } catch (error) {
-    if (els.trustCenterStatus) {
-      els.trustCenterStatus.textContent = `信任审计包导出失败：${error.message}`;
-    }
-    showToast(`信任审计包导出失败：${error.message}`, "error");
+    const label = command === "repair_campaign" ? "修复行动失败" : "信任审计包导出失败";
+    setTrustStatus(`${label}：${error.message}`);
+    showToast(`${label}：${error.message}`, "error");
   } finally {
     button.disabled = false;
   }
