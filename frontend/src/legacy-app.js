@@ -856,10 +856,17 @@ function renderProjectQuickAction(project = {}) {
   if (!project.id || !actionId || !label) {
     return "";
   }
-  const title = action.detail || project.readiness_action_detail || project.readiness_summary || label;
+  const hint = project.readiness_action_hint || action.hint || action.detail || project.readiness_action_detail || project.readiness_summary || "";
+  const title = hint || label;
   const outputPath = action.path || project.primary_output_path || project.artifact_summary?.latest_path || "";
   const pathAttribute = outputPath ? ` data-project-path="${escapeHtml(outputPath)}"` : "";
-  return `<button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}"${pathAttribute} title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+  const ariaLabel = `${project.name || project.id}：${label}${hint ? `。${hint}` : ""}`;
+  return `
+    <span class="project-action-cell">
+      <button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}"${pathAttribute} title="${escapeHtml(title)}" aria-label="${escapeHtml(ariaLabel)}">${escapeHtml(label)}</button>
+      ${hint ? `<span class="project-action-hint">${escapeHtml(hint)}</span>` : ""}
+    </span>
+  `;
 }
 
 function pruneSelectedProjects() {
@@ -1000,6 +1007,7 @@ function projectSearchText(project = {}) {
     project.readiness_action_id,
     project.readiness_action_label,
     project.readiness_action_detail,
+    project.readiness_action_hint,
     project.readiness_required_label,
     project.readiness_bucket_label || projectFilterLabel(project.readiness_bucket),
     project.metadata_error,

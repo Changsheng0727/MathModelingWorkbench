@@ -689,6 +689,7 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_action_id"] = action.get("id", "")
     project["readiness_action_label"] = action.get("label", "")
     project["readiness_action_detail"] = action.get("detail", "")
+    project["readiness_action_hint"] = project_readiness_action_hint(action, project)
     next_step = readiness.get("next_step", {})
     next_step = next_step if isinstance(next_step, dict) else {}
     project["readiness_next_step"] = next_step
@@ -791,6 +792,26 @@ def project_readiness_gap_label(gap_items: list[dict], warning_todos: list[dict]
         suffix = "等" if len(warning_todos) > 3 else ""
         return f"建议处理 {len(warning_todos)} 项" + (f"：{labels}{suffix}" if labels else "")
     return ""
+
+
+def project_readiness_action_hint(action: dict, project: dict) -> str:
+    action_id = str(action.get("id") or project.get("readiness_action_id") or "")
+    detail = str(action.get("detail") or project.get("readiness_action_detail") or "").strip()
+    hints = {
+        "focus_llm": "保存接口后才能调用大模型。",
+        "focus_upload": "上传赛题包并完成材料分析。",
+        "open_problems": "确认最终题号再开始求解。",
+        "start_auto": "启动代码求解、图表生成和论文回填。",
+        "watch_auto": "查看后台自动流程进度。",
+        "resume_auto": "从失败或中断处继续生成。",
+        "open_outputs": "查看论文、日志和结果文件。",
+        "compile": "生成或修复 PDF 论文。",
+        "refresh_delivery": "检查论文、结果和支撑材料。",
+        "build_delivery_package": "生成最终提交压缩包。",
+        "open_project_root": "打开本地项目文件夹。",
+        "open_primary_output": "打开最新输出文件位置。",
+    }
+    return hints.get(action_id) or detail or str(project.get("readiness_summary") or "").strip()
 
 
 def project_attention_rank(project: dict) -> int:

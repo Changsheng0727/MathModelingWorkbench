@@ -980,6 +980,25 @@ p {
   opacity: 0.62;
 }
 
+.project-action-cell {
+  display: grid;
+  align-self: center;
+  justify-items: center;
+  gap: 3px;
+  max-width: 118px;
+}
+
+.project-action-hint {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 .project-name {
   display: block;
   color: var(--text);
@@ -5479,8 +5498,13 @@ ul.problem-meta {
     grid-template-columns: 28px minmax(0, 1fr);
   }
 
-  .project-row.is-batch-visible .project-quick-action {
+  .project-row.is-batch-visible .project-action-cell {
     grid-column: 2;
+  }
+
+  .project-action-cell {
+    width: 100%;
+    max-width: none;
   }
 
   .project-quick-action {
