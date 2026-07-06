@@ -306,8 +306,6 @@ async function checkHealth() {
     els.health.dataset.status = "connected";
     const startupTasks = [
       ["环境状态", loadEnvironments],
-      ["大模型设置", loadLlmSettings],
-      ["论文模板", loadTemplates],
     ];
     const results = await Promise.allSettled(startupTasks.map(([, task]) => task()));
     const failed = results
@@ -449,19 +447,6 @@ els.environment?.addEventListener("click", async (event) => {
     showToast(`环境刷新失败：${error.message}`, "error");
   }
 });
-
-async function loadLlmSettings() {
-  const settings = await api("/api/settings/llm");
-  renderLlmSettingsResponse(settings);
-  renderExperienceGuide(state.experience || {});
-}
-
-async function loadTemplates() {
-  const payload = await api("/api/templates");
-  state.templates = payload.templates || [];
-  const selected = state.currentProject?.metadata?.paper_options?.template_id || "builtin-default";
-  renderTemplateSelect(selected);
-}
 
 function renderTemplateSelect(selectedId = "builtin-default") {
   if (!els.templateSelect) {
@@ -680,6 +665,9 @@ function applyProductOverviewPayload(payload = {}) {
   if (Array.isArray(payload.templates)) {
     state.templates = payload.templates;
     renderTemplateSelect(state.currentProject?.metadata?.paper_options?.template_id || els.templateSelect?.value || "builtin-default");
+  }
+  if (payload.llm_settings && !state.llmSettings) {
+    renderLlmSettings(payload.llm_settings);
   }
   renderExperienceGuide(state.experience);
   if (hasProjectList || !state.projects?.length) {
@@ -4902,7 +4890,8 @@ async function waitForAutoWorkflowCompletion(projectId) {
     }
     if (!isAutoWorkflowActive(latest.status, latest.progress || {})) {
       try {
-        latest = await api(`${progressPath}?include_overview=true`);
+        latest = await api(`${progressPath}?include_overview=true&include_jobs=true`);
+        applyAutoJobsPayload(latest);
         renderAutoWorkflowProgress(latest.progress);
         updateAutoWorkflowButtons(latest.status, latest.progress || {});
       } catch {

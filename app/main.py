@@ -396,6 +396,7 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
         "trust_exports": list_trust_report_exports(),
         "repair_campaigns": list_repair_campaigns(),
         "templates": list_templates(),
+        "llm_settings": llm_settings,
     }
 
 
@@ -2190,7 +2191,7 @@ def project_progress(project_id: str, include_overview: bool = False, include_jo
     if include_overview:
         response["project"] = project_detail(project_id)
         response["overview"] = build_product_overview_response()
-    elif include_jobs:
+    if include_jobs:
         response.update(build_auto_jobs_response())
     return response
 
