@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from app.services.analyzer import apply_problem_selection, build_analysis
 from app.services.action_catalog import ACTION_ALIASES, ACTION_BUTTONS, ACTION_OUTCOMES, ACTION_PROGRESS, ACTION_SUCCESS, action_button, action_outcome, action_progress, action_success
-from app.services.analysis_progress import AnalysisProgress, load_analysis_progress
+from app.services.analysis_progress import AnalysisProgress, FOLDER_ANALYSIS_STEPS, load_analysis_progress
 from app.services.auto_workflow import diagnose_auto_workflow_exception, request_auto_workflow_cancel, run_auto_workflow
 from app.services.auto_workflow_jobs import (
     cancel_queued_auto_workflow_job,
@@ -1235,7 +1235,7 @@ async def create_from_folder(
 
     meta = create_project(folder_name or "赛题文件夹")
     root = Path(meta["root"])
-    progress = AnalysisProgress(root, meta, progress_id)
+    progress = AnalysisProgress(root, meta, progress_id, total_steps=FOLDER_ANALYSIS_STEPS)
     progress.start_step("upload", "上传赛题文件夹", f"正在接收文件夹中的 {len(files)} 个文件。")
     raw_dir = root / "raw"
     upload_manifest = []

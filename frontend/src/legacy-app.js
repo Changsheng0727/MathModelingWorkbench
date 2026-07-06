@@ -24,8 +24,12 @@ const state = {
   actionSuccessCatalog: {},
   actionButtonCatalog: {},
   uploadProgressStop: null,
+  uploadProgressTotalSteps: 8,
   projectRestoreTried: false,
 };
+
+const UPLOAD_FILE_ANALYSIS_STEPS = 8;
+const UPLOAD_FOLDER_ANALYSIS_STEPS = 7;
 
 const els = {
   form: document.querySelector("#upload-form"),
@@ -1485,7 +1489,7 @@ function renderProject(detail) {
     renderEmptyState(metadata);
     els.empty.classList.remove("hidden");
     els.analysisView.classList.add("hidden");
-    renderProgressPanel(els.uploadProgress, metadata.analysis_progress, 7);
+    renderProgressPanel(els.uploadProgress, metadata.analysis_progress, UPLOAD_FILE_ANALYSIS_STEPS);
     return;
   }
   els.empty.classList.add("hidden");
@@ -1511,7 +1515,7 @@ function renderProject(detail) {
   updateAutoWorkflowButtons(metadata.auto_workflow_status, metadata.auto_workflow_progress || {}, metadata);
   renderAutoWorkflowPreflight(metadata);
   renderModelAssistantProgress(metadata.model_assistant_progress);
-  renderProgressPanel(els.uploadProgress, metadata.analysis_progress, 7);
+  renderProgressPanel(els.uploadProgress, metadata.analysis_progress, UPLOAD_FILE_ANALYSIS_STEPS);
 }
 
 function syncTopbarProjectAction(metadata = {}) {
@@ -3657,6 +3661,8 @@ els.form.addEventListener("submit", async (event) => {
   } else {
     formData.append("file", file);
   }
+  const uploadTotalSteps = folderFiles.length ? UPLOAD_FOLDER_ANALYSIS_STEPS : UPLOAD_FILE_ANALYSIS_STEPS;
+  state.uploadProgressTotalSteps = uploadTotalSteps;
   button.disabled = true;
   if (state.uploadProgressStop) {
     state.uploadProgressStop();
@@ -3673,10 +3679,10 @@ els.form.addEventListener("submit", async (event) => {
       },
       steps: [],
       completed_steps: 0,
-      total_steps: 7,
+      total_steps: uploadTotalSteps,
       percent: 3,
     },
-    7,
+    uploadTotalSteps,
   );
   state.uploadProgressStop = startUploadProgressPolling(progressId);
   els.status.textContent = folderFiles.length
@@ -3749,6 +3755,7 @@ async function refreshUploadProgress(progressId, { includeOverview = false } = {
   if (!progressId || !els.uploadProgress) {
     return false;
   }
+  const fallbackTotal = state.uploadProgressTotalSteps || UPLOAD_FILE_ANALYSIS_STEPS;
   try {
     const suffix = includeOverview ? "?include_overview=true" : "";
     const payload = await api(`/api/upload-analysis-progress/${encodeURIComponent(progressId)}${suffix}`);
@@ -3762,13 +3769,13 @@ async function refreshUploadProgress(progressId, { includeOverview = false } = {
     if (!Object.keys(progress).length) {
       return false;
     }
-    renderProgressPanel(els.uploadProgress, progress, 7);
+    renderProgressPanel(els.uploadProgress, progress, fallbackTotal);
     return ["success", "failed", "completed_with_warnings"].includes(progress.status);
   } catch (error) {
     renderProgressPanel(els.uploadProgress, {
       status: "warning",
       detail: `赛题分析进度暂不可用：${error.message}`,
-    }, 7);
+    }, fallbackTotal);
     return false;
   }
 }
