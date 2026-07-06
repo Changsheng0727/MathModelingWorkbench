@@ -1278,15 +1278,17 @@ async function startSelectedProjectsBatch() {
         state.selectedProjectIds.delete(job.project_id);
       }
     });
-    if (payload.auto_jobs) {
+    if (payload.overview) {
+      applyProductOverviewPayload(payload.overview);
+    } else if (payload.auto_jobs) {
       state.autoJobs = payload.auto_jobs;
       renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
     } else {
       await loadAutoJobs();
     }
-    await loadProjects();
-    await loadGrowthMetrics();
-    await loadTrustCenter();
+    if (!payload.overview) {
+      await loadProductOverview();
+    }
     const skipped = Array.isArray(batch.skipped) ? batch.skipped : [];
     const skippedText = skipped.length
       ? `，跳过 ${skipped.length} 个：${skipped.slice(0, 2).map((item) => item.reason || item.project_id).join("；")}${skipped.length > 2 ? "…" : ""}`
@@ -3984,18 +3986,20 @@ els.growthCenter?.addEventListener("click", async (event) => {
         body: JSON.stringify({ force: false, max_workers: Number(state.capacitySettings?.delivery_package_workers || 4) }),
       });
       const job = payload.delivery_batch_job || {};
-      if (payload.delivery_batch_jobs) {
+      if (payload.overview) {
+        applyProductOverviewPayload(payload.overview);
+      } else if (payload.delivery_batch_jobs) {
         state.deliveryBatchJobs = payload.delivery_batch_jobs;
       }
-      if (payload.growth) {
+      if (!payload.overview && payload.growth) {
         state.growthMetrics = payload.growth;
         renderGrowthCenter(state.growthMetrics);
-      } else {
+      } else if (!payload.overview) {
         await loadGrowthMetrics();
       }
-      await loadAutoJobs();
-      await loadProjects();
-      await loadTrustCenter();
+      if (!payload.overview) {
+        await loadProductOverview();
+      }
       if (els.growthCenterStatus) {
         els.growthCenterStatus.textContent = job.summary || "批量交付包任务已入队。";
       }

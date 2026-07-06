@@ -360,6 +360,10 @@ def product_trust_center() -> dict:
 
 @app.get("/api/product/overview")
 def product_overview(refresh: bool = False) -> dict:
+    return build_product_overview_response(refresh=refresh)
+
+
+def build_product_overview_response(*, refresh: bool = False) -> dict:
     llm_settings = get_llm_settings()
     projects_snapshot = build_project_list_response(refresh=refresh, llm_settings=llm_settings)
     auto_jobs = list_auto_workflow_jobs()
@@ -490,6 +494,7 @@ def start_batch_delivery_package_job(payload: BatchDeliveryPackagePayload | None
         "delivery_batch_jobs": delivery_batch_jobs,
         "delivery_batches": delivery_batches,
         "growth": growth,
+        "overview": build_product_overview_response(),
     }
 
 
@@ -1948,6 +1953,7 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
             "skipped": skipped,
         },
         "auto_jobs": list_auto_workflow_jobs(),
+        "overview": build_product_overview_response(),
     }
 
 
