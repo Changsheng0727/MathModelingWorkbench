@@ -679,6 +679,12 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
         analysis,
         llm_settings=llm_settings,
     )
+    project = attach_project_readiness_fields(project, readiness)
+    project.pop("root", None)
+    return project
+
+
+def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_status"] = readiness.get("status")
     project["readiness_label"] = readiness.get("label")
     project["readiness_score"] = readiness.get("score")
@@ -729,7 +735,6 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_bucket_label"] = project_readiness_bucket_label(project["readiness_bucket"])
     project["readiness_attention_rank"] = project_attention_rank(project)
     project["readiness_attention_reason"] = project_attention_reason(project)
-    project.pop("root", None)
     return project
 
 
@@ -1136,6 +1141,7 @@ def project_detail(project_id: str) -> dict:
         delivery=delivery,
         package=package,
     )
+    meta = attach_project_readiness_fields(meta, readiness)
     return {
         "metadata": {k: v for k, v in meta.items() if k != "root"},
         "analysis": analysis,

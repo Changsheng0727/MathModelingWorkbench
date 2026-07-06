@@ -1116,10 +1116,13 @@ function renderProject(detail) {
   const diagnosisText = lastDiagnosis.category ? ` · 诊断：${lastDiagnosis.label || lastDiagnosis.category}` : "";
   const artifactErrorCount = Array.isArray(metadata.artifact_load_errors) ? metadata.artifact_load_errors.length : 0;
   const artifactErrorText = artifactErrorCount ? ` · 文件异常 ${artifactErrorCount}项` : "";
-  els.projectStatus.textContent = metadata.auto_workflow_status
-    ? `${metadata.status || "-"} · 自动流程：${metadata.auto_workflow_status}${diagnosisText}${artifactErrorText}`
-    : `${metadata.status || "-"}${diagnosisText}${artifactErrorText}`;
-  els.projectStatus.title = renderArtifactLoadErrorTitle(metadata.artifact_load_errors);
+  const readinessText = metadata.readiness_gap_label || metadata.readiness_attention_reason || metadata.readiness_action_hint || "";
+  els.projectStatus.textContent = [
+    metadata.status || "-",
+    metadata.auto_workflow_status ? `自动流程：${statusLabel(metadata.auto_workflow_status)}` : "",
+    readinessText,
+  ].filter(Boolean).join(" · ") + diagnosisText + artifactErrorText;
+  els.projectStatus.title = [readinessText, renderArtifactLoadErrorTitle(metadata.artifact_load_errors)].filter(Boolean).join("\n");
   renderExperienceGuide(state.experience || {});
   if (!analysis) {
     renderEmptyState(metadata);
