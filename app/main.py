@@ -395,6 +395,7 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
         "trust": build_trust_center(projects_snapshot, auto_jobs, delivery_batch_jobs, delivery_batches),
         "trust_exports": list_trust_report_exports(),
         "repair_campaigns": list_repair_campaigns(),
+        "templates": list_templates(),
     }
 
 
@@ -645,7 +646,7 @@ async def upload_template(name: str | None = Form(None), file: UploadFile = File
         record = create_template(name, file.filename, await file.read())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"template": record, "templates": list_templates()}
+    return {"template": record, "templates": list_templates(), "overview": build_product_overview_response()}
 
 
 @app.delete("/api/templates/{template_id}")
@@ -656,7 +657,7 @@ def remove_template(template_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {**result, "templates": list_templates()}
+    return {**result, "templates": list_templates(), "overview": build_product_overview_response()}
 
 
 def attach_artifacts_safely(meta: dict, artifacts: dict[str, str]) -> None:

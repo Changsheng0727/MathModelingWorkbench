@@ -671,6 +671,10 @@ function applyProductOverviewPayload(payload = {}) {
   state.trustMetrics = payload.trust || state.trustMetrics || {};
   state.trustExports = payload.trust_exports || state.trustExports || null;
   state.repairCampaigns = payload.repair_campaigns || state.repairCampaigns || null;
+  if (Array.isArray(payload.templates)) {
+    state.templates = payload.templates;
+    renderTemplateSelect(state.currentProject?.metadata?.paper_options?.template_id || els.templateSelect?.value || "builtin-default");
+  }
   renderExperienceGuide(state.experience);
   if (hasProjectList || !state.projects?.length) {
     renderProjectList();
@@ -4583,6 +4587,7 @@ els.templateUploadForm.addEventListener("submit", async (event) => {
   els.templateStatus.textContent = "正在上传并解析模板或格式说明。";
   try {
     const payload = await api("/api/templates", { method: "POST", body: formData });
+    await syncOverviewAfterAction(payload);
     state.templates = payload.templates || [];
     renderTemplateSelect(payload.template?.id || "builtin-default");
     els.templateStatus.textContent =
@@ -4608,6 +4613,7 @@ els.deleteTemplate.addEventListener("click", async () => {
   els.templateStatus.textContent = "正在删除模板。";
   try {
     const payload = await api(`/api/templates/${encodeURIComponent(templateId)}`, { method: "DELETE" });
+    await syncOverviewAfterAction(payload);
     state.templates = payload.templates || [];
     renderTemplateSelect("builtin-default");
     els.templateStatus.textContent = "模板已删除。";
@@ -4819,10 +4825,7 @@ async function runAutoWorkflow(
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/${endpoint}`, { method: "POST" });
     renderProject(payload.project);
     const job = payload.auto_job || {};
-    if (!(await syncOverviewAfterAction(payload))) {
-      await loadAutoJobs();
-      await loadTrustCenter();
-    }
+    await syncOverviewAfterAction(payload);
     const workerText = job.max_workers ? `，任务池并发 ${job.max_workers}` : "";
     els.autoWorkflowStatus.textContent = job.existing
       ? `已有自动流程后台任务正在执行${workerText}，正在接管进度。`
@@ -5140,10 +5143,7 @@ if (els.cancelAutoWorkflow) {
       const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/cancel`, { method: "POST" });
       renderProject(payload.project);
       await refreshAutoProgress(projectId);
-      if (!(await syncOverviewAfterAction(payload))) {
-        await loadAutoJobs();
-        await loadTrustCenter();
-      }
+      await syncOverviewAfterAction(payload);
     } catch (error) {
       els.autoWorkflowStatus.textContent = `中断请求失败：${error.message}`;
       els.cancelAutoWorkflow.disabled = false;
@@ -5164,9 +5164,7 @@ async function refreshDiagnosticsForProject(projectId) {
     const repairText = repair.label ? `，修复中心：${repair.label}` : "";
     els.diagnosticsStatus.textContent = `诊断资产已刷新：${health.label || "已完成"}${scoreText}${repairText}。`;
     showToast("诊断与性能报告已刷新", "success");
-    if (!(await syncOverviewAfterAction(payload))) {
-      await loadTrustCenter();
-    }
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     els.diagnosticsStatus.textContent = `诊断刷新失败：${error.message}`;
     showToast(`诊断刷新失败：${error.message}`, "error");
@@ -5199,9 +5197,7 @@ async function refreshRepairCenterForProject(projectId) {
       els.repairCenterStatus.textContent = `修复中心已刷新：${label}。`;
     }
     showToast("自动修复中心已刷新", "success");
-    if (!(await syncOverviewAfterAction(payload))) {
-      await loadTrustCenter();
-    }
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     if (els.repairCenterStatus) {
       els.repairCenterStatus.textContent = `修复中心刷新失败：${error.message}`;
@@ -5240,11 +5236,7 @@ async function refreshDeliveryReadinessForProject(projectId) {
       els.deliveryReadinessStatus.textContent = `交付就绪已刷新：${label}${scoreText}。`;
     }
     showToast("交付就绪中心已刷新", "success");
-    if (payload.overview) {
-      applyProductOverviewPayload(payload.overview);
-    } else {
-      await loadProductOverview();
-    }
+    await syncOverviewAfterAction(payload);
   } catch (error) {
     if (els.deliveryReadinessStatus) {
       els.deliveryReadinessStatus.textContent = `交付就绪刷新失败：${error.message}`;
@@ -5383,11 +5375,7 @@ els.deliveryCenter?.addEventListener("click", async (event) => {
       const sizeText = Number.isFinite(Number(size)) ? `，大小 ${formatBytes(Number(size))}` : "";
       setDeliveryStatus(`正式交付包已生成${sizeText}。`);
       showToast("正式交付包已生成", "success");
-      if (payload.overview) {
-        applyProductOverviewPayload(payload.overview);
-      } else {
-        await loadProductOverview();
-      }
+      await syncOverviewAfterAction(payload);
       return;
     }
     if (command === "compile") {
