@@ -3727,7 +3727,7 @@ els.form.addEventListener("submit", async (event) => {
     els.status.textContent = "分析完成。";
     showToast("赛题分析完成", "success");
     renderProject(detail);
-    await loadProjects();
+    await syncOverviewAfterAction(detail);
     if (els.autoRunAfterUpload?.checked) {
       const rec = detail.analysis?.recommended_problem || {};
       if (rec.id) {

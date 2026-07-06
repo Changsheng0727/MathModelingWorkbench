@@ -1166,7 +1166,9 @@ async def create(file: UploadFile = File(...), progress_id: str | None = Form(No
         progress.fail(meta["error"])
         raise HTTPException(status_code=500, detail=meta["error"]) from exc
 
-    return project_detail(meta["id"])
+    detail = project_detail(meta["id"])
+    detail["overview"] = build_product_overview_response()
+    return detail
 
 
 @app.post("/api/projects/folder")
@@ -1228,7 +1230,9 @@ async def create_from_folder(
         progress.fail(meta["error"])
         raise HTTPException(status_code=500, detail=meta["error"]) from exc
 
-    return project_detail(meta["id"])
+    detail = project_detail(meta["id"])
+    detail["overview"] = build_product_overview_response()
+    return detail
 
 
 def analyze_project_materials(root: Path, meta: dict, progress: AnalysisProgress | None = None) -> None:
