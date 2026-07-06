@@ -1686,7 +1686,9 @@ function renderExperienceGuide(experience = {}) {
   const project = state.currentProject || {};
   const metadata = project.metadata || {};
   const analysis = project.analysis || null;
+  const readiness = project.readiness || {};
   const step = currentGuideStep(metadata, analysis, experience);
+  const roadmap = guideRoadmap(readiness, step);
   els.experienceGuide.dataset.status = step.status || "pending";
   if (els.guideTitle) {
     els.guideTitle.textContent = step.title;
@@ -1700,11 +1702,10 @@ function renderExperienceGuide(experience = {}) {
       .join("");
   }
   if (els.guideSteps) {
-    els.guideSteps.innerHTML = ["上传赛题", "确认选题", "自动求解", "导出交付"]
-      .map((label, index) => {
-        const number = index + 1;
-        const status = number < step.index ? "done" : number === step.index ? "current" : "todo";
-        return `<li data-status="${escapeHtml(status)}"><span>${number}</span><b>${escapeHtml(label)}</b></li>`;
+    els.guideSteps.innerHTML = roadmap
+      .map((item) => {
+        const title = item.detail ? ` title="${escapeHtml(item.detail)}"` : "";
+        return `<li data-status="${escapeHtml(item.status)}"${title}><span>${escapeHtml(item.step)}</span><b>${escapeHtml(item.label)}</b></li>`;
       })
       .join("");
   }
@@ -1775,6 +1776,26 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
 
 function guideStep(index, title, detail, actions = [], status = "pending") {
   return { index, title, detail, actions, status };
+}
+
+function guideRoadmap(readiness = {}, fallbackStep = {}) {
+  if (Array.isArray(readiness.roadmap) && readiness.roadmap.length) {
+    return readiness.roadmap.map((item) => ({
+      step: item.step || "",
+      label: item.label || "",
+      detail: item.detail || "",
+      status: item.status || "todo",
+    }));
+  }
+  return ["上传赛题", "确认选题", "自动求解", "导出交付"].map((label, index) => {
+    const number = index + 1;
+    return {
+      step: number,
+      label,
+      detail: "",
+      status: number < fallbackStep.index ? "done" : number === fallbackStep.index ? "current" : "todo",
+    };
+  });
 }
 
 function renderGrowthCenter(growth = {}) {

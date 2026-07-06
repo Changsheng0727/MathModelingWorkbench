@@ -1466,7 +1466,6 @@ p {
   margin-bottom: 16px;
   padding: 16px;
   border: 1px solid var(--clay-border);
-  border-left: 5px solid var(--primary);
   border-radius: 8px;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(244, 248, 251, 0.74)),
@@ -1475,16 +1474,16 @@ p {
 }
 
 .guide-panel[data-status="success"] {
-  border-left-color: var(--teal);
+  border-color: color-mix(in oklch, var(--teal) 38%, var(--clay-border));
 }
 
 .guide-panel[data-status="warning"],
 .guide-panel[data-status="running"] {
-  border-left-color: var(--amber);
+  border-color: color-mix(in oklch, var(--amber) 42%, var(--clay-border));
 }
 
 .guide-panel[data-status="failed"] {
-  border-left-color: var(--red);
+  border-color: color-mix(in oklch, var(--red) 42%, var(--clay-border));
 }
 
 .guide-main {
@@ -1532,8 +1531,8 @@ p {
 .guide-steps {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 7px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1545,7 +1544,7 @@ p {
   gap: 7px;
   align-items: center;
   min-width: 0;
-  padding: 8px 9px;
+  padding: 7px 8px;
   border: 1px solid rgba(185, 200, 216, 0.58);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.62);

@@ -4,6 +4,34 @@ from pathlib import Path
 from typing import Any
 
 
+READINESS_PHASE_TOTAL = 10
+READINESS_PHASES: dict[str, tuple[int, str, str, str]] = {
+    "open_project_root": (1, "project", "检查项目", "打开项目文件夹，确认元数据和输出文件是否完整。"),
+    "focus_llm": (1, "configure", "配置接口", "先保存可用的大模型接口。"),
+    "focus_upload": (2, "analyze", "上传分析", "先上传赛题并完成材料分析。"),
+    "open_problems": (3, "select", "确认选题", "确认最终解题题号。"),
+    "start_auto": (4, "solve", "自动求解", "启动代码求解、运行和论文回填。"),
+    "resume_auto": (5, "repair", "继续修复", "从中断或失败处继续生成。"),
+    "open_outputs": (6, "paper", "整理论文", "检查代码结果和论文文件。"),
+    "compile": (7, "compile", "编译论文", "生成或修复 PDF 论文。"),
+    "refresh_delivery": (8, "delivery", "交付检查", "检查论文、结果和支撑材料。"),
+    "build_delivery_package": (9, "package", "生成交付包", "打包最终提交材料。"),
+    "open_primary_output": (10, "done", "交付完成", "查看已经生成的交付材料。"),
+}
+READINESS_ROADMAP_ACTIONS = [
+    "focus_llm",
+    "focus_upload",
+    "open_problems",
+    "start_auto",
+    "resume_auto",
+    "open_outputs",
+    "compile",
+    "refresh_delivery",
+    "build_delivery_package",
+    "open_primary_output",
+]
+
+
 def build_project_readiness(
     root: Path,
     metadata: dict[str, Any],
@@ -42,6 +70,7 @@ def build_project_readiness(
         primary_action = action_with_detail(warning_item) if warning_item else None
         action_item = warning_item
     primary_action = primary_action or output_action(metadata, "打开最新输出")
+    phase = readiness_phase(status, primary_action)
     return {
         "status": status,
         "label": readiness_label(status, score),
@@ -49,7 +78,8 @@ def build_project_readiness(
         "summary": readiness_summary(status, score, blockers, warnings, metadata, repair or {}),
         "primary_action": primary_action,
         "next_step": readiness_next_step(primary_action, action_item),
-        "phase": readiness_phase(status, primary_action),
+        "phase": phase,
+        "roadmap": readiness_roadmap(phase),
         "completion": readiness_completion(checks, required, todo_items),
         "todo_items": todo_items,
         "checks": checks,
@@ -250,20 +280,7 @@ def readiness_next_step(action: dict[str, Any], item: dict[str, Any] | None) -> 
 
 def readiness_phase(status: str, action: dict[str, Any]) -> dict[str, Any]:
     action_id = str(action.get("id") or "")
-    phases = {
-        "focus_llm": (1, "configure", "配置接口", "先保存可用的大模型接口。"),
-        "focus_upload": (2, "analyze", "上传分析", "先上传赛题并完成材料分析。"),
-        "open_problems": (3, "select", "确认选题", "确认最终解题题号。"),
-        "start_auto": (4, "solve", "自动求解", "启动代码求解、运行和论文回填。"),
-        "resume_auto": (5, "repair", "继续修复", "从中断或失败处继续生成。"),
-        "open_outputs": (6, "paper", "整理论文", "检查代码结果和论文文件。"),
-        "compile": (7, "compile", "编译论文", "生成或修复 PDF 论文。"),
-        "refresh_delivery": (8, "delivery", "交付检查", "检查论文、结果和支撑材料。"),
-        "build_delivery_package": (9, "package", "生成交付包", "打包最终提交材料。"),
-        "open_primary_output": (10, "done", "交付完成", "查看已经生成的交付材料。"),
-    }
-    total = 10
-    step, phase_id, label, detail = phases.get(action_id, (10, "review", "人工复核", "检查当前项目输出。"))
+    step, phase_id, label, detail = READINESS_PHASES.get(action_id, (10, "review", "人工复核", "检查当前项目输出。"))
     if status == "success" and action_id != "open_primary_output":
         step, phase_id, label, detail = 10, "review", "最终复核", "关键步骤已完成，可做最终人工检查。"
     return {
@@ -271,9 +288,28 @@ def readiness_phase(status: str, action: dict[str, Any]) -> dict[str, Any]:
         "label": label,
         "detail": detail,
         "step": step,
-        "total": total,
-        "percent": round(100 * step / total),
+        "total": READINESS_PHASE_TOTAL,
+        "percent": round(100 * step / READINESS_PHASE_TOTAL),
     }
+
+
+def readiness_roadmap(phase: dict[str, Any]) -> list[dict[str, Any]]:
+    current_step = int(phase.get("step") or 1)
+    rows = []
+    for action_id in READINESS_ROADMAP_ACTIONS:
+        step, phase_id, label, detail = READINESS_PHASES[action_id]
+        rows.append(
+            {
+                "id": phase_id,
+                "action_id": action_id,
+                "step": step,
+                "total": READINESS_PHASE_TOTAL,
+                "label": label,
+                "detail": detail,
+                "status": "done" if step < current_step else "current" if step == current_step else "todo",
+            }
+        )
+    return rows
 
 
 def readiness_todo_items(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
