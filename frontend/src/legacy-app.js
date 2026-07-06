@@ -304,12 +304,22 @@ async function checkHealth() {
     await api("/api/health");
     els.health.textContent = "已连接";
     els.health.dataset.status = "connected";
-    await loadEnvironments();
-    await loadLlmSettings();
-    await loadTemplates();
-  } catch {
+    const startupTasks = [
+      ["环境状态", loadEnvironments],
+      ["大模型设置", loadLlmSettings],
+      ["论文模板", loadTemplates],
+    ];
+    const results = await Promise.allSettled(startupTasks.map(([, task]) => task()));
+    const failed = results
+      .map((result, index) => (result.status === "rejected" ? `${startupTasks[index][0]}：${result.reason?.message || "加载失败"}` : ""))
+      .filter(Boolean);
+    if (failed.length) {
+      showToast(`部分启动信息加载失败：${failed.join("；")}`, "warning");
+    }
+  } catch (error) {
     els.health.textContent = "未连接";
     els.health.dataset.status = "disconnected";
+    showToast(`后端连接失败：${error.message}`, "error");
   }
 }
 

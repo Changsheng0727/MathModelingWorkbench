@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 import uuid
@@ -28,9 +29,13 @@ GRANULAR_PLACEHOLDERS = {
     "__APPENDIX__",
 }
 BOUNDARY_PLACEHOLDERS = {"__BODY_START__", "__APPENDIX_START__"}
+_templates_cache: list[dict[str, Any]] | None = None
 
 
 def list_templates() -> list[dict[str, Any]]:
+    global _templates_cache
+    if _templates_cache is not None:
+        return copy.deepcopy(_templates_cache)
     templates = [
         {
             "id": DEFAULT_TEMPLATE_ID,
@@ -47,6 +52,7 @@ def list_templates() -> list[dict[str, Any]]:
         }
     ]
     templates.extend(_normalize_record(item) for item in _load_index())
+    _templates_cache = copy.deepcopy(templates)
     return templates
 
 
@@ -267,6 +273,12 @@ def _normalize_record(item: dict[str, Any]) -> dict[str, Any]:
 def _save_index(index: list[dict[str, Any]]) -> None:
     INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
     INDEX_PATH.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+    clear_template_cache()
+
+
+def clear_template_cache() -> None:
+    global _templates_cache
+    _templates_cache = None
 
 
 def _template_path(template_id: str, suffix: str = ".tex") -> Path:
