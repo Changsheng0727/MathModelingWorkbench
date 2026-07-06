@@ -1894,6 +1894,7 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
     if len(project_ids) > 40:
         raise HTTPException(status_code=400, detail="单次最多批量提交 40 个项目。")
     mode = normalize_batch_mode(payload.mode)
+    llm_settings = get_llm_settings()
     submitted: list[dict] = []
     skipped: list[dict] = []
     for project_id in project_ids:
@@ -1908,7 +1909,7 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
             continue
         meta = load_json(root / "metadata.json")
         resume = should_resume_batch_project(meta, mode)
-        issue = auto_workflow_preflight_issue(root, meta=meta, resume=resume)
+        issue = auto_workflow_preflight_issue(root, meta=meta, resume=resume, llm_settings=llm_settings)
         if issue:
             skipped.append({"project_id": project_id, "reason": issue})
             continue
@@ -1993,6 +1994,9 @@ def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resum
 
 
 def llm_test_blocking_issue(llm_settings: dict) -> str:
+    if llm_settings.get("connection_blocked"):
+        issue = str(llm_settings.get("connection_issue") or "").strip()
+        return f"上次大模型连接测试失败：{issue}" if issue else "上次大模型连接测试失败，请在左侧重新测试连接。"
     last_test = llm_settings.get("last_test") if isinstance(llm_settings.get("last_test"), dict) else {}
     if not last_test.get("tested_at") or last_test.get("ok"):
         return ""

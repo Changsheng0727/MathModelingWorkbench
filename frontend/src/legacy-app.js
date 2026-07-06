@@ -498,6 +498,20 @@ function llmTestSummary(lastTest = {}) {
   return `上次测试失败：${reason}，${action}`;
 }
 
+function llmConnectionBlocker(settings = {}) {
+  if (!settings.configured) {
+    return "请先在左侧大模型设置中填写接口密钥。";
+  }
+  if (settings.connection_blocked) {
+    return settings.connection_issue || "上次大模型连接测试失败，请重新测试连接。";
+  }
+  const lastTest = settings.last_test || {};
+  if (lastTest.tested_at && !lastTest.ok) {
+    return llmTestSummary(lastTest).replace(/^上次测试失败：/, "");
+  }
+  return "";
+}
+
 async function loadProjects({ restore = false } = {}) {
   if (els.projectCount) {
     els.projectCount.textContent = "正在刷新项目状态…";
@@ -1115,6 +1129,14 @@ async function startSelectedProjectsBatch() {
     els.batchProjectStatus.textContent = "请先配置并测试大模型接口，再批量入队自动流程。";
     scrollIntoViewIfPossible(els.llmSettingsForm);
     showToast("缺少大模型接口密钥，已停止批量入队", "warning");
+    return;
+  }
+  const llmBlocker = llmConnectionBlocker(settings);
+  if (llmBlocker) {
+    els.batchProjectStatus.textContent = `大模型连接未通过：${llmBlocker}`;
+    scrollIntoViewIfPossible(els.llmSettingsForm);
+    els.testLlmSettings?.focus();
+    showToast("请先重新测试大模型连接，再批量入队", "warning");
     return;
   }
   const projectById = new Map((state.projects || []).map((project) => [project.id, project]));
@@ -4690,6 +4712,15 @@ async function runAutoWorkflow(
   state.llmSettings = settings;
   if (!settings.configured) {
     els.autoWorkflowStatus.textContent = "请先在左侧大模型设置中填写接口密钥；大模型+代码自动解题不提供本地降级模式。";
+    return;
+  }
+  const llmBlocker = llmConnectionBlocker(settings);
+  if (llmBlocker) {
+    els.autoWorkflowStatus.textContent = `大模型连接未通过：${llmBlocker}`;
+    scrollIntoViewIfPossible(els.llmSettingsForm);
+    els.testLlmSettings?.focus();
+    showToast("请先重新测试大模型连接，再启动自动流程", "warning");
+    await refreshCurrentProjectDetail().catch(() => {});
     return;
   }
   const selectedId = selectedProblemId(state.currentProject?.metadata || {});

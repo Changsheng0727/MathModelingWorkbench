@@ -47,6 +47,9 @@ def get_llm_settings() -> dict[str, Any]:
         "workflow_strategy_summary": strategy["summary"],
         "workflow_strategy_options": workflow_strategy_options(),
         "last_test": last_test,
+        "connection_status": llm_connection_status(last_test),
+        "connection_blocked": llm_connection_blocked(last_test),
+        "connection_issue": llm_connection_issue(last_test),
     }
 
 
@@ -139,6 +142,25 @@ def load_settings() -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
     return payload
+
+
+def llm_connection_status(last_test: dict[str, Any]) -> str:
+    if not isinstance(last_test, dict) or not last_test.get("tested_at"):
+        return "untested"
+    return "passed" if last_test.get("ok") else "failed"
+
+
+def llm_connection_blocked(last_test: dict[str, Any]) -> bool:
+    return llm_connection_status(last_test) == "failed"
+
+
+def llm_connection_issue(last_test: dict[str, Any]) -> str:
+    if llm_connection_status(last_test) != "failed":
+        return ""
+    diagnosis = last_test.get("diagnosis") if isinstance(last_test.get("diagnosis"), dict) else {}
+    reason = diagnosis.get("label") or last_test.get("message") or "连接测试失败"
+    action = diagnosis.get("suggested_action") or "请检查接口地址、模型名、API Key 权限和余额。"
+    return f"{reason}；{action}"
 
 
 def normalize_api_key(value: str | None) -> str:
