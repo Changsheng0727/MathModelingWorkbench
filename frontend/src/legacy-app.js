@@ -321,9 +321,15 @@ async function checkHealth() {
   }
 }
 
-async function loadEnvironments({ refresh = false } = {}) {
-  const suffix = refresh ? "?refresh=true" : "";
+async function loadEnvironments({ refresh = false, includeOverview = false } = {}) {
+  const params = new URLSearchParams();
+  if (refresh) params.set("refresh", "true");
+  if (includeOverview) params.set("include_overview", "true");
+  const suffix = params.toString() ? `?${params}` : "";
   const env = await api(`/api/environments${suffix}`);
+  if (env.overview) {
+    applyProductOverviewPayload(env.overview);
+  }
   renderEnvironments(env);
   return env;
 }
@@ -441,7 +447,7 @@ els.environment?.addEventListener("click", async (event) => {
   button.disabled = true;
   button.textContent = "刷新中";
   try {
-    await loadEnvironments({ refresh: true });
+    await loadEnvironments({ refresh: true, includeOverview: true });
     showToast("环境状态已刷新", "success");
   } catch (error) {
     showToast(`环境刷新失败：${error.message}`, "error");

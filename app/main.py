@@ -167,8 +167,11 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/environments")
-def environments(refresh: bool = False) -> dict:
-    return detect_environments(refresh=refresh)
+def environments(refresh: bool = False, include_overview: bool = False) -> dict:
+    response = detect_environments(refresh=refresh)
+    if include_overview:
+        response["overview"] = build_product_overview_response(refresh=refresh)
+    return response
 
 
 @app.get("/api/product/capacity")
@@ -649,8 +652,11 @@ def delete_llm_settings() -> dict:
 
 
 @app.get("/api/templates")
-def read_templates() -> dict:
-    return {"templates": list_templates()}
+def read_templates(include_overview: bool = False) -> dict:
+    response = {"templates": list_templates()}
+    if include_overview:
+        response["overview"] = build_product_overview_response()
+    return response
 
 
 @app.post("/api/templates")
