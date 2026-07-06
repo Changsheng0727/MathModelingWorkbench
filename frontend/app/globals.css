@@ -2286,6 +2286,14 @@ p {
   line-height: 1.4;
 }
 
+.readiness-todo-outcome {
+  display: block;
+  margin-top: 3px;
+  color: var(--primary-strong);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .readiness-checks {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));

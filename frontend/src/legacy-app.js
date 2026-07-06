@@ -1565,18 +1565,22 @@ function renderReadinessTodo(item = {}) {
   const actionLabel = item.action_label || action.label || "";
   const actionPath = item.action_path || action.path || "";
   const actionProblemId = item.action_problem_id || action.problem_id || "";
+  const actionOutcome = item.action_outcome || action.outcome || guideActionOutcome(actionId);
   const status = statusTone(item.status);
   const required = item.required ? '<b>必需</b>' : "";
   const pathAttribute = actionPath ? ` data-readiness-path="${escapeHtml(actionPath)}"` : "";
   const problemAttribute = actionProblemId ? ` data-readiness-problem-id="${escapeHtml(actionProblemId)}"` : "";
+  const actionTitle = [action.detail || item.detail, actionOutcome ? `点击后：${actionOutcome}` : ""].filter(Boolean).join("；");
+  const titleAttribute = actionTitle ? ` title="${escapeHtml(actionTitle)}"` : "";
   const actionButton = actionId && actionLabel
-    ? `<button class="readiness-todo-action" type="button" data-readiness-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute}>${escapeHtml(actionLabel)}</button>`
+    ? `<button class="readiness-todo-action" type="button" data-readiness-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute}${titleAttribute}>${escapeHtml(actionLabel)}</button>`
     : "";
   return `
     <li data-status="${escapeHtml(status)}">
       <div>
         <strong>${escapeHtml(item.label || "-")}${required}</strong>
         <p>${escapeHtml(item.detail || statusLabel(item.status))}</p>
+        ${actionOutcome ? `<small class="readiness-todo-outcome">${escapeHtml(actionOutcome)}</small>` : ""}
       </div>
       ${actionButton}
     </li>
