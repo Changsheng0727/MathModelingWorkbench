@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from app.services.action_catalog import action_outcome
+
 
 def build_experience_center(
     projects: list[dict[str, Any]],
@@ -191,20 +193,6 @@ def action(id_: str, label: str, detail: str, tone: str) -> dict[str, str]:
     if outcome:
         row["outcome"] = outcome
     return row
-
-
-def action_outcome(id_: str) -> str:
-    return {
-        "focus_llm": "接口测试通过后，才能稳定运行一键求解。",
-        "test_llm": "连接成功后，可直接上传赛题或继续当前项目。",
-        "focus_upload": "上传完成后，会自动分析题目、附件和推荐选题。",
-        "focus_projects": "打开优先级最高的项目后，会显示当前下一步。",
-        "select_analyzed": "会批量勾选已分析项目，方便继续自动求解。",
-        "batch_packages": "会为已就绪项目生成正式提交压缩包。",
-        "autotune_capacity": "会按当前排队压力调整并发配置。",
-        "repair_campaign": "会刷新失败诊断，并推动可续跑项目恢复生成。",
-        "refresh_all": "会重新计算当前产品状态和后台任务。",
-    }.get(id_, "")
 
 
 def onboarding_hint(total: int, configured: bool) -> dict[str, Any]:

@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.services.analyzer import apply_problem_selection, build_analysis
+from app.services.action_catalog import action_outcome
 from app.services.analysis_progress import AnalysisProgress, load_analysis_progress
 from app.services.auto_workflow import diagnose_auto_workflow_exception, request_auto_workflow_cancel, run_auto_workflow
 from app.services.auto_workflow_jobs import (
@@ -709,15 +710,15 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_action_id"] = action.get("id", "")
     project["readiness_action_label"] = action.get("label", "")
     project["readiness_action_detail"] = action.get("detail", "")
-    action_outcome = project_readiness_action_outcome(str(action.get("id") or ""))
-    project["readiness_action_outcome"] = action_outcome
+    outcome = action_outcome(str(action.get("id") or ""))
+    project["readiness_action_outcome"] = outcome
     action_hint = project_readiness_action_hint(action, project)
     project["readiness_action_hint"] = action_hint
     project["readiness_top_action_id"] = action.get("id", "")
     project["readiness_top_action_label"] = action.get("label", "")
     project["readiness_top_action_detail"] = action.get("detail", "")
     project["readiness_top_action_hint"] = action_hint
-    project["readiness_top_action_outcome"] = action_outcome
+    project["readiness_top_action_outcome"] = outcome
     project["readiness_top_action_path"] = action.get("path", "")
     project["readiness_top_action_problem_id"] = action.get("problem_id", "")
     next_step = readiness.get("next_step", {})
@@ -776,7 +777,7 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_guide_status"] = project_readiness_guide_status(project)
     project["readiness_guide_title"] = project_readiness_guide_title(project)
     project["readiness_guide_detail"] = project_readiness_guide_detail(project)
-    project["readiness_guide_outcome"] = action_outcome
+    project["readiness_guide_outcome"] = outcome
     project["readiness_guide_actions"] = project_readiness_guide_actions(project)
     return project
 
@@ -991,7 +992,7 @@ def add_readiness_guide_action(actions: list[dict], action: dict, *, primary: bo
     detail = str(action.get("detail") or "").strip()
     path = str(action.get("path") or "").strip()
     problem_id = str(action.get("problem_id") or "").strip()
-    outcome = project_readiness_action_outcome(action_id)
+    outcome = action_outcome(action_id)
     if detail:
         row["detail"] = detail
     if outcome:
@@ -1022,26 +1023,6 @@ def project_readiness_action_hint(action: dict, project: dict) -> str:
         "confirm_recommended_problem": "直接确认系统推荐题，后续求解和论文都会以该题为准。",
     }
     return hints.get(action_id) or detail or str(project.get("readiness_summary") or "").strip()
-
-
-def project_readiness_action_outcome(action_id: str) -> str:
-    return {
-        "focus_llm": "保存并测试通过后，系统会开放一键求解。",
-        "test_llm": "连接成功后，可以回到当前项目继续自动流程。",
-        "focus_upload": "上传完成后，会自动分析题目、附件和推荐选题。",
-        "open_problems": "确认题号后，后续代码求解和论文都会以该题为准。",
-        "confirm_recommended_problem": "会保存为最终选题，并刷新下一步。",
-        "start_auto": "会进入代码求解、图表生成、论文回填和审查流程。",
-        "watch_auto": "会打开输出页，查看流式进度、日志和生成文件。",
-        "resume_auto": "会读取上次错误和上下文，从中断处继续修复。",
-        "open_outputs": "会切到输出页，集中查看论文、日志和结果文件。",
-        "compile": "会尝试生成 PDF，并同步导出 Word。",
-        "review": "会检查论文结构、图表、编译日志和结果一致性。",
-        "refresh_delivery": "会重新检查论文、结果和支撑材料是否可交付。",
-        "build_delivery_package": "会生成正式提交压缩包和清单。",
-        "open_project_root": "会在系统文件管理器里打开项目目录。",
-        "open_primary_output": "会打开最新输出文件所在文件夹。",
-    }.get(str(action_id or ""), "")
 
 
 def project_attention_rank(project: dict) -> int:
