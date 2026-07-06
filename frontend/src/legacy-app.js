@@ -4874,13 +4874,16 @@ async function runAutoWorkflow(
   if (els.resumeAutoWorkflow) els.resumeAutoWorkflow.disabled = true;
   if (els.cancelAutoWorkflow) els.cancelAutoWorkflow.disabled = false;
   els.autoWorkflowStatus.textContent = resume ? "正在提交后台继续生成任务。" : "正在提交后台自动流程任务。";
+  let syncedAfterCompletion = false;
   try {
     const endpoint = resume ? "resume/start" : "start";
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/${endpoint}`, { method: "POST" });
     renderProject(payload.project);
     const job = payload.auto_job || {};
-    await loadAutoJobs();
-    await loadTrustCenter();
+    if (!(await syncOverviewAfterAction(payload))) {
+      await loadAutoJobs();
+      await loadTrustCenter();
+    }
     const workerText = job.max_workers ? `，任务池并发 ${job.max_workers}` : "";
     els.autoWorkflowStatus.textContent = job.existing
       ? `已有自动流程后台任务正在执行${workerText}，正在接管进度。`
@@ -4892,7 +4895,7 @@ async function runAutoWorkflow(
     const steps = finalPayload.progress?.steps || [];
     const warningCount = steps.filter((step) => step.status === "warning").length;
     const failedCount = steps.filter((step) => step.status === "failed").length;
-    const detail = await api(`/api/projects/${encodeURIComponent(projectId)}`);
+    const detail = finalPayload.project || (await api(`/api/projects/${encodeURIComponent(projectId)}`));
     renderProject(detail);
     if (finalStatus === "success") {
       els.autoWorkflowStatus.textContent = "大模型+代码自动流程完成：已生成题解方案、运行代码得到结果、回填论文、审查报告和支撑材料。";
@@ -4908,7 +4911,7 @@ async function runAutoWorkflow(
       els.autoWorkflowStatus.textContent = `自动流程完成但需复核：${warningCount} 个警告，${failedCount} 个失败项。请查看自动解题报告。`;
       showToast("自动流程完成但需要复核", "warning");
     }
-    await loadProjects();
+    syncedAfterCompletion = await syncOverviewAfterAction(finalPayload);
   } catch (error) {
     els.autoWorkflowStatus.textContent = `自动流程失败：${error.message}`;
     showToast(`自动流程失败：${error.message}`, "error");
@@ -4920,10 +4923,12 @@ async function runAutoWorkflow(
       // Keep the visible error if the follow-up refresh also fails.
     }
   } finally {
-    await refreshAutoProgress(projectId);
-    await loadAutoJobs();
-    await loadGrowthMetrics();
-    await loadTrustCenter();
+    if (!syncedAfterCompletion) {
+      await refreshAutoProgress(projectId);
+      await loadAutoJobs();
+      await loadGrowthMetrics();
+      await loadTrustCenter();
+    }
     els.runAutoWorkflow.disabled = false;
     if (els.cancelAutoWorkflow) els.cancelAutoWorkflow.disabled = true;
   }
@@ -4932,9 +4937,10 @@ async function runAutoWorkflow(
 async function waitForAutoWorkflowCompletion(projectId) {
   let latest = null;
   let ticks = 0;
+  const progressPath = `/api/projects/${encodeURIComponent(projectId)}/progress`;
   for (;;) {
     await delay(900);
-    latest = await api(`/api/projects/${encodeURIComponent(projectId)}/progress`);
+    latest = await api(progressPath);
     renderAutoWorkflowProgress(latest.progress);
     updateAutoWorkflowButtons(latest.status, latest.progress || {});
     ticks += 1;
@@ -4942,7 +4948,13 @@ async function waitForAutoWorkflowCompletion(projectId) {
       await loadAutoJobs();
     }
     if (!isAutoWorkflowActive(latest.status, latest.progress || {})) {
-      await loadAutoJobs();
+      try {
+        latest = await api(`${progressPath}?include_overview=true`);
+        renderAutoWorkflowProgress(latest.progress);
+        updateAutoWorkflowButtons(latest.status, latest.progress || {});
+      } catch {
+        await loadAutoJobs();
+      }
       return latest;
     }
   }

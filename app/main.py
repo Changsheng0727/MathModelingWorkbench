@@ -1824,7 +1824,7 @@ def start_project_auto_workflow(project_id: str) -> dict:
     if issue:
         raise HTTPException(status_code=400, detail=issue)
     job = start_auto_workflow_job(project_id, root, resume=False)
-    return {"auto_job": job, "project": project_detail(project_id)}
+    return {"auto_job": job, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/auto/resume")
@@ -1862,7 +1862,7 @@ def start_project_auto_workflow_resume(project_id: str) -> dict:
     if issue:
         raise HTTPException(status_code=400, detail=issue)
     job = start_auto_workflow_job(project_id, root, resume=True)
-    return {"auto_job": job, "project": project_detail(project_id)}
+    return {"auto_job": job, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/auto/cancel")
@@ -2099,7 +2099,7 @@ def auto_workflow_job(job_id: str) -> dict:
 
 
 @app.get("/api/projects/{project_id}/progress")
-def project_progress(project_id: str) -> dict:
+def project_progress(project_id: str, include_overview: bool = False) -> dict:
     try:
         root = project_root(project_id)
     except FileNotFoundError as exc:
@@ -2161,13 +2161,17 @@ def project_progress(project_id: str) -> dict:
     live_stream = load_llm_live_stream(root)
     if live_stream.get("channel") == "auto_workflow":
         progress["live_stream"] = live_stream
-    return {
+    response = {
         "project_id": project_id,
         "status": response_status,
         "progress": progress or {},
         "artifacts": meta.get("artifacts", {}),
         "error": meta.get("auto_workflow_error", ""),
     }
+    if include_overview:
+        response["project"] = project_detail(project_id)
+        response["overview"] = build_product_overview_response()
+    return response
 
 
 def auto_progress_is_stale(progress: dict, seconds: int = 180) -> bool:
