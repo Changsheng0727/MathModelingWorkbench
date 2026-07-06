@@ -2321,6 +2321,35 @@ def project_model_assistant_progress(project_id: str, include_overview: bool = F
     return response
 
 
+@app.get("/api/projects/{project_id}/llm/analyze/progress")
+def project_llm_analysis_progress(project_id: str, include_overview: bool = False) -> dict:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="项目不存在") from exc
+    meta = load_json(root / "metadata.json")
+    status = meta.get("llm_analysis_status") or "idle"
+    progress: dict = {"status": status}
+    live_stream = load_llm_live_stream(root)
+    if live_stream.get("channel") == "llm_analysis":
+        progress["live_stream"] = live_stream
+        progress["status"] = live_stream.get("status") or status
+    if meta.get("llm_analysis_error"):
+        progress["status"] = "failed"
+        progress["error"] = meta.get("llm_analysis_error")
+    response = {
+        "project_id": project_id,
+        "status": progress.get("status") or status,
+        "progress": progress,
+        "artifacts": meta.get("artifacts", {}),
+        "error": meta.get("llm_analysis_error", ""),
+    }
+    if include_overview:
+        response["project"] = project_detail(project_id)
+        response["overview"] = build_product_overview_response()
+    return response
+
+
 @app.post("/api/projects/{project_id}/llm/analyze")
 def run_project_llm_analysis(project_id: str) -> dict:
     try:
@@ -2333,8 +2362,14 @@ def run_project_llm_analysis(project_id: str) -> dict:
             artifacts = run_full_llm_refresh(root)
             live_stream.finish("success", "LLM 分析报告刷新完成。")
     except ValueError as exc:
+        meta["llm_analysis_status"] = "failed"
+        meta["llm_analysis_error"] = str(exc)
+        save_json(root / "metadata.json", meta)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        meta["llm_analysis_status"] = "failed"
+        meta["llm_analysis_error"] = f"{type(exc).__name__}: {exc}"
+        save_json(root / "metadata.json", meta)
         raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
     attach_artifacts_safely(meta, artifacts)
     meta["llm_analysis_status"] = "success"

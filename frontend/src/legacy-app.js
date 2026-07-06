@@ -143,6 +143,7 @@ const els = {
   paperReviewStatus: document.querySelector("#paper-review-status"),
   runLlmAnalysis: document.querySelector("#run-llm-analysis"),
   llmAnalysisStatus: document.querySelector("#llm-analysis-status"),
+  llmAnalysisProgress: document.querySelector("#llm-analysis-progress"),
   toastRegion: document.querySelector("#toast-region"),
 };
 
@@ -5173,6 +5174,44 @@ if (els.resumeAutoWorkflow) {
   });
 }
 
+function startLlmAnalysisProgressPolling(projectId) {
+  let stopped = false;
+  refreshLlmAnalysisProgress(projectId);
+  const timer = window.setInterval(() => {
+    if (!stopped) {
+      refreshLlmAnalysisProgress(projectId);
+    }
+  }, 700);
+  return () => {
+    stopped = true;
+    window.clearInterval(timer);
+  };
+}
+
+async function refreshLlmAnalysisProgress(projectId, { includeOverview = false } = {}) {
+  if (!projectId || !els.llmAnalysisProgress) {
+    return false;
+  }
+  try {
+    const suffix = includeOverview ? "?include_overview=true" : "";
+    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/analyze/progress${suffix}`);
+    if (payload.project) {
+      renderProject(payload.project);
+    }
+    if (payload.overview) {
+      applyProductOverviewPayload(payload.overview);
+    }
+    renderProgressPanel(els.llmAnalysisProgress, payload.progress, 3);
+    return Boolean(payload.overview);
+  } catch (error) {
+    renderProgressPanel(els.llmAnalysisProgress, {
+      status: "warning",
+      detail: `大模型分析进度暂不可用：${error.message}`,
+    }, 3);
+    return false;
+  }
+}
+
 if (els.cancelAutoWorkflow) {
   els.cancelAutoWorkflow.addEventListener("click", async () => {
     const projectId = state.currentProject?.metadata?.id;
@@ -5596,6 +5635,7 @@ els.runLlmAnalysis.addEventListener("click", async () => {
   }
   els.runLlmAnalysis.disabled = true;
   els.llmAnalysisStatus.textContent = "正在调用大模型分析赛题并刷新大模型报告。";
+  const stopProgressPolling = startLlmAnalysisProgressPolling(projectId);
   try {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/analyze`, { method: "POST" });
     renderProject(payload.project);
@@ -5604,6 +5644,8 @@ els.runLlmAnalysis.addEventListener("click", async () => {
   } catch (error) {
     els.llmAnalysisStatus.textContent = `大模型分析失败：${error.message}`;
   } finally {
+    stopProgressPolling();
+    await refreshLlmAnalysisProgress(projectId, { includeOverview: true });
     els.runLlmAnalysis.disabled = false;
   }
 });

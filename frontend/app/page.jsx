@@ -368,6 +368,7 @@ export default function WorkbenchPage() {
                   <p id="compile-status" className="status" aria-live="polite"></p>
                   <p id="paper-review-status" className="status" aria-live="polite"></p>
                   <p id="llm-analysis-status" className="status" aria-live="polite"></p>
+                  <div id="llm-analysis-progress" className="workflow-progress hidden" aria-live="polite"></div>
                 </div>
               </section>
 
