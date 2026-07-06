@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 
 ACTION_OUTCOMES: dict[str, str] = {
     "focus_llm": "保存并测试通过后，系统会开放一键求解。",
@@ -154,3 +156,15 @@ def action_progress(action_id: str) -> str:
 
 def action_success(action_id: str) -> str:
     return ACTION_SUCCESS.get(str(action_id or ""), "")
+
+
+def enrich_action(action: dict[str, Any]) -> dict[str, Any]:
+    action_id = str(action.get("id") or "")
+    if not action_id:
+        return dict(action)
+    enriched = dict(action)
+    enriched.setdefault("outcome", action_outcome(action_id))
+    enriched.setdefault("progress", action_progress(action_id))
+    enriched.setdefault("success", action_success(action_id))
+    enriched.setdefault("canonical_id", ACTION_ALIASES.get(action_id, action_id))
+    return enriched

@@ -4,6 +4,8 @@ from datetime import datetime
 from statistics import mean
 from typing import Any
 
+from app.services.action_catalog import enrich_action
+
 
 def build_growth_metrics(
     projects: list[dict[str, Any]],
@@ -96,13 +98,15 @@ def build_growth_metrics(
             latest_delivery_batch,
             active_delivery_batch_jobs,
         ),
-        "recommended_action": recommended_action(
-            total,
-            len(analyzed),
-            len(deliverable),
-            len(packages),
-            jobs_snapshot,
-            active_delivery_batch_jobs,
+        "recommended_action": enrich_action(
+            recommended_action(
+                total,
+                len(analyzed),
+                len(deliverable),
+                len(packages),
+                jobs_snapshot,
+                active_delivery_batch_jobs,
+            )
         ),
     }
 
@@ -421,7 +425,7 @@ def workflow_actions(
                 "detail": "重点检查论文结构、图表、代码输出和附件清单。",
             }
         )
-    return actions[:4]
+    return [enrich_action(action) for action in actions[:4]]
 
 
 def workflow_proof_points(

@@ -2213,7 +2213,7 @@ function renderGrowthCenter(growth = {}) {
             <b>${escapeHtml(action.label)}</b>
             <span>${escapeHtml(action.detail || "")}</span>
           </div>
-          ${actionCommand ? `<button class="growth-action-button" type="button" data-growth-action="${escapeHtml(actionCommand)}">${escapeHtml(action.label)}</button>` : ""}
+          ${actionCommand ? `<button class="growth-action-button" type="button" data-growth-action="${escapeHtml(actionCommand)}">${escapeHtml(action.label)}</button>` : renderGuideActionButton(action)}
         </div>
       ` : ""}
       ${signals.length ? `<div class="growth-signals">${signals.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
@@ -2227,6 +2227,24 @@ function growthActionCommand(action = {}) {
     return "batch_packages";
   }
   return "";
+}
+
+function renderGuideActionButton(action = {}, className = "growth-action-button") {
+  const id = String(action.id || "");
+  if (!id) {
+    return "";
+  }
+  const progress = action.progress || guideActionProgress(id);
+  const success = action.success || guideActionSuccess(id);
+  const outcome = action.outcome || guideActionOutcome(id);
+  if (!progress && !success && !outcome && guideActionId(id) === id) {
+    return "";
+  }
+  const titleText = [action.detail, outcome ? `点击后：${outcome}` : ""].filter(Boolean).join("；");
+  const title = titleText ? ` title="${escapeHtml(titleText)}"` : "";
+  const progressAttr = progress ? ` data-guide-progress="${escapeHtml(progress)}"` : "";
+  const successAttr = success ? ` data-guide-success="${escapeHtml(success)}"` : "";
+  return `<button class="${escapeHtml(className)}" type="button" data-guide-action="${escapeHtml(id)}"${progressAttr}${successAttr}${title}>执行</button>`;
 }
 
 function renderGrowthDeliveryBatch(batch = {}) {
@@ -2281,8 +2299,11 @@ function renderGrowthWorkflow(workflow = {}) {
       ${risks.length ? `<ul class="growth-workflow-risks">${risks.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
       ${actions.length ? `<div class="growth-workflow-actions">${actions.map((item) => `
         <article>
+          <div>
           <b>${escapeHtml(item.label || item.id || "动作")}</b>
           <p>${escapeHtml(item.detail || "")}</p>
+          </div>
+          ${renderGuideActionButton(item)}
         </article>
       `).join("")}</div>` : ""}
     </section>
@@ -2437,10 +2458,17 @@ function renderTrustList(title, rows = [], kind = "evidence") {
 }
 
 function renderTrustAction(action = {}) {
+  const command = guideActionId(action.id || "");
+  const actionButton = ["repair_campaign", "export_audit"].includes(command)
+    ? `<button class="trust-action-button" type="button" data-trust-action="${escapeHtml(command)}">执行</button>`
+    : renderGuideActionButton(action, "trust-action-button");
   return `
     <article>
+      <div>
       <b>${escapeHtml(action.label || action.id || "动作")}</b>
       <p>${escapeHtml(action.detail || "")}</p>
+      </div>
+      ${actionButton}
     </article>
   `;
 }
@@ -3506,7 +3534,30 @@ els.refreshTrustCenter?.addEventListener("click", async () => {
   }
 });
 
+async function runGuideButton(button) {
+  button.disabled = true;
+  try {
+    const completed = await runGuideAction(button.dataset.guideAction, {
+      path: button.dataset.guidePath || "",
+      problemId: button.dataset.guideProblemId || "",
+      progress: button.dataset.guideProgress || "",
+    });
+    if (completed !== false) {
+      reportGuideActionSuccess(button.dataset.guideAction, { success: button.dataset.guideSuccess || "" });
+    }
+  } catch (error) {
+    reportGuideActionError(error);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 els.trustCenter?.addEventListener("click", async (event) => {
+  const guideButton = event.target.closest("[data-guide-action]");
+  if (guideButton) {
+    await runGuideButton(guideButton);
+    return;
+  }
   const button = event.target.closest("[data-trust-action]");
   if (!button) {
     return;
@@ -3567,6 +3618,11 @@ els.trustCenter?.addEventListener("click", async (event) => {
 });
 
 els.growthCenter?.addEventListener("click", async (event) => {
+  const guideButton = event.target.closest("[data-guide-action]");
+  if (guideButton) {
+    await runGuideButton(guideButton);
+    return;
+  }
   const button = event.target.closest("[data-growth-action]");
   if (!button) {
     return;

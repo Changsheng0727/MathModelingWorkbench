@@ -4,6 +4,7 @@ from datetime import datetime
 from statistics import mean
 from typing import Any
 
+from app.services.action_catalog import enrich_action
 from app.services.growth_metrics import is_deliverable, percent
 
 
@@ -378,7 +379,7 @@ def trust_actions(
                 "detail": "当前信任证据足够干净，可以刷新交付审计包。",
             }
         )
-    return actions[:4]
+    return [enrich_action(action) for action in actions[:4]]
 
 
 def latest_delivery_batch(snapshot: dict[str, Any]) -> dict[str, Any]:
