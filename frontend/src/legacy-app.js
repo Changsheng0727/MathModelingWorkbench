@@ -54,7 +54,9 @@ const els = {
   clearLlmSettings: document.querySelector("#clear-llm-settings"),
   llmSettingsStatus: document.querySelector("#llm-settings-status"),
   title: document.querySelector("#project-title"),
+  projectNextActionWrap: document.querySelector("#project-next-action-wrap"),
   projectNextAction: document.querySelector("#project-next-action"),
+  projectNextActionReason: document.querySelector("#project-next-action-reason"),
   openProjectRoot: document.querySelector("#open-project-root"),
   environment: document.querySelector("#environment-status"),
   projectStageSummary: document.querySelector("#project-stage-summary"),
@@ -1015,6 +1017,7 @@ function projectSearchText(project = {}) {
     project.readiness_action_label,
     project.readiness_action_detail,
     project.readiness_action_hint,
+    project.readiness_top_action_reason,
     project.readiness_required_label,
     project.readiness_bucket_label || projectFilterLabel(project.readiness_bucket),
     project.metadata_error,
@@ -1177,17 +1180,25 @@ function syncTopbarProjectAction(metadata = {}) {
     button.disabled = true;
     button.dataset.guideAction = "";
     button.dataset.guidePath = "";
+    els.projectNextActionWrap?.classList.add("hidden");
+    els.projectNextActionReason?.classList.add("hidden");
     return;
   }
   const hint = metadata.readiness_top_action_hint || metadata.readiness_action_hint || metadata.readiness_top_action_detail || "";
+  const reason = metadata.readiness_top_action_reason || hint;
   const path = metadata.readiness_top_action_path || metadata.readiness_action?.path || metadata.primary_output_path || "";
   button.textContent = actionLabel;
-  button.title = hint || actionLabel;
-  button.setAttribute("aria-label", hint ? `${actionLabel}：${hint}` : actionLabel);
+  button.title = reason || actionLabel;
+  button.setAttribute("aria-label", reason ? `${actionLabel}：${reason}` : actionLabel);
   button.dataset.guideAction = actionId;
   button.dataset.guidePath = path;
   button.disabled = false;
+  els.projectNextActionWrap?.classList.remove("hidden");
   button.classList.remove("hidden");
+  if (els.projectNextActionReason) {
+    els.projectNextActionReason.textContent = reason;
+    els.projectNextActionReason.classList.toggle("hidden", !reason);
+  }
 }
 
 function syncTopbarProjectSummary(metadata = {}) {

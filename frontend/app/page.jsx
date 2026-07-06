@@ -140,7 +140,10 @@ export default function WorkbenchPage() {
               </div>
             </div>
             <div className="topbar-actions">
-              <button id="project-next-action" className="primary compact hidden" type="button">下一步</button>
+              <div id="project-next-action-wrap" className="topbar-next-action hidden">
+                <button id="project-next-action" className="primary compact" type="button">下一步</button>
+                <span id="project-next-action-reason" className="topbar-next-action-reason hidden"></span>
+              </div>
               <button id="open-project-root" className="ghost compact hidden" type="button">打开项目文件夹</button>
               <button id="theme-toggle" className="theme-toggle" type="button" role="switch" aria-checked="false" aria-label="切换深色模式">
                 <span className="theme-toggle-track" aria-hidden="true">

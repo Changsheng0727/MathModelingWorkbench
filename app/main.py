@@ -746,6 +746,7 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_header_progress_percent"] = project_readiness_header_progress_percent(project)
     project["readiness_header_progress_label"] = project_readiness_header_progress_label(project)
     project["readiness_header_progress_tone"] = project_readiness_header_progress_tone(project)
+    project["readiness_top_action_reason"] = project_readiness_top_action_reason(project)
     return project
 
 
@@ -868,6 +869,19 @@ def project_readiness_header_progress_tone(project: dict) -> str:
     if project.get("readiness_bucket") == "deliverable" or project.get("readiness_status") == "success":
         return "success"
     return "pending"
+
+
+def project_readiness_top_action_reason(project: dict) -> str:
+    context = str(project.get("readiness_next_step_context") or "").strip()
+    hint = str(
+        project.get("readiness_action_hint")
+        or project.get("readiness_next_step_detail")
+        or project.get("readiness_action_detail")
+        or ""
+    ).strip()
+    if context and hint and context not in hint:
+        return f"{context} · {hint}"
+    return hint or context or str(project.get("readiness_attention_reason") or "").strip()
 
 
 def project_readiness_action_hint(action: dict, project: dict) -> str:
