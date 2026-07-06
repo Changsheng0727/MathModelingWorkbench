@@ -793,6 +793,11 @@ p {
   padding-right: 2px;
 }
 
+.project-list[aria-busy="true"] {
+  opacity: 0.72;
+  transition: opacity 0.18s var(--ease);
+}
+
 .project-search {
   display: block;
   margin: 10px 0 0;
@@ -838,6 +843,10 @@ p {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.project-count.is-loading {
+  color: var(--primary);
 }
 
 .project-empty-card {

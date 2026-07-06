@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 import shutil
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +25,9 @@ PRIMARY_OUTPUT_KEYS = [
     "auto_workflow_report",
     "analysis_report",
 ]
+
+PROJECT_LIST_CACHE_TTL_SECONDS = 5.0
+_projects_cache: tuple[float, list[dict[str, Any]]] | None = None
 
 
 def slugify(text: str) -> str:
@@ -72,6 +77,22 @@ def is_safe_project_lookup_name(name: str) -> bool:
 def save_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    if path_is_inside_projects_root(path):
+        clear_projects_cache()
+
+
+def clear_projects_cache() -> None:
+    global _projects_cache
+    _projects_cache = None
+
+
+def path_is_inside_projects_root(path: Path) -> bool:
+    try:
+        resolved = path.resolve()
+        root = PROJECTS_ROOT.resolve()
+        return resolved == root or root in resolved.parents
+    except OSError:
+        return False
 
 
 def load_json(path: Path) -> Any:
@@ -316,6 +337,11 @@ def project_identity_from_folder(folder_name: str) -> tuple[str, str]:
 
 
 def list_projects() -> list[dict[str, Any]]:
+    global _projects_cache
+    now = time.monotonic()
+    if _projects_cache and now - _projects_cache[0] <= PROJECT_LIST_CACHE_TTL_SECONDS:
+        return copy.deepcopy(_projects_cache[1])
+
     projects = []
     for root in sorted(PROJECTS_ROOT.glob("*"), reverse=True):
         if not root.is_dir():
@@ -337,6 +363,7 @@ def list_projects() -> list[dict[str, Any]]:
         meta = attach_project_runtime_fields(meta, root, meta_path)
         projects.append(attach_project_artifact_fields(meta, root, include_status=False))
     projects.sort(key=lambda item: item.get("project_updated_at") or item.get("created_at") or "", reverse=True)
+    _projects_cache = (time.monotonic(), copy.deepcopy(projects))
     return projects
 
 

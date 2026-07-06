@@ -567,8 +567,10 @@ function llmConnectionBlocker(settings = {}) {
 
 async function loadProjects({ restore = false } = {}) {
   if (els.projectCount) {
+    els.projectCount.classList.add("is-loading");
     els.projectCount.textContent = "正在刷新项目状态…";
   }
+  els.projectList?.setAttribute("aria-busy", "true");
   try {
     state.projects = await api("/api/projects");
     pruneSelectedProjects();
@@ -580,6 +582,9 @@ async function loadProjects({ restore = false } = {}) {
   } catch (error) {
     renderProjectListLoadError(error);
     throw error;
+  } finally {
+    els.projectCount?.classList.remove("is-loading");
+    els.projectList?.setAttribute("aria-busy", "false");
   }
 }
 
