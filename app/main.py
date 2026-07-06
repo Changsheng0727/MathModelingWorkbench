@@ -317,11 +317,8 @@ def product_growth_metrics() -> dict:
     delivery_batches = list_delivery_package_batches()
     delivery_batch_jobs = list_delivery_batch_jobs()
     growth = build_growth_metrics(projects_snapshot, jobs_snapshot, delivery_batches, delivery_batch_jobs)
-    trust = build_trust_center(projects_snapshot, jobs_snapshot, delivery_batch_jobs, delivery_batches)
-    growth["trust"] = compact_trust_snapshot(trust)
     return {
         "growth": growth,
-        "trust": trust,
     }
 
 
@@ -358,20 +355,6 @@ def product_trust_center() -> dict:
         "trust": build_trust_center(projects_snapshot, jobs_snapshot, delivery_batch_jobs, delivery_batches),
         "trust_exports": list_trust_report_exports(),
         "repair_campaigns": list_repair_campaigns(),
-    }
-
-
-def compact_trust_snapshot(trust: dict) -> dict:
-    return {
-        "generated_at": trust.get("generated_at", ""),
-        "status": trust.get("status", ""),
-        "label": trust.get("label", ""),
-        "score": trust.get("score", 0),
-        "summary": trust.get("summary", ""),
-        "repair_backlog_count": trust.get("repair_backlog_count", 0),
-        "failed_project_count": trust.get("failed_project_count", 0),
-        "queued_job_count": trust.get("queued_job_count", 0),
-        "hashed_package_count": trust.get("hashed_package_count", 0),
     }
 
 

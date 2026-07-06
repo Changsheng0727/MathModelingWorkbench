@@ -640,10 +640,6 @@ async function loadGrowthMetrics() {
     const payload = await api("/api/product/growth");
     state.growthMetrics = payload.growth || {};
     renderGrowthCenter(state.growthMetrics);
-    if (payload.trust && els.trustCenter) {
-      state.trustMetrics = payload.trust;
-      renderTrustCenter(state.trustMetrics);
-    }
   } catch (error) {
     els.growthCenter.innerHTML = `<p class="status">解题进度中心暂不可用：${escapeHtml(error.message)}</p>`;
   }
@@ -3766,7 +3762,6 @@ els.refreshGrowthMetrics?.addEventListener("click", async () => {
   }
   try {
     await loadGrowthMetrics();
-    await loadTrustCenter();
     if (els.growthCenterStatus) {
       els.growthCenterStatus.textContent = "解题进度中心已刷新。";
     }
