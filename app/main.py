@@ -658,7 +658,9 @@ def projects() -> list[dict]:
     items.sort(key=lambda item: int(item.get("readiness_attention_rank") or 99))
     if items:
         items[0]["default_open"] = True
-        items[0]["default_open_reason"] = "优先处理" if int(items[0].get("readiness_attention_rank") or 99) <= 20 else "最近更新"
+        items[0]["default_open_reason"] = items[0].get("readiness_attention_reason") or (
+            "优先处理" if int(items[0].get("readiness_attention_rank") or 99) <= 20 else "最近更新"
+        )
     return items
 
 
@@ -719,6 +721,7 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_bucket"] = project_readiness_bucket(project)
     project["readiness_bucket_label"] = project_readiness_bucket_label(project["readiness_bucket"])
     project["readiness_attention_rank"] = project_attention_rank(project)
+    project["readiness_attention_reason"] = project_attention_reason(project)
     project.pop("root", None)
     return project
 
@@ -785,6 +788,39 @@ def project_attention_rank(project: dict) -> int:
         return 30
     bucket = str(project.get("readiness_bucket") or "")
     return {"needs_action": 40, "normal": 60, "deliverable": 80}.get(bucket, 70)
+
+
+def project_attention_reason(project: dict) -> str:
+    try:
+        rank_value = project.get("readiness_attention_rank")
+        rank = int(rank_value if rank_value is not None else project_attention_rank(project))
+    except (TypeError, ValueError):
+        rank = project_attention_rank(project)
+    next_focus = str(
+        project.get("readiness_next_step_context")
+        or project.get("readiness_next_step_label")
+        or project.get("readiness_next_step_detail")
+        or project.get("readiness_summary")
+        or ""
+    ).strip()
+    if rank == 0:
+        return f"优先处理：{next_focus or '有必需步骤未完成'}"
+    if rank == 10:
+        detail = str(project.get("auto_workflow_job_summary") or project.get("auto_workflow_status") or "自动流程正在运行").strip()
+        return f"正在生成：{detail}"
+    if rank == 20 and project.get("metadata_error"):
+        return "元数据异常：可打开项目文件夹修复"
+    if rank == 20:
+        detail = str(project.get("artifact_health_summary") or project.get("artifact_health_label") or "生成文件需要复核").strip()
+        return f"文件异常：{detail}"
+    if rank == 30:
+        return f"建议处理：{next_focus or '有步骤建议补齐'}"
+    if rank == 40:
+        return f"待处理：{next_focus or '还有生成步骤未完成'}"
+    if rank == 80:
+        detail = str(project.get("delivery_package_summary") or "交付文件已生成").strip()
+        return f"可交付：{detail}"
+    return str(project.get("readiness_summary") or project.get("status") or "").strip()
 
 
 def summarize_analysis_for_metadata(analysis: dict) -> dict:

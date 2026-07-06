@@ -575,6 +575,7 @@ function renderProjectList() {
         const deliveryBadge = renderProjectDeliveryBadge(project);
         const artifactBadge = renderProjectArtifactBadge(project);
         const artifactMeta = renderProjectArtifactMeta(project);
+        const attentionReason = renderProjectAttentionReason(project);
         const diagnosis = project.last_failure_diagnosis || {};
         const diagnosisBadge = diagnosis.category
           ? `<span class="project-badge project-badge-error" title="${escapeHtml(diagnosis.suggested_action || diagnosis.repair_focus || diagnosis.evidence || "")}">${escapeHtml(diagnosis.label || diagnosis.category)}</span>`
@@ -594,6 +595,7 @@ function renderProjectList() {
             <span class="project-name">${escapeHtml(project.name)}</span>
             <span class="project-meta">更新 ${escapeHtml(formatProjectTime(updatedAt))} · ${escapeHtml(status)}</span>
             <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${rootRepairBadge}${autoBadge}${deliveryBadge}${artifactBadge}${diagnosisBadge}</span>
+            ${attentionReason}
             ${artifactMeta}
             ${phase}
             ${requiredProgress}
@@ -750,6 +752,16 @@ function sortProjectsForAttention(projects = []) {
     }
     return String(b.project_updated_at || b.updated_at || b.created_at || "").localeCompare(String(a.project_updated_at || a.updated_at || a.created_at || ""));
   });
+}
+
+function renderProjectAttentionReason(project = {}) {
+  const reason = project.readiness_attention_reason || "";
+  if (!reason) {
+    return "";
+  }
+  const rank = Number(project.readiness_attention_rank ?? 99);
+  const tone = rank <= 0 ? "urgent" : rank <= 20 ? "active" : rank <= 40 ? "todo" : rank >= 80 ? "done" : "normal";
+  return `<span class="project-attention" data-tone="${escapeHtml(tone)}">${escapeHtml(reason)}</span>`;
 }
 
 function renderProjectReadinessBadge(project = {}) {
@@ -951,6 +963,7 @@ function projectSearchText(project = {}) {
     project.readiness_next_step_detail,
     project.readiness_next_step_urgency === "high" ? "高优先级 优先处理" : "",
     project.readiness_attention_rank !== undefined ? `优先级 ${project.readiness_attention_rank}` : "",
+    project.readiness_attention_reason,
     project.readiness_phase?.label,
     project.readiness_phase?.detail,
     project.readiness_phase?.step && project.readiness_phase?.total ? `阶段 ${project.readiness_phase.step}/${project.readiness_phase.total}` : "",
