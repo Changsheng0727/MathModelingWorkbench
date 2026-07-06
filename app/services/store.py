@@ -73,8 +73,10 @@ def attach_project_runtime_fields(meta: dict[str, Any], root: Path, meta_path: P
 
 def attach_project_artifact_fields(meta: dict[str, Any], root: Path) -> dict[str, Any]:
     artifact_status = build_artifact_status(root, meta.get("artifacts"))
+    artifact_summary = summarize_artifact_status(artifact_status)
     meta["artifact_status"] = artifact_status
-    meta["artifact_summary"] = summarize_artifact_status(artifact_status)
+    meta["artifact_summary"] = artifact_summary
+    meta.update(describe_artifact_health(artifact_summary))
     return meta
 
 
@@ -103,6 +105,36 @@ def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[st
         "available": available,
         "missing": total - available,
         "unsafe": unsafe,
+    }
+
+
+def describe_artifact_health(summary: dict[str, int]) -> dict[str, str]:
+    total = int(summary.get("total") or 0)
+    available = int(summary.get("available") or 0)
+    missing = int(summary.get("missing") or 0)
+    unsafe = int(summary.get("unsafe") or 0)
+    if unsafe:
+        return {
+            "artifact_health_status": "error",
+            "artifact_health_label": f"路径异常 {unsafe}",
+            "artifact_health_summary": f"可打开 {available}/{total} 个生成文件，{unsafe} 个路径不在项目目录内。",
+        }
+    if missing:
+        return {
+            "artifact_health_status": "warning",
+            "artifact_health_label": f"文件缺失 {missing}",
+            "artifact_health_summary": f"可打开 {available}/{total} 个生成文件，{missing} 个文件尚未生成或已移动。",
+        }
+    if total > 1:
+        return {
+            "artifact_health_status": "success",
+            "artifact_health_label": f"文件 {available}/{total}",
+            "artifact_health_summary": f"生成文件均可打开：{available}/{total}。",
+        }
+    return {
+        "artifact_health_status": "pending",
+        "artifact_health_label": "暂无生成文件",
+        "artifact_health_summary": "项目还没有生成论文、结果或报告文件。",
     }
 
 

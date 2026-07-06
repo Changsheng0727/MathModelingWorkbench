@@ -622,9 +622,12 @@ function renderProjectFilters(projects = []) {
       if (bucket in acc) {
         acc[bucket] += 1;
       }
+      if (hasArtifactIssue(project)) {
+        acc.artifact_issue += 1;
+      }
       return acc;
     },
-    { all: 0, needs_action: 0, running: 0, deliverable: 0 },
+    { all: 0, needs_action: 0, running: 0, deliverable: 0, artifact_issue: 0 },
   );
   els.projectFilters.querySelectorAll("[data-project-filter]").forEach((button) => {
     const filter = button.dataset.projectFilter || "all";
@@ -640,6 +643,9 @@ function projectFilterMatches(project = {}, filter = "all") {
   if (validFilter === "all") {
     return true;
   }
+  if (validFilter === "artifact_issue") {
+    return hasArtifactIssue(project);
+  }
   return (project.readiness_bucket || "normal") === validFilter;
 }
 
@@ -649,12 +655,13 @@ function projectFilterLabel(filter = "all") {
     needs_action: "需处理",
     running: "运行中",
     deliverable: "可交付",
+    artifact_issue: "文件异常",
   };
   return labels[filter] || labels.all;
 }
 
 function validProjectFilter(filter = "all") {
-  return ["all", "needs_action", "running", "deliverable"].includes(filter) ? filter : "all";
+  return ["all", "needs_action", "running", "deliverable", "artifact_issue"].includes(filter) ? filter : "all";
 }
 
 function renderProjectDeliveryBadge(project = {}) {
@@ -677,15 +684,17 @@ function renderProjectArtifactBadge(project = {}) {
   if (total <= 1) {
     return "";
   }
-  const available = Number(summary.available || 0);
-  const missing = Number(summary.missing || 0);
-  const unsafe = Number(summary.unsafe || 0);
-  const className = missing || unsafe ? " project-badge-error" : " project-badge-ok";
-  const label = missing ? `文件缺失 ${missing}` : unsafe ? `路径异常 ${unsafe}` : `文件 ${available}/${total}`;
-  const title = missing || unsafe
-    ? `可打开 ${available}/${total} 个文件，${missing} 个缺失${unsafe ? `，${unsafe} 个路径异常` : ""}`
-    : `生成文件均可打开：${available}/${total}`;
+  const status = project.artifact_health_status || "";
+  const className = status === "success" ? " project-badge-ok" : status === "pending" ? " project-badge-muted" : " project-badge-error";
+  const label = project.artifact_health_label || `文件 ${Number(summary.available || 0)}/${total}`;
+  const title = project.artifact_health_summary || label;
   return `<span class="project-badge${className}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
+}
+
+function hasArtifactIssue(project = {}) {
+  const status = project.artifact_health_status || "";
+  const summary = project.artifact_summary || {};
+  return status === "warning" || status === "error" || Number(summary.missing || 0) > 0 || Number(summary.unsafe || 0) > 0;
 }
 
 function renderProjectReadinessBadge(project = {}) {
@@ -821,6 +830,8 @@ function projectSearchText(project = {}) {
     project.delivery_readiness_label,
     project.delivery_readiness_summary,
     project.delivery_readiness_action,
+    project.artifact_health_label,
+    project.artifact_health_summary,
     project.artifact_summary?.missing ? `文件缺失 ${project.artifact_summary.missing}` : "",
     project.artifact_summary?.unsafe ? `路径异常 ${project.artifact_summary.unsafe}` : "",
     project.artifact_summary?.available ? `可打开文件 ${project.artifact_summary.available}` : "",
