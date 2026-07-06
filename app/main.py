@@ -654,7 +654,6 @@ def format_bytes(value: int) -> str:
 def projects() -> list[dict]:
     llm_settings = get_llm_settings()
     items = [attach_project_readiness_summary(project, llm_settings) for project in list_projects()]
-    items.sort(key=lambda item: str(item.get("project_updated_at") or item.get("created_at") or ""), reverse=True)
     items.sort(key=project_attention_sort_rank)
     if items:
         mark_default_project(items[0])

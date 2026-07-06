@@ -770,15 +770,6 @@ function renderProjectList() {
     )
     .join("");
   updateProjectBatchControls(filtered);
-  els.projectList.querySelectorAll(".project-open").forEach((button) => {
-    button.addEventListener("click", async () => {
-      try {
-        await openProject(button.dataset.projectId);
-      } catch (error) {
-        showToast(`打开项目失败：${error.message}`, "error");
-      }
-    });
-  });
 }
 
 function renderProjectEmptyState(onboarding = {}) {
@@ -4326,6 +4317,22 @@ els.projectList?.addEventListener("click", async (event) => {
       reportGuideActionError(error);
     } finally {
       guideButton.disabled = false;
+    }
+    return;
+  }
+  const openButton = event.target.closest(".project-open");
+  if (openButton) {
+    const projectId = openButton.dataset.projectId;
+    if (!projectId || openButton.disabled) {
+      return;
+    }
+    openButton.disabled = true;
+    try {
+      await openProject(projectId);
+    } catch (error) {
+      showToast(`打开项目失败：${error.message}`, "error");
+    } finally {
+      openButton.disabled = false;
     }
     return;
   }
