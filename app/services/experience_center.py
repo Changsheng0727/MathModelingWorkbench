@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from app.services.action_catalog import action_outcome
+from app.services.action_catalog import action_outcome, action_success
 
 
 def build_experience_center(
@@ -192,6 +192,9 @@ def action(id_: str, label: str, detail: str, tone: str) -> dict[str, str]:
     outcome = action_outcome(id_)
     if outcome:
         row["outcome"] = outcome
+    success = action_success(id_)
+    if success:
+        row["success"] = success
     return row
 
 

@@ -53,9 +53,39 @@ ACTION_PROGRESS: dict[str, str] = {
 }
 
 
+ACTION_SUCCESS: dict[str, str] = {
+    "focus_llm": "已定位到大模型接口设置。",
+    "test_llm": "已提交连接测试，请查看设置状态。",
+    "focus_upload": "已定位到赛题上传入口。",
+    "focus_projects": "已定位到项目列表。",
+    "open_problems": "已打开选题分析页。",
+    "confirm_recommended_problem": "已保存最终选题，后续流程会以该题为准。",
+    "start_auto": "已触发自动求解，请在输出页查看进度。",
+    "watch_auto": "已打开输出页，可查看流式进度。",
+    "resume_auto": "已触发继续生成，请查看输出页进度。",
+    "cancel_auto": "已请求中断，请等待当前阶段安全结束。",
+    "open_outputs": "已打开生成文件和日志。",
+    "compile": "已触发论文编译，请查看输出页状态。",
+    "review": "已触发论文审查，请查看输出页状态。",
+    "refresh_delivery": "已刷新交付检查。",
+    "build_delivery_package": "已触发交付打包，请查看生成文件。",
+    "open_project_root": "已打开项目文件夹。",
+    "open_primary_output": "已打开最新输出所在位置。",
+    "select_analyzed": "已选择已分析项目，可批量入队。",
+    "batch_packages": "已触发批量交付打包。",
+    "autotune_capacity": "已触发并发调优。",
+    "repair_campaign": "已触发修复行动。",
+    "refresh_all": "已刷新项目、任务和交付状态。",
+}
+
+
 def action_outcome(action_id: str) -> str:
     return ACTION_OUTCOMES.get(str(action_id or ""), "")
 
 
 def action_progress(action_id: str) -> str:
     return ACTION_PROGRESS.get(str(action_id or ""), "")
+
+
+def action_success(action_id: str) -> str:
+    return ACTION_SUCCESS.get(str(action_id or ""), "")
