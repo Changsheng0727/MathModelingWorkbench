@@ -822,6 +822,8 @@ async function openProject(projectId, { silent = false } = {}) {
   if (!silent) {
     if (detail.metadata?.metadata_error) {
       showToast("项目元数据读取失败，已打开可恢复视图。", "warning");
+    } else if (detail.metadata?.artifact_load_errors?.length) {
+      showToast(`部分生成文件读取失败：${detail.metadata.artifact_load_errors.length} 项。`, "warning");
     } else {
       showToast("已打开项目", "success");
     }
@@ -877,9 +879,12 @@ function renderProject(detail) {
   }
   const lastDiagnosis = metadata.last_failure_diagnosis || {};
   const diagnosisText = lastDiagnosis.category ? ` · 诊断：${lastDiagnosis.label || lastDiagnosis.category}` : "";
+  const artifactErrorCount = Array.isArray(metadata.artifact_load_errors) ? metadata.artifact_load_errors.length : 0;
+  const artifactErrorText = artifactErrorCount ? ` · 文件异常 ${artifactErrorCount}项` : "";
   els.projectStatus.textContent = metadata.auto_workflow_status
-    ? `${metadata.status || "-"} · 自动流程：${metadata.auto_workflow_status}${diagnosisText}`
-    : `${metadata.status || "-"}${diagnosisText}`;
+    ? `${metadata.status || "-"} · 自动流程：${metadata.auto_workflow_status}${diagnosisText}${artifactErrorText}`
+    : `${metadata.status || "-"}${diagnosisText}${artifactErrorText}`;
+  els.projectStatus.title = renderArtifactLoadErrorTitle(metadata.artifact_load_errors);
   renderExperienceGuide(state.experience || {});
   if (!analysis) {
     renderEmptyState(metadata);
@@ -911,6 +916,16 @@ function renderProject(detail) {
   updateAutoWorkflowButtons(metadata.auto_workflow_status, metadata.auto_workflow_progress || {});
   renderModelAssistantProgress(metadata.model_assistant_progress);
   renderProgressPanel(els.uploadProgress, metadata.analysis_progress, 7);
+}
+
+function renderArtifactLoadErrorTitle(errors = []) {
+  if (!Array.isArray(errors) || !errors.length) {
+    return "";
+  }
+  return errors
+    .slice(0, 4)
+    .map((item) => `${item.label || "生成文件"}：${item.path || ""} ${item.error || ""}`.trim())
+    .join("\n");
 }
 
 function renderEmptyState(metadata = {}) {

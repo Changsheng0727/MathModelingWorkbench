@@ -975,11 +975,11 @@ def project_detail(project_id: str) -> dict:
         meta["analysis_summary"] = summarize_analysis_for_metadata(analysis)
         save_json(root / "metadata.json", meta)
     repair_path = root / REPAIR_BRIEFING_JSON_RELATIVE
-    repair = load_json(repair_path) if repair_path.exists() else None
+    repair = load_optional_project_json(root, repair_path, meta, "修复报告")
     delivery_path = root / DELIVERY_READINESS_JSON_RELATIVE
-    delivery = load_json(delivery_path) if delivery_path.exists() else None
+    delivery = load_optional_project_json(root, delivery_path, meta, "交付检查")
     package_path = root / DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE
-    package = load_json(package_path) if package_path.exists() else None
+    package = load_optional_project_json(root, package_path, meta, "交付包清单")
     readiness = build_project_readiness(
         root,
         meta,
@@ -997,6 +997,27 @@ def project_detail(project_id: str) -> dict:
         "package": package,
         "readiness": readiness,
     }
+
+
+def load_optional_project_json(root: Path, path: Path, meta: dict, label: str) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        payload = load_json(path)
+        return payload if isinstance(payload, dict) else {"value": payload}
+    except Exception as exc:
+        try:
+            relative = path.relative_to(root).as_posix()
+        except ValueError:
+            relative = str(path)
+        meta.setdefault("artifact_load_errors", []).append(
+            {
+                "label": label,
+                "path": relative,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+        return None
 
 
 @app.post("/api/projects/{project_id}/analyze")
