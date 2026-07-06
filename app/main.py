@@ -466,13 +466,12 @@ def batch_build_delivery_packages(payload: BatchDeliveryPackagePayload | None = 
         force=bool(options.force),
         max_workers=options.max_workers or int(load_capacity_settings().get("delivery_package_workers") or 4),
     )
-    updated_projects = list_projects()
-    delivery_batches = list_delivery_package_batches()
-    growth = build_growth_metrics(updated_projects, list_auto_workflow_jobs(), delivery_batches, list_delivery_batch_jobs())
+    overview = build_product_overview_response()
     return {
         "batch": batch,
-        "delivery_batches": delivery_batches,
-        "growth": growth,
+        "delivery_batches": list_delivery_package_batches(),
+        "growth": overview.get("growth") or {},
+        "overview": overview,
     }
 
 
@@ -490,15 +489,13 @@ def start_batch_delivery_package_job(payload: BatchDeliveryPackagePayload | None
         force=bool(options.force),
         max_workers=options.max_workers or int(load_capacity_settings().get("delivery_package_workers") or 4),
     )
-    delivery_batches = list_delivery_package_batches()
-    delivery_batch_jobs = list_delivery_batch_jobs()
-    growth = build_growth_metrics(projects_snapshot, list_auto_workflow_jobs(), delivery_batches, delivery_batch_jobs)
+    overview = build_product_overview_response()
     return {
         "delivery_batch_job": job,
-        "delivery_batch_jobs": delivery_batch_jobs,
-        "delivery_batches": delivery_batches,
-        "growth": growth,
-        "overview": build_product_overview_response(),
+        "delivery_batch_jobs": overview.get("delivery_batch_jobs") or list_delivery_batch_jobs(),
+        "delivery_batches": list_delivery_package_batches(),
+        "growth": overview.get("growth") or {},
+        "overview": overview,
     }
 
 
@@ -1958,6 +1955,7 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
             skipped.append({"project_id": project_id, "reason": f"{type(exc).__name__}: {exc}"})
             continue
         submitted.append(job)
+    overview = build_product_overview_response()
     return {
         "batch": {
             "requested_count": len(project_ids),
@@ -1967,8 +1965,8 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
             "submitted": submitted,
             "skipped": skipped,
         },
-        "auto_jobs": list_auto_workflow_jobs(),
-        "overview": build_product_overview_response(),
+        "auto_jobs": overview.get("auto_jobs") or list_auto_workflow_jobs(),
+        "overview": overview,
     }
 
 
