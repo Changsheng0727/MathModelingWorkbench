@@ -1470,6 +1470,50 @@ p {
   overflow-wrap: anywhere;
 }
 
+.environment-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(68ch, 100%);
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.environment-next b {
+  flex: 0 0 auto;
+  color: var(--text);
+}
+
+.environment-next[data-tone="success"] {
+  border-color: color-mix(in oklch, var(--teal) 28%, var(--line));
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.environment-next[data-tone="warning"] {
+  border-color: color-mix(in oklch, var(--amber) 30%, var(--line));
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.environment-next[data-tone="failed"] {
+  border-color: color-mix(in oklch, var(--red) 28%, var(--line));
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.environment-next[data-tone="running"] {
+  border-color: color-mix(in oklch, var(--primary) 28%, var(--line));
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+}
+
 .project-stage-summary {
   width: fit-content;
   max-width: min(72ch, 100%);

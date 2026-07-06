@@ -339,12 +339,14 @@ function renderEnvironments(env) {
     },
   ];
   const detail = summary.detail ? `<span class="environment-detail">${escapeHtml(summary.detail)}</span>` : "";
+  const nextAction = renderEnvironmentNextAction(summary.next_action || {});
   els.environment.dataset.status = environmentTone(summary.status);
   els.environment.innerHTML = `
     <span class="environment-chip-row">
       ${chips.map((item) => environmentChip(item)).join("")}
     </span>
     ${detail}
+    ${nextAction}
   `;
 }
 
@@ -364,6 +366,19 @@ function dependencyInstallLabel(status = {}) {
 function environmentChip(item) {
   const title = item.title ? ` title="${escapeHtml(item.title)}"` : "";
   return `<span class="environment-chip" data-tone="${escapeHtml(item.tone || "pending")}"${title}>${escapeHtml(item.label)}</span>`;
+}
+
+function renderEnvironmentNextAction(action = {}) {
+  if (!action.label && !action.detail) {
+    return "";
+  }
+  const tone = environmentTone(action.tone || "");
+  return `
+    <span class="environment-next" data-tone="${escapeHtml(tone)}">
+      <b>${escapeHtml(action.label || "下一步")}</b>
+      ${action.detail ? `<span>${escapeHtml(action.detail)}</span>` : ""}
+    </span>
+  `;
 }
 
 function environmentTone(value) {

@@ -61,6 +61,7 @@ def summarize_dependencies(required: dict[str, Any], winget: dict[str, Any], ins
         "log": install.get("log", ""),
     }
     if not missing:
+        summary["next_action"] = dependency_next_action(summary["status"], missing, can_auto_install)
         return summary
 
     names = "、".join(missing)
@@ -104,7 +105,21 @@ def summarize_dependencies(required: dict[str, Any], winget: dict[str, Any], ins
                 "detail": f"缺少 {names}；客户端会尝试用 winget 自动下载，稍后可刷新状态。",
             }
         )
+    summary["next_action"] = dependency_next_action(str(summary.get("status") or ""), missing, can_auto_install)
     return summary
+
+
+def dependency_next_action(status: str, missing: list[str], can_auto_install: bool) -> dict[str, str]:
+    names = "、".join(missing)
+    if status == "ready":
+        return {"label": "无需处理", "detail": "可以直接导出 Word 或编译 PDF。", "tone": "success"}
+    if status == "installing":
+        return {"label": "稍后刷新", "detail": "等待下载完成；若仍缺失，重启客户端后再试。", "tone": "running"}
+    if status == "warning":
+        return {"label": "重启后复查", "detail": f"重启软件后刷新依赖状态，仍缺少 {names} 时手动安装。", "tone": "warning"}
+    if status == "manual_required" or not can_auto_install:
+        return {"label": "手动安装", "detail": f"请先安装 {names}，再回到软件刷新状态。", "tone": "failed"}
+    return {"label": "等待自动安装", "detail": "保持客户端打开，稍后刷新状态；失败时再手动安装。", "tone": "warning"}
 
 
 def detect_winget() -> dict[str, Any]:
