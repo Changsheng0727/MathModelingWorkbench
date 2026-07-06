@@ -1003,6 +1003,31 @@ p {
   white-space: nowrap;
 }
 
+.project-required-progress {
+  display: grid;
+  grid-template-columns: minmax(44px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.project-required-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(160, 177, 198, 0.28);
+  box-shadow: var(--shadow-inset);
+}
+
+.project-required-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
 .project-badges {
   display: flex;
   flex-wrap: wrap;

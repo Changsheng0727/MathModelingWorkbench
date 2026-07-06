@@ -569,6 +569,7 @@ function renderProjectList() {
           ? `<span class="project-badge project-badge-muted" title="${escapeHtml(project.root_repair_notice || "项目路径已自动校正")}">路径已校正</span>`
           : "";
         const nextStep = renderProjectNextStep(project);
+        const requiredProgress = renderProjectRequiredProgress(project);
         const quickAction = renderProjectQuickAction(project);
         const deliveryBadge = renderProjectDeliveryBadge(project);
         const artifactBadge = renderProjectArtifactBadge(project);
@@ -591,6 +592,7 @@ function renderProjectList() {
             <span class="project-name">${escapeHtml(project.name)}</span>
             <span class="project-meta">更新 ${escapeHtml(formatProjectTime(updatedAt))} · ${escapeHtml(status)}</span>
             <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${rootRepairBadge}${autoBadge}${deliveryBadge}${artifactBadge}${diagnosisBadge}</span>
+            ${requiredProgress}
             ${nextStep}
           </button>
           ${quickAction}
@@ -707,6 +709,24 @@ function renderProjectReadinessBadge(project = {}) {
   const tone = statusTone(project.readiness_status);
   const className = tone === "success" ? " project-badge-ok" : tone === "failed" ? " project-badge-error" : tone === "pending" ? " project-badge-muted" : "";
   return `<span class="project-badge${className}" title="${escapeHtml(project.readiness_summary || label)}">${escapeHtml(label)}${escapeHtml(scoreText)}</span>`;
+}
+
+function renderProjectRequiredProgress(project = {}) {
+  const total = Number(project.readiness_required_total || 0);
+  if (!total) {
+    return "";
+  }
+  const rawPassed = Number(project.readiness_required_passed || 0);
+  const passed = Number.isFinite(rawPassed) ? Math.max(0, Math.min(total, rawPassed)) : 0;
+  const rawPercent = Number(project.readiness_required_percent ?? (100 * passed / total));
+  const percent = Number.isFinite(rawPercent) ? Math.max(0, Math.min(100, rawPercent)) : 0;
+  const label = project.readiness_required_label || `必需 ${passed}/${total}`;
+  return `
+    <span class="project-required-progress" title="${escapeHtml(label)}">
+      <span class="project-required-track"><span style="width: ${percent}%"></span></span>
+      <span>${escapeHtml(label)}</span>
+    </span>
+  `;
 }
 
 function renderProjectNextStep(project = {}) {
@@ -844,6 +864,7 @@ function projectSearchText(project = {}) {
     project.readiness_action_id,
     project.readiness_action_label,
     project.readiness_action_detail,
+    project.readiness_required_label,
     project.readiness_bucket_label || projectFilterLabel(project.readiness_bucket),
     project.metadata_error,
     project.metadata_error ? "元数据异常" : "",

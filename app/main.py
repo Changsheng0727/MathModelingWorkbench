@@ -686,6 +686,10 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_action_detail"] = action.get("detail", "")
     project["readiness_required_passed"] = readiness.get("required_passed", 0)
     project["readiness_required_total"] = readiness.get("required_total", 0)
+    required_total = int(project["readiness_required_total"] or 0)
+    required_passed = int(project["readiness_required_passed"] or 0)
+    project["readiness_required_percent"] = round(100 * required_passed / required_total) if required_total else 0
+    project["readiness_required_label"] = f"必需 {required_passed}/{required_total}" if required_total else ""
     project["readiness_bucket"] = project_readiness_bucket(project)
     project["readiness_bucket_label"] = project_readiness_bucket_label(project["readiness_bucket"])
     project.pop("root", None)
