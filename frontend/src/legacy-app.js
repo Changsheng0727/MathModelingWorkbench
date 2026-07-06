@@ -2552,12 +2552,29 @@ function renderArtifactSummary(summary = {}) {
   const available = Number(summary.available || 0);
   const missing = Number(summary.missing || 0);
   const unsafe = Number(summary.unsafe || 0);
+  const size = Number(summary.size_bytes || 0);
+  const meta = [
+    size ? `总大小 ${formatBytes(size)}` : "",
+    summary.latest_modified_at ? `最近更新 ${formatProjectTime(summary.latest_modified_at)}` : "",
+  ].filter(Boolean).join(" · ");
   const status = missing || unsafe ? "warning" : "success";
   const text = missing
     ? `可打开 ${available}/${total} 个文件，${missing} 个文件尚未生成或已移动。`
     : `可打开 ${available}/${total} 个文件。`;
   const unsafeText = unsafe ? ` · ${unsafe} 个路径异常` : "";
-  return `<p class="artifact-summary" data-status="${status}">${escapeHtml(text + unsafeText)}</p>`;
+  const metaText = meta ? ` · ${meta}` : "";
+  return `<p class="artifact-summary" data-status="${status}">${escapeHtml(text + unsafeText + metaText)}</p>`;
+}
+
+function artifactStatusMeta(status = {}) {
+  if (status?.generated_on_demand) {
+    return "按需生成";
+  }
+  const parts = [
+    Number(status?.size_bytes) ? formatBytes(status.size_bytes) : "",
+    status?.modified_at ? `更新 ${formatProjectTime(status.modified_at)}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
 }
 
 function artifactFolderKinds(items = []) {
@@ -2585,6 +2602,8 @@ function renderArtifactItem(projectId, key, label, path, status = {}) {
   const safeLabel = escapeHtml(label);
   const safePath = escapeHtml(path);
   const available = !status || (status.exists !== false && status.is_file !== false);
+  const meta = artifactStatusMeta(status);
+  const metaHtml = meta ? `<small class="artifact-file-meta">${escapeHtml(meta)}</small>` : "";
   const reason = status?.missing_reason || "文件尚未生成或已被移动";
   const safeReason = escapeHtml(reason);
   if (!available) {
@@ -2603,7 +2622,10 @@ function renderArtifactItem(projectId, key, label, path, status = {}) {
   return `
     <div class="artifact-row">
       <a class="artifact-link" data-kind="${artifactKind(key, path)}" href="/api/projects/${encodedProject}/download/${encodedPath}" title="${safePath}" aria-label="下载或查看${safeLabel}">
-        <span class="artifact-copy"><span class="artifact-name">${safeLabel}</span></span>
+        <span class="artifact-copy">
+          <span class="artifact-name">${safeLabel}</span>
+          ${metaHtml}
+        </span>
       </a>
       <button class="artifact-open" type="button" data-project-id="${escapeHtml(projectId)}" data-path="${safePath}" title="在资源管理器中打开所在位置" aria-label="打开${safeLabel}所在文件夹">打开位置</button>
     </div>

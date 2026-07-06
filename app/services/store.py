@@ -107,19 +107,27 @@ def build_artifact_status(root: Path, artifacts: object) -> dict[str, dict[str, 
     return statuses
 
 
-def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[str, int]:
+def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[str, object]:
     total = len(statuses)
     available = sum(1 for item in statuses.values() if item.get("exists") is not False and item.get("is_file") is not False)
     unsafe = sum(1 for item in statuses.values() if item.get("unsafe_path"))
+    size_bytes = sum(int(item.get("size_bytes") or 0) for item in statuses.values())
+    modified = [
+        str(item.get("modified_at"))
+        for item in statuses.values()
+        if item.get("modified_at")
+    ]
     return {
         "total": total,
         "available": available,
         "missing": total - available,
         "unsafe": unsafe,
+        "size_bytes": size_bytes,
+        "latest_modified_at": max(modified) if modified else "",
     }
 
 
-def describe_artifact_health(summary: dict[str, int]) -> dict[str, str]:
+def describe_artifact_health(summary: dict[str, object]) -> dict[str, str]:
     total = int(summary.get("total") or 0)
     available = int(summary.get("available") or 0)
     missing = int(summary.get("missing") or 0)

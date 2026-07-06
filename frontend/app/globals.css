@@ -4450,6 +4450,12 @@ ul.problem-meta {
   font-weight: 500;
 }
 
+.artifact-file-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .artifact-open {
   min-height: 38px;
   padding: 0 10px;
