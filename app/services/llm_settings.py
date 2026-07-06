@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -33,6 +34,7 @@ def get_llm_settings() -> dict[str, Any]:
     source = "local" if stored.get("api_key") else "env" if env_key else ""
     strategy = get_workflow_strategy(stored.get("workflow_strategy"))
     base_url = effective_base_url(stored.get("base_url"))
+    last_test = stored.get("last_test") if isinstance(stored.get("last_test"), dict) else {}
     return {
         "provider": "openai",
         "configured": bool(api_key),
@@ -44,6 +46,7 @@ def get_llm_settings() -> dict[str, Any]:
         "workflow_strategy_label": strategy["label"],
         "workflow_strategy_summary": strategy["summary"],
         "workflow_strategy_options": workflow_strategy_options(),
+        "last_test": last_test,
     }
 
 
@@ -71,6 +74,18 @@ def save_llm_settings(
     normalized_strategy = normalize_workflow_strategy(
         workflow_strategy if workflow_strategy is not None else current.get("workflow_strategy", DEFAULT_WORKFLOW_STRATEGY)
     )
+    previous = {
+        "api_key": current.get("api_key", ""),
+        "base_url": current.get("base_url") or DEFAULT_BASE_URL,
+        "model": current.get("model") or DEFAULT_MODEL,
+        "workflow_strategy": normalize_workflow_strategy(current.get("workflow_strategy", DEFAULT_WORKFLOW_STRATEGY)),
+    }
+    incoming = {
+        "api_key": normalized_key or previous["api_key"],
+        "base_url": normalized_base_url or previous["base_url"],
+        "model": normalized_model or previous["model"],
+        "workflow_strategy": normalized_strategy,
+    }
 
     if normalized_key:
         current["api_key"] = normalized_key
@@ -80,7 +95,29 @@ def save_llm_settings(
     if normalized_model:
         current["model"] = normalized_model
     current["workflow_strategy"] = normalized_strategy
+    if incoming != previous:
+        current.pop("last_test", None)
 
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_PATH.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    return get_llm_settings()
+
+
+def record_llm_test_result(ok: bool, status: str, message: str, diagnosis: dict[str, Any] | None = None) -> dict[str, Any]:
+    current = load_settings()
+    row = {
+        "ok": bool(ok),
+        "status": str(status or ""),
+        "message": str(message or "")[:300],
+        "tested_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    if isinstance(diagnosis, dict) and diagnosis:
+        row["diagnosis"] = {
+            key: str(diagnosis.get(key) or "")[:220]
+            for key in ["category", "label", "suggested_action"]
+            if diagnosis.get(key)
+        }
+    current["last_test"] = row
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_PATH.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
     return get_llm_settings()

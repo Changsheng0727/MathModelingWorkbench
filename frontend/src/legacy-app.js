@@ -478,10 +478,18 @@ function renderLlmSettings(settings) {
   if (settings.configured) {
     const source = settings.source === "env" ? "环境变量" : "本地设置";
     const strategy = settings.workflow_strategy_label ? ` · ${settings.workflow_strategy_label}` : "";
-    els.llmSettingsStatus.textContent = `已配置：${settings.masked_api_key} · ${source}${strategy}`;
+    const test = llmTestSummary(settings.last_test);
+    els.llmSettingsStatus.textContent = `已配置：${settings.masked_api_key} · ${source}${strategy}${test ? ` · ${test}` : ""}`;
   } else {
     els.llmSettingsStatus.textContent = "尚未配置 API 密钥。";
   }
+}
+
+function llmTestSummary(lastTest = {}) {
+  if (!lastTest || !lastTest.tested_at) {
+    return "尚未测试连接";
+  }
+  return lastTest.ok ? "最近测试成功" : "上次测试失败";
 }
 
 async function loadProjects({ restore = false } = {}) {
@@ -4381,9 +4389,16 @@ els.testLlmSettings?.addEventListener("click", async () => {
     await saveLlmSettingsFromForm();
     els.llmSettingsStatus.textContent = "正在测试大模型连接。";
     const result = await api("/api/settings/llm/test", { method: "POST" });
+    if (result.settings) {
+      state.llmSettings = result.settings;
+    }
     if (result.ok) {
       els.llmSettingsStatus.textContent = "大模型连接测试成功，可以运行大模型+代码一键流程。";
       showToast("大模型连接测试成功", "success");
+      if (state.currentProject?.metadata?.id) {
+        const detail = await api(`/api/projects/${encodeURIComponent(state.currentProject.metadata.id)}`);
+        renderProject(detail);
+      }
       return;
     }
     const diagnosis = result.diagnosis || {};

@@ -63,7 +63,7 @@ from app.services.llm_assistant import (
     write_material_passport,
 )
 from app.services.llm_stream import bind_llm_stream, load_llm_live_stream
-from app.services.llm_settings import clear_llm_settings, get_llm_settings, save_llm_settings
+from app.services.llm_settings import clear_llm_settings, get_llm_settings, record_llm_test_result, save_llm_settings
 from app.services.modeling import generate_modeling_script, run_modeling_script
 from app.services.paper import write_artifacts
 from app.services.paper_fill import fill_paper_with_results
@@ -579,27 +579,21 @@ def test_llm_settings() -> dict:
         )
     except Exception as exc:
         diagnosis = diagnose_auto_workflow_exception(exc, "llm_settings_test")
+        updated_settings = record_llm_test_result(False, "failed", f"{type(exc).__name__}: {exc}", diagnosis)
         return {
             "ok": False,
             "status": "failed",
             "message": f"{type(exc).__name__}: {exc}",
             "diagnosis": diagnosis,
-            "settings": {
-                "base_url": settings.get("base_url", ""),
-                "model": settings.get("model", ""),
-                "masked_api_key": settings.get("masked_api_key", ""),
-            },
+            "settings": updated_settings,
         }
+    updated_settings = record_llm_test_result(True, "success", "AI 连接测试成功。")
     return {
         "ok": True,
         "status": "success",
         "message": "AI 连接测试成功。",
         "sample": content[:80],
-        "settings": {
-            "base_url": settings.get("base_url", ""),
-            "model": settings.get("model", ""),
-            "masked_api_key": settings.get("masked_api_key", ""),
-        },
+        "settings": updated_settings,
     }
 
 
@@ -1990,6 +1984,7 @@ def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resum
 
 def build_auto_workflow_preflight(root: Path, meta: dict | None = None) -> dict:
     metadata = meta if isinstance(meta, dict) else load_json(root / "metadata.json")
+    llm_settings = get_llm_settings()
     start_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=False)
     resume_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=True)
     can_resume = should_resume_batch_project(metadata, "auto") and not resume_issue
@@ -2017,6 +2012,15 @@ def build_auto_workflow_preflight(root: Path, meta: dict | None = None) -> dict:
             "can_resume": False,
             "label": "暂不能开始自动流程",
             "detail": start_issue,
+        }
+    last_test = llm_settings.get("last_test") if isinstance(llm_settings.get("last_test"), dict) else {}
+    if not last_test.get("ok"):
+        return {
+            "status": "warning",
+            "can_start": True,
+            "can_resume": False,
+            "label": "建议先测试大模型连接",
+            "detail": "当前配置还没有成功连接测试记录；仍可开始，但先测试能减少中途失败。",
         }
     return {
         "status": "success",
