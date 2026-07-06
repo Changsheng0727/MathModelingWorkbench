@@ -39,13 +39,20 @@ def create_project(original_name: str) -> dict[str, Any]:
 
 
 def project_root(project_id: str) -> Path:
-    direct = PROJECTS_ROOT / project_id
-    if direct.is_dir():
-        return direct
-    matches = sorted(PROJECTS_ROOT.glob(f"{project_id}-*"))
-    if not matches:
+    name = str(project_id or "").strip()
+    if not is_safe_project_lookup_name(name):
         raise FileNotFoundError(project_id)
-    return matches[0]
+    for root in sorted(PROJECTS_ROOT.iterdir()):
+        if root.is_dir() and (root.name == name or root.name.startswith(f"{name}-")):
+            return root
+    raise FileNotFoundError(project_id)
+
+
+def is_safe_project_lookup_name(name: str) -> bool:
+    if not name or name in {".", ".."}:
+        return False
+    path = Path(name)
+    return not path.is_absolute() and path.name == name
 
 
 def save_json(path: Path, payload: Any) -> None:

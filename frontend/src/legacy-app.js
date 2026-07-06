@@ -655,7 +655,7 @@ function projectFilterLabel(filter = "all") {
     needs_action: "需处理",
     running: "运行中",
     deliverable: "可交付",
-    artifact_issue: "文件异常",
+    artifact_issue: "文件/元数据异常",
   };
   return labels[filter] || labels.all;
 }
