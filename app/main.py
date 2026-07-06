@@ -2228,11 +2228,23 @@ def project_progress(project_id: str, include_overview: bool = False, include_jo
         "artifacts": meta.get("artifacts", {}),
         "error": meta.get("auto_workflow_error", ""),
     }
+    overview = None
     if include_overview:
         response["project"] = project_detail(project_id)
-        response["overview"] = build_product_overview_response()
+        overview = build_product_overview_response()
+        response["overview"] = overview
     if include_jobs:
-        response.update(build_auto_jobs_response())
+        if overview:
+            response.update(
+                {
+                    "auto_jobs": overview.get("auto_jobs") or list_auto_workflow_jobs(),
+                    "delivery_batch_jobs": overview.get("delivery_batch_jobs") or list_delivery_batch_jobs(),
+                    "capacity_settings": overview.get("capacity_settings") or load_capacity_settings(),
+                    "capacity_autotune": overview.get("capacity_autotune") or list_capacity_autotune_events(),
+                }
+            )
+        else:
+            response.update(build_auto_jobs_response())
     return response
 
 

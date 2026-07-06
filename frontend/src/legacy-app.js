@@ -4850,8 +4850,10 @@ async function runAutoWorkflow(
     }
   } finally {
     if (!syncedAfterCompletion) {
-      await refreshAutoProgress(projectId);
-      await loadProductOverview();
+      syncedAfterCompletion = await refreshAutoProgress(projectId);
+      if (!syncedAfterCompletion) {
+        await loadProductOverview();
+      }
     }
     els.runAutoWorkflow.disabled = false;
     if (els.cancelAutoWorkflow) els.cancelAutoWorkflow.disabled = true;
@@ -4899,17 +4901,26 @@ function isAutoWorkflowActive(status = "", progress = {}) {
   );
 }
 
-async function refreshAutoProgress(projectId) {
+async function refreshAutoProgress(projectId, { includeOverview = true } = {}) {
   if (!projectId || !els.autoWorkflowProgress) {
-    return;
+    return false;
   }
   try {
-    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/progress?include_jobs=true`);
+    const suffix = includeOverview ? "include_overview=true&include_jobs=true" : "include_jobs=true";
+    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/progress?${suffix}`);
     applyAutoJobsPayload(payload);
+    if (payload.project) {
+      renderProject(payload.project);
+    }
+    if (payload.overview) {
+      applyProductOverviewPayload(payload.overview);
+    }
     renderAutoWorkflowProgress(payload.progress);
     updateAutoWorkflowButtons(payload.status, payload.progress || {});
+    return Boolean(payload.overview);
   } catch {
     // Progress polling is best-effort; the main action will report hard failures.
+    return false;
   }
 }
 
@@ -5135,8 +5146,10 @@ if (els.cancelAutoWorkflow) {
     try {
       const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/cancel`, { method: "POST" });
       renderProject(payload.project);
-      await refreshAutoProgress(projectId);
-      await syncOverviewAfterAction(payload);
+      const progressSynced = await refreshAutoProgress(projectId);
+      if (!progressSynced) {
+        await syncOverviewAfterAction(payload);
+      }
     } catch (error) {
       els.autoWorkflowStatus.textContent = `中断请求失败：${error.message}`;
       els.cancelAutoWorkflow.disabled = false;
