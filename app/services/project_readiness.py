@@ -33,7 +33,7 @@ def build_project_readiness(
     primary_action = next((action_with_detail(item) for item in checks if item.get("status") == "fail" and item.get("action")), None)
     if not primary_action:
         primary_action = next((action_with_detail(item) for item in checks if item.get("status") == "warning" and item.get("action")), None)
-    primary_action = primary_action or {"id": "open_outputs", "label": "查看输出"}
+    primary_action = primary_action or output_action(metadata, "打开最新输出")
     return {
         "status": status,
         "label": readiness_label(status, score),
@@ -163,7 +163,7 @@ def check_delivery(metadata: dict[str, Any], delivery: dict[str, Any], package: 
     if packaged:
         status = "pass"
         detail = "正式交付包已生成。"
-        action = {"id": "open_primary_output", "label": "打开交付包"}
+        action = output_action(metadata, "打开交付包", {"id": "open_project_root", "label": "打开文件夹"})
     elif status_value in {"ready", "success", "deliverable", "review"}:
         status = "warning"
         detail = "论文已接近可交付，建议生成交付包。"
@@ -173,6 +173,14 @@ def check_delivery(metadata: dict[str, Any], delivery: dict[str, Any], package: 
         detail = "交付检查尚未完成。"
         action = {"id": "refresh_delivery", "label": "检查交付"}
     return readiness_check("delivery", "交付文件", status, detail, required=False, action=action)
+
+
+def output_action(metadata: dict[str, Any], label: str, fallback: dict[str, str] | None = None) -> dict[str, str]:
+    summary = metadata.get("artifact_summary") if isinstance(metadata.get("artifact_summary"), dict) else {}
+    path = str(metadata.get("primary_output_path") or summary.get("latest_path") or "").strip()
+    if path:
+        return {"id": "open_primary_output", "label": label, "path": path}
+    return fallback or {"id": "open_outputs", "label": "查看输出"}
 
 
 def readiness_check(

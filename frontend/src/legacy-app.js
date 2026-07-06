@@ -1234,8 +1234,9 @@ function renderProjectReadiness(readiness = {}) {
   const score = Number.isFinite(Number(readiness.score)) ? Number(readiness.score) : 0;
   const checks = readiness.checks.slice(0, 7);
   const action = readiness.primary_action || {};
+  const actionTitle = action.detail || action.path || action.label || "";
   const actionButton = action.id
-    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}">${escapeHtml(action.label || "继续")}</button>`
+    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}" title="${escapeHtml(actionTitle)}">${escapeHtml(action.label || "继续")}</button>`
     : "";
   els.projectReadiness.dataset.status = status;
   els.projectReadiness.innerHTML = `

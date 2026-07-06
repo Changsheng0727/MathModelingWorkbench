@@ -96,7 +96,7 @@
   `:""}(e.metrics||[])}
           </div>
         </article>
-      `).join("")}(l,c),function(e={}){if(!n.projectReadiness)return;if(!e||!Array.isArray(e.checks)){n.projectReadiness.innerHTML='<p class="status">暂无准备度信息。</p>';return}let t=el(e.status),a=Number.isFinite(Number(e.score))?Number(e.score):0,r=e.checks.slice(0,7),s=e.primary_action||{},o=s.id?`<button class="primary compact" type="button" data-readiness-action="${i(s.id)}">${i(s.label||"继续")}</button>`:"";n.projectReadiness.dataset.status=t,n.projectReadiness.innerHTML=`
+      `).join("")}(l,c),function(e={}){if(!n.projectReadiness)return;if(!e||!Array.isArray(e.checks)){n.projectReadiness.innerHTML='<p class="status">暂无准备度信息。</p>';return}let t=el(e.status),a=Number.isFinite(Number(e.score))?Number(e.score):0,r=e.checks.slice(0,7),s=e.primary_action||{},o=s.detail||s.path||s.label||"",l=s.id?`<button class="primary compact" type="button" data-readiness-action="${i(s.id)}" title="${i(o)}">${i(s.label||"继续")}</button>`:"";n.projectReadiness.dataset.status=t,n.projectReadiness.innerHTML=`
     <section class="readiness-hero" data-status="${i(t)}">
       <div class="readiness-score" aria-label="当前准备度 ${i(a)} 分">
         <strong>${i(a)}</strong>
@@ -107,7 +107,7 @@
         <h3>${i(e.label||"当前项目状态")}</h3>
         <p>${i(e.summary||"")}</p>
       </div>
-      ${o}
+      ${l}
     </section>
     <div class="readiness-checks">
       ${r.map(U).join("")}
