@@ -408,6 +408,7 @@ def product_trust_report_export() -> dict:
         "trust_report": trust_report,
         "trust": trust_report.get("trust") or build_trust_center(projects_snapshot, jobs_snapshot, delivery_batch_jobs, delivery_batches),
         "trust_exports": list_trust_report_exports(),
+        "overview": build_product_overview_response(),
     }
 
 
@@ -447,6 +448,7 @@ def start_product_trust_repair_campaign(payload: RepairCampaignPayload | None = 
         "growth": growth,
         "auto_jobs": jobs_snapshot,
         "delivery_batch_jobs": delivery_batch_jobs,
+        "overview": build_product_overview_response(),
     }
 
 

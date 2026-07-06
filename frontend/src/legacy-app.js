@@ -3920,25 +3920,14 @@ els.trustCenter?.addEventListener("click", async (event) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ queue_resumes: true, refresh_diagnostics: true, limit: 20 }),
       });
-      state.trustMetrics = payload.trust || state.trustMetrics || {};
-      state.repairCampaigns = payload.repair_campaigns || state.repairCampaigns || null;
-      state.growthMetrics = payload.growth || state.growthMetrics;
-      state.autoJobs = payload.auto_jobs || state.autoJobs;
-      state.deliveryBatchJobs = payload.delivery_batch_jobs || state.deliveryBatchJobs;
-      renderTrustCenter(state.trustMetrics, state.trustExports);
-      renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
-      if (state.growthMetrics) {
-        renderGrowthCenter(state.growthMetrics);
-      }
+      await syncOverviewAfterAction(payload);
       const campaign = payload.repair_campaign || {};
       setTrustStatus(campaign.summary || success || "修复行动已完成。");
       showToast("修复行动已完成", "success");
       return;
     }
     const payload = await api("/api/product/trust/export", { method: "POST" });
-    state.trustMetrics = payload.trust || payload.trust_report?.trust || state.trustMetrics || {};
-    state.trustExports = payload.trust_exports || state.trustExports || null;
-    renderTrustCenter(state.trustMetrics, state.trustExports);
+    await syncOverviewAfterAction(payload);
     const report = payload.trust_report || {};
     const sizeText = report.size ? ` · ${report.size}` : "";
     setTrustStatus(report.filename || report.id ? `信任审计包已导出：${report.filename || report.id}${sizeText}` : success);
