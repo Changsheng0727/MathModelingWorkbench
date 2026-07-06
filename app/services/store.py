@@ -71,6 +71,72 @@ def attach_project_runtime_fields(meta: dict[str, Any], root: Path, meta_path: P
     return meta
 
 
+def attach_project_artifact_fields(meta: dict[str, Any], root: Path) -> dict[str, Any]:
+    artifact_status = build_artifact_status(root, meta.get("artifacts"))
+    meta["artifact_status"] = artifact_status
+    meta["artifact_summary"] = summarize_artifact_status(artifact_status)
+    return meta
+
+
+def build_artifact_status(root: Path, artifacts: object) -> dict[str, dict[str, object]]:
+    statuses: dict[str, dict[str, object]] = {}
+    entries = artifacts if isinstance(artifacts, dict) else {}
+    for key, value in entries.items():
+        if isinstance(key, str) and isinstance(value, str) and value:
+            statuses[key] = inspect_project_artifact(root, value)
+    statuses["support_zip"] = {
+        "path": "support.zip",
+        "exists": True,
+        "is_file": True,
+        "generated_on_demand": True,
+        "missing_reason": "",
+    }
+    return statuses
+
+
+def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[str, int]:
+    total = len(statuses)
+    available = sum(1 for item in statuses.values() if item.get("exists") is not False and item.get("is_file") is not False)
+    unsafe = sum(1 for item in statuses.values() if item.get("unsafe_path"))
+    return {
+        "total": total,
+        "available": available,
+        "missing": total - available,
+        "unsafe": unsafe,
+    }
+
+
+def inspect_project_artifact(root: Path, relative_path: str) -> dict[str, object]:
+    status: dict[str, object] = {
+        "path": relative_path,
+        "exists": False,
+        "is_file": False,
+        "missing_reason": "文件尚未生成或已被移动",
+    }
+    try:
+        resolved_root = root.resolve()
+        target = (root / relative_path).resolve()
+    except OSError as exc:
+        status["missing_reason"] = f"路径无法读取：{type(exc).__name__}"
+        return status
+    if target != resolved_root and resolved_root not in target.parents:
+        status["missing_reason"] = "路径不在当前项目目录内"
+        status["unsafe_path"] = True
+        return status
+    if not target.exists():
+        return status
+    status["exists"] = True
+    status["is_file"] = target.is_file()
+    status["missing_reason"] = "" if target.is_file() else "目标不是文件"
+    try:
+        stat = target.stat()
+        status["size_bytes"] = stat.st_size
+        status["modified_at"] = datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds")
+    except OSError:
+        pass
+    return status
+
+
 def same_path(left: Path, right: Path) -> bool:
     try:
         return left.resolve() == right.resolve()
@@ -124,7 +190,8 @@ def list_projects() -> list[dict[str, Any]]:
             analysis_path = root / "artifacts" / "analysis.json"
             if analysis_path.exists():
                 meta["analysis_available"] = True
-            projects.append(attach_project_runtime_fields(meta, root, meta_path))
+            meta = attach_project_runtime_fields(meta, root, meta_path)
+            projects.append(attach_project_artifact_fields(meta, root))
     projects.sort(key=lambda item: item.get("project_updated_at") or item.get("created_at") or "", reverse=True)
     return projects
 

@@ -75,6 +75,7 @@ from app.services.reviewer import review_paper
 from app.services.runner import compile_latex
 from app.services.specialized import generate_specialized_script, run_specialized_script
 from app.services.store import (
+    attach_project_artifact_fields,
     attach_project_runtime_fields,
     create_project,
     list_projects,
@@ -982,9 +983,7 @@ def project_detail(project_id: str) -> dict:
     delivery = load_optional_project_json(root, delivery_path, meta, "交付检查")
     package_path = root / DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE
     package = load_optional_project_json(root, package_path, meta, "交付包清单")
-    artifact_status = build_artifact_status(root, meta.get("artifacts"))
-    meta["artifact_status"] = artifact_status
-    meta["artifact_summary"] = summarize_artifact_status(artifact_status)
+    meta = attach_project_artifact_fields(meta, root)
     readiness = build_project_readiness(
         root,
         meta,
@@ -1002,65 +1001,6 @@ def project_detail(project_id: str) -> dict:
         "package": package,
         "readiness": readiness,
     }
-
-
-def build_artifact_status(root: Path, artifacts: object) -> dict[str, dict[str, object]]:
-    statuses: dict[str, dict[str, object]] = {}
-    entries = artifacts if isinstance(artifacts, dict) else {}
-    for key, value in entries.items():
-        if isinstance(key, str) and isinstance(value, str) and value:
-            statuses[key] = inspect_project_artifact(root, value)
-    statuses["support_zip"] = {
-        "path": "support.zip",
-        "exists": True,
-        "is_file": True,
-        "generated_on_demand": True,
-        "missing_reason": "",
-    }
-    return statuses
-
-
-def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[str, int]:
-    total = len(statuses)
-    available = sum(1 for item in statuses.values() if item.get("exists") is not False and item.get("is_file") is not False)
-    unsafe = sum(1 for item in statuses.values() if item.get("unsafe_path"))
-    return {
-        "total": total,
-        "available": available,
-        "missing": total - available,
-        "unsafe": unsafe,
-    }
-
-
-def inspect_project_artifact(root: Path, relative_path: str) -> dict[str, object]:
-    status: dict[str, object] = {
-        "path": relative_path,
-        "exists": False,
-        "is_file": False,
-        "missing_reason": "文件尚未生成或已被移动",
-    }
-    try:
-        resolved_root = root.resolve()
-        target = (root / relative_path).resolve()
-    except OSError as exc:
-        status["missing_reason"] = f"路径无法读取：{type(exc).__name__}"
-        return status
-    if target != resolved_root and resolved_root not in target.parents:
-        status["missing_reason"] = "路径不在当前项目目录内"
-        status["unsafe_path"] = True
-        return status
-    if not target.exists():
-        return status
-    status["exists"] = True
-    status["is_file"] = target.is_file()
-    status["missing_reason"] = "" if target.is_file() else "目标不是文件"
-    try:
-        stat = target.stat()
-        status["size_bytes"] = stat.st_size
-        status["modified_at"] = datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds")
-    except OSError:
-        pass
-    return status
 
 
 def load_optional_project_json(root: Path, path: Path, meta: dict, label: str) -> dict | None:

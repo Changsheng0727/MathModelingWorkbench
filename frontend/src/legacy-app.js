@@ -571,6 +571,7 @@ function renderProjectList() {
         const nextStep = renderProjectNextStep(project);
         const quickAction = renderProjectQuickAction(project);
         const deliveryBadge = renderProjectDeliveryBadge(project);
+        const artifactBadge = renderProjectArtifactBadge(project);
         const diagnosis = project.last_failure_diagnosis || {};
         const diagnosisBadge = diagnosis.category
           ? `<span class="project-badge project-badge-error" title="${escapeHtml(diagnosis.suggested_action || diagnosis.repair_focus || diagnosis.evidence || "")}">${escapeHtml(diagnosis.label || diagnosis.category)}</span>`
@@ -589,7 +590,7 @@ function renderProjectList() {
           <button class="project-button project-open${active}" type="button" data-project-id="${escapeHtml(project.id)}"${openDisabled}>
             <span class="project-name">${escapeHtml(project.name)}</span>
             <span class="project-meta">更新 ${escapeHtml(formatProjectTime(updatedAt))} · ${escapeHtml(status)}</span>
-            <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${rootRepairBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
+            <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${rootRepairBadge}${autoBadge}${deliveryBadge}${artifactBadge}${diagnosisBadge}</span>
             ${nextStep}
           </button>
           ${quickAction}
@@ -668,6 +669,23 @@ function renderProjectDeliveryBadge(project = {}) {
   const className = tone === "success" ? " project-badge-ok" : tone === "failed" ? " project-badge-error" : tone === "pending" ? " project-badge-muted" : "";
   const title = project.delivery_readiness_summary || label;
   return `<span class="project-badge${className}" title="${escapeHtml(title)}">${escapeHtml(label)}${escapeHtml(scoreText)}</span>`;
+}
+
+function renderProjectArtifactBadge(project = {}) {
+  const summary = project.artifact_summary || {};
+  const total = Number(summary.total || 0);
+  if (total <= 1) {
+    return "";
+  }
+  const available = Number(summary.available || 0);
+  const missing = Number(summary.missing || 0);
+  const unsafe = Number(summary.unsafe || 0);
+  const className = missing || unsafe ? " project-badge-error" : " project-badge-ok";
+  const label = missing ? `文件缺失 ${missing}` : unsafe ? `路径异常 ${unsafe}` : `文件 ${available}/${total}`;
+  const title = missing || unsafe
+    ? `可打开 ${available}/${total} 个文件，${missing} 个缺失${unsafe ? `，${unsafe} 个路径异常` : ""}`
+    : `生成文件均可打开：${available}/${total}`;
+  return `<span class="project-badge${className}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
 }
 
 function renderProjectReadinessBadge(project = {}) {
@@ -803,6 +821,9 @@ function projectSearchText(project = {}) {
     project.delivery_readiness_label,
     project.delivery_readiness_summary,
     project.delivery_readiness_action,
+    project.artifact_summary?.missing ? `文件缺失 ${project.artifact_summary.missing}` : "",
+    project.artifact_summary?.unsafe ? `路径异常 ${project.artifact_summary.unsafe}` : "",
+    project.artifact_summary?.available ? `可打开文件 ${project.artifact_summary.available}` : "",
     project.readiness_label,
     project.readiness_summary,
     project.readiness_action?.label,
