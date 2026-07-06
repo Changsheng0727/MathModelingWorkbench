@@ -749,6 +749,11 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_header_progress_label"] = project_readiness_header_progress_label(project)
     project["readiness_header_progress_tone"] = project_readiness_header_progress_tone(project)
     project["readiness_top_action_reason"] = project_readiness_top_action_reason(project)
+    project["readiness_card_summary"] = project_readiness_card_summary(project)
+    project["readiness_card_detail"] = project_readiness_card_detail(project)
+    project["readiness_card_progress_percent"] = project["readiness_header_progress_percent"]
+    project["readiness_card_progress_label"] = project["readiness_header_progress_label"]
+    project["readiness_card_progress_tone"] = project["readiness_header_progress_tone"]
     return project
 
 
@@ -884,6 +889,22 @@ def project_readiness_top_action_reason(project: dict) -> str:
     if context and hint and context not in hint:
         return f"{context} · {hint}"
     return hint or context or str(project.get("readiness_attention_reason") or "").strip()
+
+
+def project_readiness_card_summary(project: dict) -> str:
+    phase = str(project.get("readiness_header_progress_label") or "").strip()
+    phase_label = str(project.get("readiness_phase_label") or "").strip()
+    action = str(project.get("readiness_action_label") or "").strip()
+    action_text = f"下一步：{action}" if action else ""
+    return " · ".join(part for part in [phase, phase_label, action_text] if part)
+
+
+def project_readiness_card_detail(project: dict) -> str:
+    return (
+        str(project.get("readiness_attention_reason") or "").strip()
+        or str(project.get("readiness_top_action_reason") or "").strip()
+        or str(project.get("readiness_gap_label") or "").strip()
+    )
 
 
 def project_readiness_action_hint(action: dict, project: dict) -> str:

@@ -1013,32 +1013,6 @@ p {
   line-height: 1.45;
 }
 
-.project-next {
-  display: block;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.45;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.project-next[data-tone="failed"] {
-  color: var(--red);
-}
-
-.project-next[data-tone="warning"] {
-  color: var(--amber);
-}
-
-.project-next[data-tone="running"] {
-  color: var(--primary-strong);
-}
-
-.project-next[data-urgency="high"] {
-  font-weight: 750;
-}
-
 .project-attention {
   display: block;
   margin-top: 2px;
@@ -1068,22 +1042,6 @@ p {
   color: var(--teal);
 }
 
-.project-phase {
-  display: inline-flex;
-  width: fit-content;
-  max-width: 100%;
-  margin-top: 2px;
-  padding: 2px 7px;
-  border: 1px solid rgba(185, 200, 216, 0.58);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.58);
-  color: var(--primary-strong);
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
 .project-output-meta {
   display: block;
   color: var(--muted);
@@ -1092,17 +1050,42 @@ p {
   overflow-wrap: anywhere;
 }
 
-.project-required-progress {
+.project-stage-line {
   display: grid;
-  grid-template-columns: minmax(44px, 1fr) auto;
-  align-items: center;
-  gap: 7px;
+  gap: 6px;
+  margin-top: 4px;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.35;
 }
 
-.project-required-track {
+.project-stage-line-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.project-stage-line-copy b,
+.project-stage-line-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-stage-line-copy b {
+  color: var(--primary-strong);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.project-stage-line-copy small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.project-stage-line-meter {
   height: 6px;
   overflow: hidden;
   border-radius: 999px;
@@ -1110,30 +1093,35 @@ p {
   box-shadow: var(--shadow-inset);
 }
 
-.project-required-track > span {
+.project-stage-line-meter > span {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--primary);
 }
 
-.project-gaps {
-  display: block;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 680;
-  line-height: 1.45;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.project-gaps[data-tone="failed"] {
+.project-stage-line[data-tone="failed"] .project-stage-line-copy b,
+.project-stage-line[data-tone="failed"] .project-stage-line-meter > span {
   color: var(--red);
+  background: var(--red);
 }
 
-.project-gaps[data-tone="warning"] {
+.project-stage-line[data-tone="warning"] .project-stage-line-copy b,
+.project-stage-line[data-tone="warning"] .project-stage-line-meter > span {
   color: var(--amber);
+  background: var(--amber);
+}
+
+.project-stage-line[data-tone="running"] .project-stage-line-copy b,
+.project-stage-line[data-tone="running"] .project-stage-line-meter > span {
+  color: var(--primary-strong);
+  background: var(--primary);
+}
+
+.project-stage-line[data-tone="success"] .project-stage-line-copy b,
+.project-stage-line[data-tone="success"] .project-stage-line-meter > span {
+  color: var(--teal);
+  background: var(--teal);
 }
 
 .project-badges {
@@ -5040,7 +5028,6 @@ ul.problem-meta {
 :root[data-theme="dark"] .ghost,
 :root[data-theme="dark"] .project-button,
 :root[data-theme="dark"] .project-quick-action,
-:root[data-theme="dark"] .project-phase,
 :root[data-theme="dark"] .project-filter,
 :root[data-theme="dark"] .project-select-input,
 :root[data-theme="dark"] .status-card,

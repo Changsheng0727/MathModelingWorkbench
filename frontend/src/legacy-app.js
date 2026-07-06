@@ -573,10 +573,7 @@ function renderProjectList() {
         const rootRepairBadge = project.root_was_repaired
           ? `<span class="project-badge project-badge-muted" title="${escapeHtml(project.root_repair_notice || "项目路径已自动校正")}">路径已校正</span>`
           : "";
-        const phase = renderProjectPhase(project);
-        const nextStep = renderProjectNextStep(project);
-        const requiredProgress = renderProjectRequiredProgress(project);
-        const gapSummary = renderProjectGapSummary(project);
+        const stageLine = renderProjectStageLine(project);
         const quickAction = renderProjectQuickAction(project);
         const deliveryBadge = renderProjectDeliveryBadge(project);
         const artifactBadge = renderProjectArtifactBadge(project);
@@ -603,10 +600,7 @@ function renderProjectList() {
             <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${rootRepairBadge}${autoBadge}${deliveryBadge}${artifactBadge}${diagnosisBadge}</span>
             ${attentionReason}
             ${artifactMeta}
-            ${phase}
-            ${requiredProgress}
-            ${gapSummary}
-            ${nextStep}
+            ${stageLine}
           </button>
           ${quickAction}
         </article>
@@ -783,71 +777,27 @@ function renderProjectReadinessBadge(project = {}) {
   return `<span class="project-badge${className}" title="${escapeHtml(project.readiness_summary || label)}">${escapeHtml(label)}${escapeHtml(scoreText)}</span>`;
 }
 
-function renderProjectRequiredProgress(project = {}) {
-  const total = Number(project.readiness_required_total || 0);
-  if (!total) {
+function renderProjectStageLine(project = {}) {
+  const summary = project.readiness_card_summary || project.readiness_header_summary || "";
+  const detail = project.readiness_card_detail || project.readiness_top_action_reason || "";
+  if (!summary && !detail) {
     return "";
   }
-  const rawPassed = Number(project.readiness_required_passed || 0);
-  const passed = Number.isFinite(rawPassed) ? Math.max(0, Math.min(total, rawPassed)) : 0;
-  const rawPercent = Number(project.readiness_required_percent ?? (100 * passed / total));
+  const rawPercent = Number(project.readiness_card_progress_percent ?? project.readiness_header_progress_percent ?? project.readiness_required_percent ?? 0);
   const percent = Number.isFinite(rawPercent) ? Math.max(0, Math.min(100, rawPercent)) : 0;
-  const label = project.readiness_required_label || `必需 ${passed}/${total}`;
+  const tone = project.readiness_card_progress_tone || project.readiness_header_progress_tone || statusTone(project.readiness_status || project.auto_workflow_status || "");
+  const label = project.readiness_card_progress_label || project.readiness_header_progress_label || `${percent}%`;
   return `
-    <span class="project-required-progress" title="${escapeHtml(label)}">
-      <span class="project-required-track"><span style="width: ${percent}%"></span></span>
-      <span>${escapeHtml(label)}</span>
+    <span class="project-stage-line" data-tone="${escapeHtml(tone)}" title="${escapeHtml(detail || summary)}">
+      <span class="project-stage-line-copy">
+        ${summary ? `<b>${escapeHtml(summary)}</b>` : ""}
+        ${detail && detail !== summary ? `<small>${escapeHtml(detail)}</small>` : ""}
+      </span>
+      <span class="project-stage-line-meter" role="progressbar" aria-label="${escapeHtml(label)}，${percent}%" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">
+        <span style="width: ${percent}%"></span>
+      </span>
     </span>
   `;
-}
-
-function renderProjectGapSummary(project = {}) {
-  const label = project.readiness_gap_label || "";
-  if (!label) {
-    return "";
-  }
-  const gapCount = Number(project.readiness_gap_count || 0);
-  const tone = gapCount > 0 ? "failed" : "warning";
-  const sourceItems = gapCount > 0 ? project.readiness_gap_preview : project.readiness_todo_preview;
-  const detail = Array.isArray(sourceItems)
-    ? sourceItems
-        .map((item) => [item.label, item.detail].filter(Boolean).join("："))
-        .filter(Boolean)
-        .join("\n")
-    : "";
-  return `<span class="project-gaps" data-tone="${escapeHtml(tone)}" title="${escapeHtml(detail || label)}">${escapeHtml(label)}</span>`;
-}
-
-function renderProjectPhase(project = {}) {
-  const phase = project.readiness_phase || {};
-  const label = project.readiness_phase_label || phase.label || "";
-  if (!label) {
-    return "";
-  }
-  const detail = project.readiness_phase_detail || phase.detail || "";
-  const step = Number(project.readiness_phase_step || phase.step || 0);
-  const total = Number(project.readiness_phase_total || phase.total || 0);
-  const prefix = step && total ? `阶段 ${step}/${total}` : "阶段";
-  return `<span class="project-phase" title="${escapeHtml(detail || label)}">${escapeHtml(prefix)}：${escapeHtml(label)}</span>`;
-}
-
-function renderProjectNextStep(project = {}) {
-  const action = project.readiness_action || {};
-  const next = project.readiness_next_step || {};
-  const label = project.readiness_next_step_label || next.label || action.label || "";
-  const detail = project.readiness_next_step_detail || next.detail || project.readiness_action_detail || action.detail || project.readiness_summary || "";
-  const context = project.readiness_next_step_context || next.context || "";
-  const tone = project.readiness_next_step_tone || next.tone || "normal";
-  const urgency = project.readiness_next_step_urgency || next.urgency || "";
-  const todoCount = Number(project.readiness_todo_count || 0);
-  const moreText = todoCount > 1 ? ` · 后续 ${todoCount - 1} 项` : "";
-  if (!label && !detail) {
-    return "";
-  }
-  const contextText = context && context !== detail ? ` · ${context}` : "";
-  const urgencyText = readinessUrgencyLabel(urgency);
-  const text = label ? `下一步：${urgencyText ? `${urgencyText} · ` : ""}${label}${contextText}${detail ? ` · ${detail}` : ""}${moreText}` : detail;
-  return `<span class="project-next" data-tone="${escapeHtml(tone)}" data-urgency="${escapeHtml(urgency)}">${escapeHtml(text)}</span>`;
 }
 
 function readinessUrgencyLabel(urgency = "") {
@@ -1004,6 +954,10 @@ function projectSearchText(project = {}) {
     project.readiness_header_detail,
     project.readiness_header_progress_label,
     project.readiness_header_progress_tone,
+    project.readiness_card_summary,
+    project.readiness_card_detail,
+    project.readiness_card_progress_label,
+    project.readiness_card_progress_tone,
     project.readiness_completion?.label,
     project.readiness_completion_label,
     project.readiness_todo_count ? `待办 ${project.readiness_todo_count}` : "",
