@@ -54,6 +54,7 @@ const els = {
   clearLlmSettings: document.querySelector("#clear-llm-settings"),
   llmSettingsStatus: document.querySelector("#llm-settings-status"),
   title: document.querySelector("#project-title"),
+  projectNextAction: document.querySelector("#project-next-action"),
   openProjectRoot: document.querySelector("#open-project-root"),
   environment: document.querySelector("#environment-status"),
   empty: document.querySelector("#empty-state"),
@@ -1108,6 +1109,7 @@ function renderProject(detail) {
   syncProjectSelection();
   const { metadata, analysis } = detail;
   els.title.textContent = metadata.name || metadata.original_name || "项目";
+  syncTopbarProjectAction(metadata);
   if (els.openProjectRoot) {
     els.openProjectRoot.classList.remove("hidden");
     els.openProjectRoot.disabled = false;
@@ -1154,6 +1156,31 @@ function renderProject(detail) {
   updateAutoWorkflowButtons(metadata.auto_workflow_status, metadata.auto_workflow_progress || {});
   renderModelAssistantProgress(metadata.model_assistant_progress);
   renderProgressPanel(els.uploadProgress, metadata.analysis_progress, 7);
+}
+
+function syncTopbarProjectAction(metadata = {}) {
+  const button = els.projectNextAction;
+  if (!button) {
+    return;
+  }
+  const actionId = metadata.readiness_top_action_id || metadata.readiness_action_id || "";
+  const actionLabel = metadata.readiness_top_action_label || metadata.readiness_action_label || "";
+  if (!actionId || !actionLabel) {
+    button.classList.add("hidden");
+    button.disabled = true;
+    button.dataset.guideAction = "";
+    button.dataset.guidePath = "";
+    return;
+  }
+  const hint = metadata.readiness_top_action_hint || metadata.readiness_action_hint || metadata.readiness_top_action_detail || "";
+  const path = metadata.readiness_top_action_path || metadata.readiness_action?.path || metadata.primary_output_path || "";
+  button.textContent = actionLabel;
+  button.title = hint || actionLabel;
+  button.setAttribute("aria-label", hint ? `${actionLabel}：${hint}` : actionLabel);
+  button.dataset.guideAction = actionId;
+  button.dataset.guidePath = path;
+  button.disabled = false;
+  button.classList.remove("hidden");
 }
 
 function renderArtifactLoadErrorTitle(errors = []) {
@@ -3637,6 +3664,24 @@ els.clearProjectSelection?.addEventListener("click", () => {
 els.batchStartProjects?.addEventListener("click", async () => {
   await startSelectedProjectsBatch();
 });
+
+if (els.projectNextAction) {
+  els.projectNextAction.addEventListener("click", async () => {
+    const action = els.projectNextAction.dataset.guideAction || "";
+    if (!action) {
+      showToast("当前项目还没有可执行的下一步。", "warning");
+      return;
+    }
+    els.projectNextAction.disabled = true;
+    try {
+      await runGuideAction(action, { path: els.projectNextAction.dataset.guidePath || "" });
+    } catch (error) {
+      showToast(`执行下一步失败：${error.message}`, "error");
+    } finally {
+      els.projectNextAction.disabled = false;
+    }
+  });
+}
 
 if (els.openProjectRoot) {
   els.openProjectRoot.addEventListener("click", async () => {

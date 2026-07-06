@@ -695,7 +695,13 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_action_id"] = action.get("id", "")
     project["readiness_action_label"] = action.get("label", "")
     project["readiness_action_detail"] = action.get("detail", "")
-    project["readiness_action_hint"] = project_readiness_action_hint(action, project)
+    action_hint = project_readiness_action_hint(action, project)
+    project["readiness_action_hint"] = action_hint
+    project["readiness_top_action_id"] = action.get("id", "")
+    project["readiness_top_action_label"] = action.get("label", "")
+    project["readiness_top_action_detail"] = action.get("detail", "")
+    project["readiness_top_action_hint"] = action_hint
+    project["readiness_top_action_path"] = action.get("path", "")
     next_step = readiness.get("next_step", {})
     next_step = next_step if isinstance(next_step, dict) else {}
     project["readiness_next_step"] = next_step
