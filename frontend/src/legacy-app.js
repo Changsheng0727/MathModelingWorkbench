@@ -665,6 +665,22 @@ const DEFAULT_GUIDE_ACTION_ALIASES = {
   review_paper: "review",
   continue_review: "open_outputs",
   inspect_failure_evidence: "open_outputs",
+  package_deliverables: "batch_packages",
+  build_packages: "batch_packages",
+  refresh_package_hashes: "batch_packages",
+  clear_repair_backlog: "repair_campaign",
+  stabilize_queue: "autotune_capacity",
+  reduce_queue_pressure: "autotune_capacity",
+  scale_workers: "autotune_capacity",
+  complete_analysis: "select_analyzed",
+  analyze_projects: "select_analyzed",
+  review_solution_outputs: "open_outputs",
+  watch_delivery_jobs: "open_outputs",
+  watch_active_jobs: "open_outputs",
+  observe_delivery_batch: "open_outputs",
+  upload_project: "focus_upload",
+  seed_projects: "focus_upload",
+  export_audit_bundle: "export_audit",
 };
 
 function guideActionId(actionId = "") {
@@ -3806,6 +3822,16 @@ async function runGuideAction(action, options = {}) {
     } else {
       await loadTrustCenter();
       els.trustCenter?.querySelector("[data-trust-action='repair_campaign']")?.click();
+    }
+    return;
+  }
+  if (action === "export_audit") {
+    const auditButton = els.trustCenter?.querySelector("[data-trust-action='export_audit']");
+    if (auditButton) {
+      auditButton.click();
+    } else {
+      await loadTrustCenter();
+      els.trustCenter?.querySelector("[data-trust-action='export_audit']")?.click();
     }
     return;
   }
