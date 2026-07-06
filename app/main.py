@@ -1829,7 +1829,7 @@ def run_project_auto_workflow(project_id: str) -> dict:
         meta["auto_workflow_error"] = f"{type(exc).__name__}: {exc}"
         save_json(root / "metadata.json", meta)
         raise HTTPException(status_code=500, detail=meta["auto_workflow_error"]) from exc
-    return {"auto_workflow": report, "project": project_detail(project_id)}
+    return {"auto_workflow": report, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/auto/start")
@@ -1867,7 +1867,7 @@ def resume_project_auto_workflow(project_id: str) -> dict:
         meta["auto_workflow_error"] = f"{type(exc).__name__}: {exc}"
         save_json(root / "metadata.json", meta)
         raise HTTPException(status_code=500, detail=meta["auto_workflow_error"]) from exc
-    return {"auto_workflow": report, "project": project_detail(project_id)}
+    return {"auto_workflow": report, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/auto/resume/start")

@@ -4853,9 +4853,9 @@ async function runAutoWorkflow(
     els.autoWorkflowStatus.textContent = `自动流程失败：${error.message}`;
     showToast(`自动流程失败：${error.message}`, "error");
     try {
-      const detail = await api(`/api/projects/${encodeURIComponent(projectId)}`);
+      const detail = await api(`/api/projects/${encodeURIComponent(projectId)}?include_overview=true`);
       renderProject(detail);
-      await loadProjects();
+      await syncOverviewAfterAction(detail);
     } catch {
       // Keep the visible error if the follow-up refresh also fails.
     }
@@ -4915,7 +4915,8 @@ async function refreshAutoProgress(projectId) {
     return;
   }
   try {
-    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/progress`);
+    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/progress?include_jobs=true`);
+    applyAutoJobsPayload(payload);
     renderAutoWorkflowProgress(payload.progress);
     updateAutoWorkflowButtons(payload.status, payload.progress || {});
   } catch {
