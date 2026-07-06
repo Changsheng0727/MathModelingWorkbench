@@ -1829,6 +1829,122 @@ p {
   color: var(--primary-strong);
 }
 
+.readiness-todos {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--clay-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.86), rgba(247, 249, 251, 0.68)),
+    var(--panel-soft);
+  box-shadow: var(--shadow-inset);
+}
+
+.readiness-todos-head,
+.readiness-todos li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.readiness-todos-head strong,
+.readiness-todos-head span,
+.readiness-todos li strong,
+.readiness-todos li p {
+  overflow-wrap: anywhere;
+}
+
+.readiness-todos-head strong {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.readiness-todos-head span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.readiness-todos ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: readiness-todo;
+}
+
+.readiness-todos li {
+  counter-increment: readiness-todo;
+  padding: 8px;
+  border: 1px solid rgba(185, 200, 216, 0.58);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.readiness-todos li::before {
+  content: counter(readiness-todo);
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.readiness-todos li[data-status="failed"]::before {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.readiness-todos li[data-status="warning"]::before {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.readiness-todos li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.readiness-todos li strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.readiness-todos li strong b,
+.readiness-todos li > span {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.readiness-todos li p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .readiness-checks {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -4589,6 +4705,7 @@ ul.problem-meta {
 :root[data-theme="dark"] .summary-strip,
 :root[data-theme="dark"] .guide-panel,
 :root[data-theme="dark"] .readiness-hero,
+:root[data-theme="dark"] .readiness-todos,
 :root[data-theme="dark"] .workflow-progress,
 :root[data-theme="dark"] .llm-live-stream,
 :root[data-theme="dark"] .problem-card,
@@ -4638,8 +4755,10 @@ ul.problem-meta {
 :root[data-theme="dark"] .project-filter,
 :root[data-theme="dark"] .project-select-input,
 :root[data-theme="dark"] .status-card,
+:root[data-theme="dark"] .readiness-next,
 :root[data-theme="dark"] .readiness-score,
 :root[data-theme="dark"] .readiness-check,
+:root[data-theme="dark"] .readiness-todos li,
 :root[data-theme="dark"] .growth-hero,
 :root[data-theme="dark"] .growth-metric,
 :root[data-theme="dark"] .growth-batch,

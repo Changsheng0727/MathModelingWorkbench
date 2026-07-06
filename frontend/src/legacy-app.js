@@ -764,10 +764,12 @@ function renderProjectNextStep(project = {}) {
   const next = project.readiness_next_step || {};
   const label = project.readiness_next_step_label || next.label || action.label || "";
   const detail = project.readiness_next_step_detail || next.detail || project.readiness_action_detail || action.detail || project.readiness_summary || "";
+  const todoCount = Number(project.readiness_todo_count || 0);
+  const moreText = todoCount > 1 ? ` · 后续 ${todoCount - 1} 项` : "";
   if (!label && !detail) {
     return "";
   }
-  const text = label ? `下一步：${label}${detail ? ` · ${detail}` : ""}` : detail;
+  const text = label ? `下一步：${label}${detail ? ` · ${detail}` : ""}${moreText}` : detail;
   return `<span class="project-next">${escapeHtml(text)}</span>`;
 }
 
@@ -901,6 +903,8 @@ function projectSearchText(project = {}) {
     project.readiness_next_step?.detail,
     project.readiness_next_step_label,
     project.readiness_next_step_detail,
+    project.readiness_todo_count ? `待办 ${project.readiness_todo_count}` : "",
+    ...(Array.isArray(project.readiness_todo_preview) ? project.readiness_todo_preview.flatMap((item) => [item.label, item.detail, item.action?.label]) : []),
     project.readiness_action?.label,
     project.readiness_action?.detail,
     project.readiness_action_id,
@@ -1248,6 +1252,8 @@ function renderProjectReadiness(readiness = {}) {
   const nextStep = next.label
     ? `<p class="readiness-next"><b>下一步</b><span>${escapeHtml(next.label)}${next.detail ? ` · ${escapeHtml(next.detail)}` : ""}</span></p>`
     : "";
+  const todos = Array.isArray(readiness.todo_items) ? readiness.todo_items.slice(0, 5) : [];
+  const todoList = todos.length ? renderReadinessTodos(todos) : "";
   els.projectReadiness.dataset.status = status;
   els.projectReadiness.innerHTML = `
     <section class="readiness-hero" data-status="${escapeHtml(status)}">
@@ -1263,9 +1269,40 @@ function renderProjectReadiness(readiness = {}) {
       </div>
       ${actionButton}
     </section>
+    ${todoList}
     <div class="readiness-checks">
       ${checks.map(renderReadinessCheck).join("")}
     </div>
+  `;
+}
+
+function renderReadinessTodos(todos = []) {
+  return `
+    <div class="readiness-todos" aria-label="待处理步骤">
+      <div class="readiness-todos-head">
+        <strong>待处理步骤</strong>
+        <span>${todos.length} 项</span>
+      </div>
+      <ol>
+        ${todos.map(renderReadinessTodo).join("")}
+      </ol>
+    </div>
+  `;
+}
+
+function renderReadinessTodo(item = {}) {
+  const action = item.action || {};
+  const status = statusTone(item.status);
+  const required = item.required ? '<b>必需</b>' : "";
+  const actionLabel = action.label ? `<span>${escapeHtml(action.label)}</span>` : "";
+  return `
+    <li data-status="${escapeHtml(status)}">
+      <div>
+        <strong>${escapeHtml(item.label || "-")}${required}</strong>
+        <p>${escapeHtml(item.detail || statusLabel(item.status))}</p>
+      </div>
+      ${actionLabel}
+    </li>
   `;
 }
 

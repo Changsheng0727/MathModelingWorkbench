@@ -48,6 +48,7 @@ def build_project_readiness(
         "summary": readiness_summary(status, score, blockers, warnings, metadata, repair or {}),
         "primary_action": primary_action,
         "next_step": readiness_next_step(primary_action, action_item),
+        "todo_items": readiness_todo_items(checks),
         "checks": checks,
         "blockers": blockers,
         "warning_count": len(warnings),
@@ -242,6 +243,23 @@ def readiness_next_step(action: dict[str, Any], item: dict[str, Any] | None) -> 
         "check_label": str((item or {}).get("label") or ""),
         "path": str(action.get("path") or ""),
     }
+
+
+def readiness_todo_items(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    priorities = {"fail": 0, "warning": 1}
+    items = [item for item in checks if str(item.get("status") or "") != "pass"]
+    items.sort(key=lambda item: (0 if item.get("required") else 1, priorities.get(str(item.get("status") or ""), 2)))
+    return [
+        {
+            "id": str(item.get("id") or ""),
+            "label": str(item.get("label") or ""),
+            "status": str(item.get("status") or ""),
+            "detail": str(item.get("detail") or ""),
+            "required": bool(item.get("required")),
+            "action": action_with_detail(item),
+        }
+        for item in items
+    ]
 
 
 def score_checks(checks: list[dict[str, Any]]) -> int:
