@@ -5278,9 +5278,11 @@ async function refreshDeliveryReadinessForProject(projectId) {
       els.deliveryReadinessStatus.textContent = `交付就绪已刷新：${label}${scoreText}。`;
     }
     showToast("交付就绪中心已刷新", "success");
-    await loadProjects();
-    await loadGrowthMetrics();
-    await loadTrustCenter();
+    if (payload.overview) {
+      applyProductOverviewPayload(payload.overview);
+    } else {
+      await loadProductOverview();
+    }
   } catch (error) {
     if (els.deliveryReadinessStatus) {
       els.deliveryReadinessStatus.textContent = `交付就绪刷新失败：${error.message}`;
@@ -5419,9 +5421,11 @@ els.deliveryCenter?.addEventListener("click", async (event) => {
       const sizeText = Number.isFinite(Number(size)) ? `，大小 ${formatBytes(Number(size))}` : "";
       setDeliveryStatus(`正式交付包已生成${sizeText}。`);
       showToast("正式交付包已生成", "success");
-      await loadProjects();
-      await loadGrowthMetrics();
-      await loadTrustCenter();
+      if (payload.overview) {
+        applyProductOverviewPayload(payload.overview);
+      } else {
+        await loadProductOverview();
+      }
       return;
     }
     if (command === "compile") {

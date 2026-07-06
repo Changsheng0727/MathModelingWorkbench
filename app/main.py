@@ -1766,7 +1766,7 @@ def refresh_project_delivery_readiness(project_id: str) -> dict:
         save_json(root / "metadata.json", meta)
         raise HTTPException(status_code=500, detail=meta["delivery_readiness_summary"]) from exc
     save_json(root / "metadata.json", meta)
-    return {"delivery": delivery, "artifacts": artifacts, "project": project_detail(project_id)}
+    return {"delivery": delivery, "artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/delivery/package")
@@ -1786,7 +1786,7 @@ def build_project_delivery_package(project_id: str) -> dict:
         raise HTTPException(status_code=500, detail=meta["delivery_package_summary"]) from exc
     attach_artifacts_safely(meta, artifacts)
     save_json(root / "metadata.json", meta)
-    return {"package": package, "artifacts": artifacts, "project": project_detail(project_id)}
+    return {"package": package, "artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/auto/run")
