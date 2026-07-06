@@ -30,9 +30,9 @@ def build_project_readiness(
     warnings = [item for item in checks if item.get("status") == "warning"]
     score = score_checks(checks)
     status = "failed" if blockers else "warning" if warnings or score < 86 else "success"
-    primary_action = next((item.get("action") for item in checks if item.get("status") == "fail" and item.get("action")), None)
+    primary_action = next((action_with_detail(item) for item in checks if item.get("status") == "fail" and item.get("action")), None)
     if not primary_action:
-        primary_action = next((item.get("action") for item in checks if item.get("status") == "warning" and item.get("action")), None)
+        primary_action = next((action_with_detail(item) for item in checks if item.get("status") == "warning" and item.get("action")), None)
     primary_action = primary_action or {"id": "open_outputs", "label": "查看输出"}
     return {
         "status": status,
@@ -192,6 +192,14 @@ def readiness_check(
         "required": required,
         "action": action,
     }
+
+
+def action_with_detail(item: dict[str, Any]) -> dict[str, str]:
+    action = dict(item.get("action") or {})
+    detail = str(item.get("detail") or "").strip()
+    if detail:
+        action.setdefault("detail", detail)
+    return action
 
 
 def score_checks(checks: list[dict[str, Any]]) -> int:

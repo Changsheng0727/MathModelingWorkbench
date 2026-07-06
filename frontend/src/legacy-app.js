@@ -727,7 +727,8 @@ function renderProjectQuickAction(project = {}) {
   if (!project.id || !actionId || !label) {
     return "";
   }
-  return `<button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}">${escapeHtml(label)}</button>`;
+  const title = action.detail || project.readiness_action_detail || project.readiness_summary || label;
+  return `<button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}" title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
 }
 
 function pruneSelectedProjects() {
@@ -838,8 +839,10 @@ function projectSearchText(project = {}) {
     project.readiness_label,
     project.readiness_summary,
     project.readiness_action?.label,
+    project.readiness_action?.detail,
     project.readiness_action_id,
     project.readiness_action_label,
+    project.readiness_action_detail,
     project.readiness_bucket_label || projectFilterLabel(project.readiness_bucket),
     project.metadata_error,
     project.metadata_error ? "元数据异常" : "",
@@ -3275,6 +3278,8 @@ els.projectList?.addEventListener("click", async (event) => {
     }
     await openProject(projectId);
     await runGuideAction(action);
+  } catch (error) {
+    showToast(`执行下一步失败：${error.message}`, "error");
   } finally {
     button.disabled = false;
   }
