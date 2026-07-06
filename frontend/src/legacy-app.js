@@ -2336,6 +2336,7 @@ function summarizeSchema(schema) {
 
 function renderArtifacts(metadata, projectId) {
   const artifacts = metadata.artifacts || {};
+  const artifactStatus = metadata.artifact_status || {};
   const items = [
     ["analysis_report", "分析报告"],
     ["outline", "论文提纲"],
@@ -2413,34 +2414,36 @@ function renderArtifacts(metadata, projectId) {
     ["delivery_package_manifest_json", "交付包 JSON"],
   ]
     .filter(([key]) => artifacts[key])
-    .map(([key, label]) => [key, label, artifacts[key]]);
-  items.push(["support_zip", "支撑材料包", "support.zip"]);
+    .map(([key, label]) => [key, label, artifacts[key], artifactStatus[key]]);
+  items.push(["support_zip", "支撑材料包", "support.zip", artifactStatus.support_zip]);
   if (!items.length) {
     els.artifacts.innerHTML = '<p class="status">暂无生成文件。</p>';
     return;
   }
   const grouped = new Map();
-  items.forEach(([key, label, path]) => {
+  items.forEach(([key, label, path, status]) => {
     const group = artifactGroup(key, path);
     if (!grouped.has(group)) {
       grouped.set(group, []);
     }
-    grouped.get(group).push([key, label, path]);
+    grouped.get(group).push([key, label, path, status]);
   });
   els.artifacts.innerHTML = Array.from(grouped.entries())
     .map(([group, groupItems], groupIndex) => {
       const links = groupItems
-        .map(([key, label, path]) => renderArtifactItem(projectId, key, label, path))
+        .map(([key, label, path, status]) => renderArtifactItem(projectId, key, label, path, status))
         .join("");
       const folderId = `artifact-folder-${groupIndex}`;
       const kinds = artifactFolderKinds(groupItems);
+      const missing = groupItems.filter(([, , , status]) => status && (status.exists === false || status.is_file === false)).length;
+      const summary = `${groupItems.length} 个文件${missing ? ` · ${missing} 个未生成` : kinds ? ` · ${kinds}` : ""}`;
       return `
         <section class="artifact-folder">
           <button class="artifact-folder-button" type="button" data-artifact-folder="${escapeHtml(folderId)}" aria-expanded="false" aria-controls="${escapeHtml(folderId)}">
             <span class="artifact-folder-mark" aria-hidden="true"></span>
             <span class="artifact-folder-copy">
               <strong>${escapeHtml(group)}</strong>
-              <small>${escapeHtml(`${groupItems.length} 个文件${kinds ? ` · ${kinds}` : ""}`)}</small>
+              <small>${escapeHtml(summary)}</small>
             </span>
           </button>
           <div id="${escapeHtml(folderId)}" class="artifact-list" hidden>${links}</div>
@@ -2469,14 +2472,32 @@ function artifactFolderKinds(items = []) {
   return kinds.slice(0, 4).map((kind) => labels[kind] || kind).join(" / ");
 }
 
-function renderArtifactItem(projectId, key, label, path) {
+function renderArtifactItem(projectId, key, label, path, status = {}) {
   const encodedProject = encodeURIComponent(projectId);
   const encodedPath = encodeRelativePath(path);
   const safeLabel = escapeHtml(label);
   const safePath = escapeHtml(path);
+  const available = !status || (status.exists !== false && status.is_file !== false);
+  const reason = status?.missing_reason || "文件尚未生成或已被移动";
+  const safeReason = escapeHtml(reason);
+  if (!available) {
+    return `
+      <div class="artifact-row is-missing">
+        <span class="artifact-link artifact-link-missing" data-kind="${artifactKind(key, path)}" title="${safePath} · ${safeReason}" aria-disabled="true">
+          <span class="artifact-copy">
+            <span class="artifact-name">${safeLabel}</span>
+            <small class="artifact-missing-reason">${safeReason}</small>
+          </span>
+        </span>
+        <button class="artifact-open" type="button" data-missing="true" disabled title="${safeReason}" aria-label="${safeLabel}尚未生成">未生成</button>
+      </div>
+    `;
+  }
   return `
     <div class="artifact-row">
-      <a class="artifact-link" data-kind="${artifactKind(key, path)}" href="/api/projects/${encodedProject}/download/${encodedPath}" title="${safePath}" aria-label="下载或查看${safeLabel}">${safeLabel}</a>
+      <a class="artifact-link" data-kind="${artifactKind(key, path)}" href="/api/projects/${encodedProject}/download/${encodedPath}" title="${safePath}" aria-label="下载或查看${safeLabel}">
+        <span class="artifact-copy"><span class="artifact-name">${safeLabel}</span></span>
+      </a>
       <button class="artifact-open" type="button" data-project-id="${escapeHtml(projectId)}" data-path="${safePath}" title="在资源管理器中打开所在位置" aria-label="打开${safeLabel}所在文件夹">打开位置</button>
     </div>
   `;

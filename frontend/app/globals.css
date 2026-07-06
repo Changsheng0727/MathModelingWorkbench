@@ -4361,6 +4361,30 @@ ul.problem-meta {
   white-space: normal;
 }
 
+.artifact-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.artifact-name {
+  overflow-wrap: anywhere;
+}
+
+.artifact-link-missing {
+  color: var(--muted);
+  cursor: not-allowed;
+  background: linear-gradient(145deg, var(--panel-soft), var(--panel));
+  border-color: var(--line);
+}
+
+.artifact-missing-reason {
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .artifact-open {
   min-height: 38px;
   padding: 0 10px;
@@ -4376,7 +4400,7 @@ ul.problem-meta {
   transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
 }
 
-.artifact-open:hover {
+.artifact-open:hover:not(:disabled) {
   border-color: var(--teal);
   background: var(--teal-soft);
   transform: translateY(-1px);
@@ -4386,6 +4410,11 @@ ul.problem-meta {
   cursor: wait;
   opacity: 0.68;
   transform: none;
+}
+
+.artifact-open[data-missing="true"]:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
 }
 
 .artifact-link::before {
@@ -4429,7 +4458,7 @@ ul.problem-meta {
   color: var(--amber);
 }
 
-.artifact-link:hover {
+.artifact-link:hover:not(.artifact-link-missing) {
   border-color: var(--primary);
   background: linear-gradient(145deg, #ffffff, var(--primary-soft));
   transform: translateY(-1px);
@@ -4620,7 +4649,7 @@ ul.problem-meta {
 :root[data-theme="dark"] .project-button:hover,
 :root[data-theme="dark"] .project-quick-action:hover,
 :root[data-theme="dark"] .project-filter:hover,
-:root[data-theme="dark"] .artifact-link:hover,
+:root[data-theme="dark"] .artifact-link:hover:not(.artifact-link-missing),
 :root[data-theme="dark"] .module-tab:hover {
   background:
     linear-gradient(145deg, rgba(112, 164, 255, 0.16), rgba(71, 210, 190, 0.08)),
