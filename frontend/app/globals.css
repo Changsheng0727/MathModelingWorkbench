@@ -1016,6 +1016,10 @@ p {
   color: var(--primary-strong);
 }
 
+.project-next[data-urgency="high"] {
+  font-weight: 750;
+}
+
 .project-phase {
   display: inline-flex;
   width: fit-content;
@@ -1929,6 +1933,10 @@ p {
 .readiness-next[data-tone="running"] {
   border-color: color-mix(in oklch, var(--primary) 34%, transparent);
   background: var(--primary-soft);
+}
+
+.readiness-next[data-urgency="high"] b {
+  color: var(--red);
 }
 
 .readiness-todos {

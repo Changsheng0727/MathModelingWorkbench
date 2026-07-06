@@ -631,9 +631,12 @@ function renderProjectFilters(projects = []) {
       if (hasArtifactIssue(project)) {
         acc.artifact_issue += 1;
       }
+      if (isUrgentProject(project)) {
+        acc.urgent += 1;
+      }
       return acc;
     },
-    { all: 0, needs_action: 0, running: 0, deliverable: 0, artifact_issue: 0 },
+    { all: 0, urgent: 0, needs_action: 0, running: 0, deliverable: 0, artifact_issue: 0 },
   );
   els.projectFilters.querySelectorAll("[data-project-filter]").forEach((button) => {
     const filter = button.dataset.projectFilter || "all";
@@ -652,12 +655,16 @@ function projectFilterMatches(project = {}, filter = "all") {
   if (validFilter === "artifact_issue") {
     return hasArtifactIssue(project);
   }
+  if (validFilter === "urgent") {
+    return isUrgentProject(project);
+  }
   return (project.readiness_bucket || "normal") === validFilter;
 }
 
 function projectFilterLabel(filter = "all") {
   const labels = {
     all: "全部",
+    urgent: "优先处理",
     needs_action: "需处理",
     running: "运行中",
     deliverable: "可交付",
@@ -667,7 +674,7 @@ function projectFilterLabel(filter = "all") {
 }
 
 function validProjectFilter(filter = "all") {
-  return ["all", "needs_action", "running", "deliverable", "artifact_issue"].includes(filter) ? filter : "all";
+  return ["all", "urgent", "needs_action", "running", "deliverable", "artifact_issue"].includes(filter) ? filter : "all";
 }
 
 function renderProjectAutoBadge(project = {}) {
@@ -731,6 +738,10 @@ function hasArtifactIssue(project = {}) {
   return Boolean(project.metadata_error) || status === "warning" || status === "error" || Number(summary.missing || 0) > 0 || Number(summary.unsafe || 0) > 0;
 }
 
+function isUrgentProject(project = {}) {
+  return (project.readiness_next_step_urgency || project.readiness_next_step?.urgency || "") === "high";
+}
+
 function renderProjectReadinessBadge(project = {}) {
   const label = project.readiness_label || "";
   if (!label) {
@@ -781,14 +792,20 @@ function renderProjectNextStep(project = {}) {
   const detail = project.readiness_next_step_detail || next.detail || project.readiness_action_detail || action.detail || project.readiness_summary || "";
   const context = project.readiness_next_step_context || next.context || "";
   const tone = project.readiness_next_step_tone || next.tone || "normal";
+  const urgency = project.readiness_next_step_urgency || next.urgency || "";
   const todoCount = Number(project.readiness_todo_count || 0);
   const moreText = todoCount > 1 ? ` · 后续 ${todoCount - 1} 项` : "";
   if (!label && !detail) {
     return "";
   }
   const contextText = context && context !== detail ? ` · ${context}` : "";
-  const text = label ? `下一步：${label}${contextText}${detail ? ` · ${detail}` : ""}${moreText}` : detail;
-  return `<span class="project-next" data-tone="${escapeHtml(tone)}">${escapeHtml(text)}</span>`;
+  const urgencyText = readinessUrgencyLabel(urgency);
+  const text = label ? `下一步：${urgencyText ? `${urgencyText} · ` : ""}${label}${contextText}${detail ? ` · ${detail}` : ""}${moreText}` : detail;
+  return `<span class="project-next" data-tone="${escapeHtml(tone)}" data-urgency="${escapeHtml(urgency)}">${escapeHtml(text)}</span>`;
+}
+
+function readinessUrgencyLabel(urgency = "") {
+  return urgency === "high" ? "高优先级" : urgency === "medium" ? "建议处理" : "";
 }
 
 function renderProjectQuickAction(project = {}) {
@@ -919,8 +936,10 @@ function projectSearchText(project = {}) {
     project.readiness_summary,
     project.readiness_next_step?.label,
     project.readiness_next_step?.detail,
+    project.readiness_next_step?.urgency === "high" ? "高优先级 优先处理" : "",
     project.readiness_next_step_label,
     project.readiness_next_step_detail,
+    project.readiness_next_step_urgency === "high" ? "高优先级 优先处理" : "",
     project.readiness_phase?.label,
     project.readiness_phase?.detail,
     project.readiness_phase?.step && project.readiness_phase?.total ? `阶段 ${project.readiness_phase.step}/${project.readiness_phase.total}` : "",
@@ -1282,7 +1301,7 @@ function renderProjectReadiness(readiness = {}) {
     ? `<span class="readiness-phase" title="${escapeHtml(phase.detail || phase.label)}">${escapeHtml(phasePrefix)}：${escapeHtml(phase.label)}</span>`
     : "";
   const nextStep = next.label
-    ? `<p class="readiness-next" data-tone="${escapeHtml(next.tone || "normal")}"><b>下一步</b><span>${escapeHtml(next.label)}${next.context ? ` · ${escapeHtml(next.context)}` : ""}${next.detail ? ` · ${escapeHtml(next.detail)}` : ""}</span></p>`
+    ? `<p class="readiness-next" data-tone="${escapeHtml(next.tone || "normal")}" data-urgency="${escapeHtml(next.urgency || "")}"><b>下一步</b><span>${readinessUrgencyLabel(next.urgency) ? `${escapeHtml(readinessUrgencyLabel(next.urgency))} · ` : ""}${escapeHtml(next.label)}${next.context ? ` · ${escapeHtml(next.context)}` : ""}${next.detail ? ` · ${escapeHtml(next.detail)}` : ""}</span></p>`
     : "";
   const completion = renderReadinessCompletion(readiness.completion || {});
   const todos = Array.isArray(readiness.todo_items) ? readiness.todo_items.slice(0, 5) : [];

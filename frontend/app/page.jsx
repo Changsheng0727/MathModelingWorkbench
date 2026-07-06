@@ -108,6 +108,7 @@ export default function WorkbenchPage() {
             </label>
             <div id="project-filters" className="project-filters" role="group" aria-label="项目筛选">
               <button className="project-filter is-active" type="button" data-project-filter="all">全部</button>
+              <button className="project-filter" type="button" data-project-filter="urgent">优先处理</button>
               <button className="project-filter" type="button" data-project-filter="needs_action">需处理</button>
               <button className="project-filter" type="button" data-project-filter="running">运行中</button>
               <button className="project-filter" type="button" data-project-filter="deliverable">可交付</button>
