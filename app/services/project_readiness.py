@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.services.action_catalog import action_outcome
+from app.services.action_catalog import action_outcome, action_progress
 
 
 READINESS_PHASE_TOTAL = 10
@@ -292,6 +292,9 @@ def action_with_detail(item: dict[str, Any]) -> dict[str, str]:
     outcome = action_outcome(str(action.get("id") or ""))
     if outcome:
         action.setdefault("outcome", outcome)
+    progress = action_progress(str(action.get("id") or ""))
+    if progress:
+        action.setdefault("progress", progress)
     return action
 
 
@@ -392,6 +395,7 @@ def readiness_todo_items(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "action_path": str(action.get("path") or ""),
                 "action_problem_id": str(action.get("problem_id") or ""),
                 "action_outcome": str(action.get("outcome") or ""),
+                "action_progress": str(action.get("progress") or ""),
             }
         )
     return rows

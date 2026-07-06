@@ -643,7 +643,8 @@ function renderProjectEmptyState(onboarding = {}) {
         ${actions.map((action) => {
           const titleText = [action.detail, action.outcome ? `点击后：${action.outcome}` : ""].filter(Boolean).join("；");
           const titleAttr = titleText ? ` title="${escapeHtml(titleText)}"` : "";
-          return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${titleAttr}>${escapeHtml(action.label)}</button>`;
+          const progressAttr = action.progress ? ` data-guide-progress="${escapeHtml(action.progress)}"` : "";
+          return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${progressAttr}${titleAttr}>${escapeHtml(action.label)}</button>`;
         }).join("")}
       </div>
     </div>
@@ -660,6 +661,7 @@ function normalizedGuideActions(actions = [], fallback = []) {
       primary: Boolean(action.primary),
       detail: action.detail ? String(action.detail) : "",
       outcome: action.outcome ? String(action.outcome) : guideActionOutcome(action.id),
+      progress: action.progress ? String(action.progress) : guideActionProgress(action.id),
       path: action.path ? String(action.path) : "",
       problemId: action.problem_id || action.problemId ? String(action.problem_id || action.problemId) : "",
     }));
@@ -876,15 +878,17 @@ function renderProjectQuickAction(project = {}) {
   }
   const hint = project.readiness_action_hint || action.hint || action.detail || project.readiness_action_detail || project.readiness_summary || "";
   const outcome = project.readiness_action_outcome || "";
+  const progress = project.readiness_action_progress || action.progress || guideActionProgress(actionId);
   const title = [hint, outcome].filter(Boolean).join("；") || label;
   const outputPath = action.path || project.primary_output_path || project.artifact_summary?.latest_path || "";
   const problemId = action.problem_id || project.readiness_top_action_problem_id || "";
   const pathAttribute = outputPath ? ` data-project-path="${escapeHtml(outputPath)}"` : "";
   const problemAttribute = problemId ? ` data-project-problem-id="${escapeHtml(problemId)}"` : "";
+  const progressAttribute = progress ? ` data-project-progress="${escapeHtml(progress)}"` : "";
   const ariaLabel = `${project.name || project.id}：${label}${hint ? `。${hint}` : ""}`;
   return `
     <span class="project-action-cell">
-      <button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute} title="${escapeHtml(title)}" aria-label="${escapeHtml(ariaLabel)}">${escapeHtml(label)}</button>
+      <button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute}${progressAttribute} title="${escapeHtml(title)}" aria-label="${escapeHtml(ariaLabel)}">${escapeHtml(label)}</button>
       ${outcome || hint ? `<span class="project-action-hint">${escapeHtml(outcome || hint)}</span>` : ""}
     </span>
   `;
@@ -1572,14 +1576,16 @@ function renderReadinessTodo(item = {}) {
   const actionPath = item.action_path || action.path || "";
   const actionProblemId = item.action_problem_id || action.problem_id || "";
   const actionOutcome = item.action_outcome || action.outcome || guideActionOutcome(actionId);
+  const actionProgress = item.action_progress || action.progress || guideActionProgress(actionId);
   const status = statusTone(item.status);
   const required = item.required ? '<b>必需</b>' : "";
   const pathAttribute = actionPath ? ` data-readiness-path="${escapeHtml(actionPath)}"` : "";
   const problemAttribute = actionProblemId ? ` data-readiness-problem-id="${escapeHtml(actionProblemId)}"` : "";
-  const actionTitle = [action.detail || item.detail, actionOutcome ? `点击后：${actionOutcome}` : ""].filter(Boolean).join("；");
+  const progressAttribute = actionProgress ? ` data-readiness-progress="${escapeHtml(actionProgress)}"` : "";
+  const actionTitle = [action.detail || item.detail, actionProgress, actionOutcome ? `点击后：${actionOutcome}` : ""].filter(Boolean).join("；");
   const titleAttribute = actionTitle ? ` title="${escapeHtml(actionTitle)}"` : "";
   const actionButton = actionId && actionLabel
-    ? `<button class="readiness-todo-action" type="button" data-readiness-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute}${titleAttribute}>${escapeHtml(actionLabel)}</button>`
+    ? `<button class="readiness-todo-action" type="button" data-readiness-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute}${progressAttribute}${titleAttribute}>${escapeHtml(actionLabel)}</button>`
     : "";
   return `
     <li data-status="${escapeHtml(status)}">
@@ -1929,9 +1935,10 @@ function renderExperienceGuide(experience = {}) {
       .map((action) => {
         const path = action.path ? ` data-guide-path="${escapeHtml(action.path)}"` : "";
         const problemId = action.problemId ? ` data-guide-problem-id="${escapeHtml(action.problemId)}"` : "";
+        const progress = action.progress ? ` data-guide-progress="${escapeHtml(action.progress)}"` : "";
         const titleText = [action.detail, action.outcome ? `点击后：${action.outcome}` : ""].filter(Boolean).join("；");
         const title = titleText ? ` title="${escapeHtml(titleText)}"` : "";
-        return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${path}${problemId}${title}>${escapeHtml(action.label)}</button>`;
+        return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${path}${problemId}${progress}${title}>${escapeHtml(action.label)}</button>`;
       })
       .join("");
   }
@@ -3511,7 +3518,7 @@ els.experienceGuide?.addEventListener("click", async (event) => {
   }
   button.disabled = true;
   try {
-    await runGuideAction(button.dataset.guideAction, { path: button.dataset.guidePath || "", problemId: button.dataset.guideProblemId || "" });
+    await runGuideAction(button.dataset.guideAction, { path: button.dataset.guidePath || "", problemId: button.dataset.guideProblemId || "", progress: button.dataset.guideProgress || "" });
   } finally {
     button.disabled = false;
   }
@@ -3524,7 +3531,7 @@ els.projectReadiness?.addEventListener("click", async (event) => {
   }
   button.disabled = true;
   try {
-    await runGuideAction(button.dataset.readinessAction, { path: button.dataset.readinessPath || "", problemId: button.dataset.readinessProblemId || "" });
+    await runGuideAction(button.dataset.readinessAction, { path: button.dataset.readinessPath || "", problemId: button.dataset.readinessProblemId || "", progress: button.dataset.readinessProgress || "" });
   } finally {
     button.disabled = false;
   }
@@ -3532,7 +3539,7 @@ els.projectReadiness?.addEventListener("click", async (event) => {
 
 async function runGuideAction(action, options = {}) {
   const projectId = state.currentProject?.metadata?.id || "";
-  const progress = guideActionProgress(action);
+  const progress = options.progress || guideActionProgress(action);
   if (progress && els.guideOutcome) {
     els.guideOutcome.textContent = progress;
     els.guideOutcome.hidden = false;
@@ -3792,7 +3799,7 @@ els.projectList?.addEventListener("click", async (event) => {
   if (guideButton) {
     guideButton.disabled = true;
     try {
-      await runGuideAction(guideButton.dataset.guideAction);
+      await runGuideAction(guideButton.dataset.guideAction, { progress: guideButton.dataset.guideProgress || "" });
     } finally {
       guideButton.disabled = false;
     }
@@ -3819,7 +3826,7 @@ els.projectList?.addEventListener("click", async (event) => {
       return;
     }
     await openProject(projectId);
-    await runGuideAction(action, { path: button.dataset.projectPath || "", problemId: button.dataset.projectProblemId || "" });
+    await runGuideAction(action, { path: button.dataset.projectPath || "", problemId: button.dataset.projectProblemId || "", progress: button.dataset.projectProgress || "" });
   } catch (error) {
     showToast(`执行下一步失败：${error.message}`, "error");
   } finally {
