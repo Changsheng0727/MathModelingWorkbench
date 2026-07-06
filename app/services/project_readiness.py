@@ -281,14 +281,18 @@ def readiness_completion(
     warning = sum(1 for item in checks if item.get("status") == "warning")
     total = len(checks)
     todo_count = len(todo_items)
+    percent = round(100 * passed / total) if total else 0
+    required_percent = round(100 * required_passed / len(required)) if required else 0
     return {
         "passed": passed,
         "total": total,
+        "percent": percent,
         "failed": failed,
         "warning": warning,
         "todo_count": todo_count,
         "required_passed": required_passed,
         "required_total": len(required),
+        "required_percent": required_percent,
         "label": f"已通过 {passed}/{total}，待处理 {todo_count} 项",
     }
 

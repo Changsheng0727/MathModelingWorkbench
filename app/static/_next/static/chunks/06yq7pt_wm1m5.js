@@ -96,21 +96,22 @@
   `:""}(e.metrics||[])}
           </div>
         </article>
-      `).join("")}(l,c),function(e={}){if(!n.projectReadiness)return;if(!e||!Array.isArray(e.checks)){n.projectReadiness.innerHTML='<p class="status">暂无准备度信息。</p>';return}let t=ec(e.status),a=Number.isFinite(Number(e.score))?Number(e.score):0,r=e.checks.slice(0,7),s=e.primary_action||{},o=s.detail||s.path||s.label||"",l=s.path?` data-readiness-path="${i(s.path)}"`:"",c=s.id?`<button class="primary compact" type="button" data-readiness-action="${i(s.id)}"${l} title="${i(o)}">${i(s.label||"继续")}</button>`:"",u=e.next_step||{},d=u.label?`<p class="readiness-next"><b>下一步</b><span>${i(u.label)}${u.detail?` \xb7 ${i(u.detail)}`:""}</span></p>`:"",p=function(e={}){let t=Number(e.total||0);if(!t)return"";let a=Number(e.passed||0),r=Number(e.required_passed||0),s=Number(e.required_total||0),n=Number(e.todo_count||0),o=[["检查",`${a}/${t}`],s?["必需",`${r}/${s}`]:null,["待办",`${n}`]].filter(Boolean);return`
+      `).join("")}(l,c),function(e={}){if(!n.projectReadiness)return;if(!e||!Array.isArray(e.checks)){n.projectReadiness.innerHTML='<p class="status">暂无准备度信息。</p>';return}let t=ec(e.status),a=Number.isFinite(Number(e.score))?Number(e.score):0,r=e.checks.slice(0,7),s=e.primary_action||{},o=s.detail||s.path||s.label||"",l=s.path?` data-readiness-path="${i(s.path)}"`:"",c=s.id?`<button class="primary compact" type="button" data-readiness-action="${i(s.id)}"${l} title="${i(o)}">${i(s.label||"继续")}</button>`:"",u=e.next_step||{},d=u.label?`<p class="readiness-next"><b>下一步</b><span>${i(u.label)}${u.detail?` \xb7 ${i(u.detail)}`:""}</span></p>`:"",p=function(e={}){let t=Number(e.total||0);if(!t)return"";let a=Number(e.passed||0),r=Math.max(0,Math.min(100,Number(e.percent||0))),s=Number(e.required_passed||0),n=Number(e.required_total||0),o=Number(e.todo_count||0),l=[["检查",`${a}/${t}`],n?["必需",`${s}/${n}`]:null,["待办",`${o}`]].filter(Boolean);return`
     <div class="readiness-completion" title="${i(e.label||"")}">
-      ${o.map(([e,t])=>`<span><b>${i(e)}</b>${i(t)}</span>`).join("")}
+      <div class="readiness-completion-bar" aria-label="检查完成 ${r}%"><i style="width: ${r}%"></i></div>
+      ${l.map(([e,t])=>`<span><b>${i(e)}</b>${i(t)}</span>`).join("")}
     </div>
-  `}(e.completion||{}),m=Array.isArray(e.todo_items)?e.todo_items.slice(0,5):[],_=m.length?function(e=[]){return`
+  `}(e.completion||{}),m=Array.isArray(e.todo_items)?e.todo_items.slice(0,5):[],_=m.length?function(e=[],t={}){let a=Math.max(Number(t.todo_count||0),e.length),r=a>e.length?`显示 ${e.length}/${a} 项`:`${e.length} 项`;return`
     <div class="readiness-todos" aria-label="待处理步骤">
       <div class="readiness-todos-head">
         <strong>待处理步骤</strong>
-        <span>${e.length} 项</span>
+        <span>${i(r)}</span>
       </div>
       <ol>
         ${e.map(U).join("")}
       </ol>
     </div>
-  `}(m):"";n.projectReadiness.dataset.status=t,n.projectReadiness.innerHTML=`
+  `}(m,e.completion||{}):"";n.projectReadiness.dataset.status=t,n.projectReadiness.innerHTML=`
     <section class="readiness-hero" data-status="${i(t)}">
       <div class="readiness-score" aria-label="当前准备度 ${i(a)} 分">
         <strong>${i(a)}</strong>

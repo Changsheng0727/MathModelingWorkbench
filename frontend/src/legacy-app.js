@@ -1256,7 +1256,7 @@ function renderProjectReadiness(readiness = {}) {
     : "";
   const completion = renderReadinessCompletion(readiness.completion || {});
   const todos = Array.isArray(readiness.todo_items) ? readiness.todo_items.slice(0, 5) : [];
-  const todoList = todos.length ? renderReadinessTodos(todos) : "";
+  const todoList = todos.length ? renderReadinessTodos(todos, readiness.completion || {}) : "";
   els.projectReadiness.dataset.status = status;
   els.projectReadiness.innerHTML = `
     <section class="readiness-hero" data-status="${escapeHtml(status)}">
@@ -1286,6 +1286,7 @@ function renderReadinessCompletion(completion = {}) {
     return "";
   }
   const passed = Number(completion.passed || 0);
+  const percent = Math.max(0, Math.min(100, Number(completion.percent || 0)));
   const requiredPassed = Number(completion.required_passed || 0);
   const requiredTotal = Number(completion.required_total || 0);
   const todoCount = Number(completion.todo_count || 0);
@@ -1296,17 +1297,20 @@ function renderReadinessCompletion(completion = {}) {
   ].filter(Boolean);
   return `
     <div class="readiness-completion" title="${escapeHtml(completion.label || "")}">
+      <div class="readiness-completion-bar" aria-label="检查完成 ${percent}%"><i style="width: ${percent}%"></i></div>
       ${items.map(([label, value]) => `<span><b>${escapeHtml(label)}</b>${escapeHtml(value)}</span>`).join("")}
     </div>
   `;
 }
 
-function renderReadinessTodos(todos = []) {
+function renderReadinessTodos(todos = [], completion = {}) {
+  const total = Math.max(Number(completion.todo_count || 0), todos.length);
+  const countText = total > todos.length ? `显示 ${todos.length}/${total} 项` : `${todos.length} 项`;
   return `
     <div class="readiness-todos" aria-label="待处理步骤">
       <div class="readiness-todos-head">
         <strong>待处理步骤</strong>
-        <span>${todos.length} 项</span>
+        <span>${escapeHtml(countText)}</span>
       </div>
       <ol>
         ${todos.map(renderReadinessTodo).join("")}
