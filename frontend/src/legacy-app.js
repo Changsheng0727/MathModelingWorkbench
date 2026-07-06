@@ -71,6 +71,7 @@ const els = {
   experienceGuide: document.querySelector("#experience-guide"),
   guideTitle: document.querySelector("#guide-title"),
   guideDetail: document.querySelector("#guide-detail"),
+  guideOutcome: document.querySelector("#guide-outcome"),
   guideActions: document.querySelector("#guide-actions"),
   guideSteps: document.querySelector("#guide-steps"),
   statusCards: document.querySelector("#status-cards"),
@@ -648,6 +649,7 @@ function normalizedGuideActions(actions = [], fallback = []) {
       label: String(action.label),
       primary: Boolean(action.primary),
       detail: action.detail ? String(action.detail) : "",
+      outcome: action.outcome ? String(action.outcome) : "",
       path: action.path ? String(action.path) : "",
       problemId: action.problem_id || action.problemId ? String(action.problem_id || action.problemId) : "",
     }));
@@ -855,7 +857,8 @@ function renderProjectQuickAction(project = {}) {
     return "";
   }
   const hint = project.readiness_action_hint || action.hint || action.detail || project.readiness_action_detail || project.readiness_summary || "";
-  const title = hint || label;
+  const outcome = project.readiness_action_outcome || "";
+  const title = [hint, outcome].filter(Boolean).join("；") || label;
   const outputPath = action.path || project.primary_output_path || project.artifact_summary?.latest_path || "";
   const problemId = action.problem_id || project.readiness_top_action_problem_id || "";
   const pathAttribute = outputPath ? ` data-project-path="${escapeHtml(outputPath)}"` : "";
@@ -864,7 +867,7 @@ function renderProjectQuickAction(project = {}) {
   return `
     <span class="project-action-cell">
       <button class="project-quick-action" type="button" data-project-id="${escapeHtml(project.id)}" data-project-action="${escapeHtml(actionId)}"${pathAttribute}${problemAttribute} title="${escapeHtml(title)}" aria-label="${escapeHtml(ariaLabel)}">${escapeHtml(label)}</button>
-      ${hint ? `<span class="project-action-hint">${escapeHtml(hint)}</span>` : ""}
+      ${outcome || hint ? `<span class="project-action-hint">${escapeHtml(outcome || hint)}</span>` : ""}
     </span>
   `;
 }
@@ -1895,12 +1898,17 @@ function renderExperienceGuide(experience = {}) {
   if (els.guideDetail) {
     els.guideDetail.textContent = step.detail;
   }
+  if (els.guideOutcome) {
+    els.guideOutcome.textContent = step.outcome || "";
+    els.guideOutcome.hidden = !step.outcome;
+  }
   if (els.guideActions) {
     els.guideActions.innerHTML = step.actions
       .map((action) => {
         const path = action.path ? ` data-guide-path="${escapeHtml(action.path)}"` : "";
         const problemId = action.problemId ? ` data-guide-problem-id="${escapeHtml(action.problemId)}"` : "";
-        const title = action.detail ? ` title="${escapeHtml(action.detail)}"` : "";
+        const titleText = [action.detail, action.outcome ? `点击后：${action.outcome}` : ""].filter(Boolean).join("；");
+        const title = titleText ? ` title="${escapeHtml(titleText)}"` : "";
         return `<button class="${escapeHtml(action.primary ? "primary compact" : "ghost compact")}" type="button" data-guide-action="${escapeHtml(action.id)}"${path}${problemId}${title}>${escapeHtml(action.label)}</button>`;
       })
       .join("");
@@ -1992,8 +2000,8 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
   ], "success");
 }
 
-function guideStep(index, title, detail, actions = [], status = "pending") {
-  return { index, title, detail, actions, status };
+function guideStep(index, title, detail, actions = [], status = "pending", outcome = "") {
+  return { index, title, detail, actions, status, outcome };
 }
 
 function guideStepFromReadiness(metadata = {}) {
@@ -2007,6 +2015,7 @@ function guideStepFromReadiness(metadata = {}) {
     metadata.readiness_guide_detail || metadata.readiness_top_action_reason || metadata.readiness_summary || "",
     actions,
     metadata.readiness_guide_status || statusTone(metadata.readiness_status || metadata.auto_workflow_status || ""),
+    metadata.readiness_guide_outcome || metadata.readiness_action_outcome || "",
   );
 }
 

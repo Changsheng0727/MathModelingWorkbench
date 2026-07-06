@@ -178,6 +178,7 @@ export default function WorkbenchPage() {
                   <span className="guide-kicker">下一步</span>
                   <h2 id="guide-title">上传赛题材料</h2>
                   <p id="guide-detail">先选择赛题压缩包或文件夹，系统会自动识别题目、附件和推荐选题。</p>
+                  <p id="guide-outcome" className="guide-outcome" hidden>上传完成后，会自动进入赛题分析。</p>
                 </div>
                 <div className="guide-actions" id="guide-actions">
                   <button className="primary compact" type="button" data-guide-action="focus_upload">选择赛题</button>

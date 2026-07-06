@@ -1727,6 +1727,18 @@ p {
   overflow-wrap: anywhere;
 }
 
+.guide-outcome {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in oklch, var(--primary) 28%, var(--line));
+  border-radius: 7px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-weight: 750;
+}
+
 .guide-actions {
   display: flex;
   flex-wrap: wrap;
