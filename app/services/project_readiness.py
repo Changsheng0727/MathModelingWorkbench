@@ -108,13 +108,44 @@ def check_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
 
 def check_llm(settings: dict[str, Any]) -> dict[str, Any]:
     configured = bool(settings.get("configured"))
+    last_test = settings.get("last_test") if isinstance(settings.get("last_test"), dict) else {}
+    if not configured:
+        return readiness_check(
+            "llm",
+            "大模型接口",
+            "fail",
+            "尚未配置可用 API Key。",
+            required=True,
+            action={"id": "focus_llm", "label": "填写接口"},
+        )
+    if last_test.get("ok"):
+        return readiness_check(
+            "llm",
+            "大模型接口",
+            "pass",
+            "接口已保存，最近一次连接测试成功。",
+            required=True,
+            action={"id": "focus_llm", "label": "查看接口"},
+        )
+    if last_test.get("tested_at"):
+        diagnosis = last_test.get("diagnosis") if isinstance(last_test.get("diagnosis"), dict) else {}
+        reason = diagnosis.get("label") or last_test.get("message") or "连接测试失败"
+        action = diagnosis.get("suggested_action") or "请检查接口地址、模型名、API Key 权限和余额。"
+        return readiness_check(
+            "llm",
+            "大模型接口",
+            "fail",
+            f"上次连接测试失败：{reason}；{action}",
+            required=True,
+            action={"id": "test_llm", "label": "重新测试"},
+        )
     return readiness_check(
         "llm",
         "大模型接口",
-        "pass" if configured else "fail",
-        "接口已保存并可用于自动求解。" if configured else "尚未配置可用 API Key。",
+        "warning",
+        "接口已保存，但还没有成功连接测试记录；建议先测试，减少自动求解中途失败。",
         required=True,
-        action={"id": "focus_llm", "label": "填写接口"},
+        action={"id": "test_llm", "label": "测试连接"},
     )
 
 

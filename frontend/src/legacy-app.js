@@ -1290,6 +1290,16 @@ async function openProject(projectId, { silent = false } = {}) {
   }
 }
 
+async function refreshCurrentProjectDetail() {
+  const projectId = state.currentProject?.metadata?.id || "";
+  if (!projectId) {
+    return null;
+  }
+  const detail = await api(`/api/projects/${encodeURIComponent(projectId)}`);
+  renderProject(detail);
+  return detail;
+}
+
 async function openProjectRoot(projectId = "") {
   const targetProjectId = projectId || state.currentProject?.metadata?.id || "";
   if (!targetProjectId) {
@@ -4379,6 +4389,7 @@ els.llmSettingsForm.addEventListener("submit", async (event) => {
   els.llmSettingsStatus.textContent = "正在保存大模型设置。";
   try {
     await saveLlmSettingsFromForm();
+    await refreshCurrentProjectDetail().catch(() => {});
     showToast("大模型设置已保存", "success");
   } catch (error) {
     els.llmSettingsStatus.textContent = `保存失败：${error.message}`;
@@ -4401,27 +4412,22 @@ els.testLlmSettings?.addEventListener("click", async () => {
     if (result.ok) {
       els.llmSettingsStatus.textContent = "大模型连接测试成功，可以运行大模型+代码一键流程。";
       showToast("大模型连接测试成功", "success");
-      if (state.currentProject?.metadata?.id) {
-        const detail = await api(`/api/projects/${encodeURIComponent(state.currentProject.metadata.id)}`);
-        renderProject(detail);
-      }
+      await refreshCurrentProjectDetail();
       return;
     }
     const diagnosis = result.diagnosis || {};
     const label = diagnosis.label ? `${diagnosis.label}：` : "";
     const hint = diagnosis.suggested_action || result.message || "请检查接口地址、模型名和 API Key。";
     els.llmSettingsStatus.textContent = `大模型连接测试失败：${label}${hint}`;
-    if (state.currentProject?.metadata?.id) {
-      try {
-        const detail = await api(`/api/projects/${encodeURIComponent(state.currentProject.metadata.id)}`);
-        renderProject(detail);
-      } catch {
-        // Keep the connection-test diagnosis visible if project refresh fails.
-      }
+    try {
+      await refreshCurrentProjectDetail();
+    } catch {
+      // Keep the connection-test diagnosis visible if project refresh fails.
     }
     showToast("大模型连接测试失败，请查看设置提示", "error");
   } catch (error) {
     els.llmSettingsStatus.textContent = `大模型连接测试失败：${error.message}`;
+    await refreshCurrentProjectDetail().catch(() => {});
     showToast(`大模型连接测试失败：${error.message}`, "error");
   } finally {
     els.testLlmSettings.disabled = false;
@@ -4434,6 +4440,7 @@ els.clearLlmSettings.addEventListener("click", async () => {
   try {
     const settings = await api("/api/settings/llm", { method: "DELETE" });
     renderLlmSettings(settings);
+    await refreshCurrentProjectDetail().catch(() => {});
     showToast("大模型设置已清除", "success");
   } catch (error) {
     els.llmSettingsStatus.textContent = `清除失败：${error.message}`;

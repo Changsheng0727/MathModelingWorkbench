@@ -1772,6 +1772,9 @@ def run_project_auto_workflow(project_id: str) -> dict:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="项目不存在。") from exc
     meta = load_json(root / "metadata.json")
+    issue = auto_workflow_preflight_issue(root, meta=meta, resume=False)
+    if issue:
+        raise HTTPException(status_code=400, detail=issue)
     try:
         report = run_auto_workflow(root, meta)
     except ValueError as exc:
@@ -1807,6 +1810,9 @@ def resume_project_auto_workflow(project_id: str) -> dict:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="项目不存在。") from exc
     meta = load_json(root / "metadata.json")
+    issue = auto_workflow_preflight_issue(root, meta=meta, resume=True)
+    if issue:
+        raise HTTPException(status_code=400, detail=issue)
     try:
         report = run_auto_workflow(root, meta, resume=True)
     except ValueError as exc:
@@ -1958,9 +1964,13 @@ def should_resume_batch_project(meta: dict, mode: str) -> bool:
     )
 
 
-def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resume: bool = False) -> str:
-    if not get_llm_settings().get("configured"):
+def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resume: bool = False, llm_settings: dict | None = None) -> str:
+    llm_settings = llm_settings if isinstance(llm_settings, dict) else get_llm_settings()
+    if not llm_settings.get("configured"):
         return "尚未配置大模型接口密钥。"
+    test_issue = llm_test_blocking_issue(llm_settings)
+    if test_issue:
+        return test_issue
     analysis_path = root / "artifacts" / "analysis.json"
     if not analysis_path.exists():
         return "项目尚未完成赛题分析。"
@@ -1982,11 +1992,21 @@ def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resum
     return "尚未确认最终选题。"
 
 
+def llm_test_blocking_issue(llm_settings: dict) -> str:
+    last_test = llm_settings.get("last_test") if isinstance(llm_settings.get("last_test"), dict) else {}
+    if not last_test.get("tested_at") or last_test.get("ok"):
+        return ""
+    diagnosis = last_test.get("diagnosis") if isinstance(last_test.get("diagnosis"), dict) else {}
+    reason = diagnosis.get("label") or last_test.get("message") or "连接测试失败"
+    action = diagnosis.get("suggested_action") or "请在左侧重新测试连接。"
+    return f"上次大模型连接测试失败：{reason}；{action}"
+
+
 def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_settings: dict | None = None) -> dict:
     metadata = meta if isinstance(meta, dict) else load_json(root / "metadata.json")
     llm_settings = llm_settings if isinstance(llm_settings, dict) else get_llm_settings()
-    start_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=False)
-    resume_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=True)
+    start_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=False, llm_settings=llm_settings)
+    resume_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=True, llm_settings=llm_settings)
     can_resume = should_resume_batch_project(metadata, "auto") and not resume_issue
     status = str(metadata.get("auto_workflow_status") or "")
     if status == "success":
