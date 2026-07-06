@@ -544,18 +544,24 @@ def batch_delivery_package_job(job_id: str) -> dict:
 
 
 @app.get("/api/upload-analysis-progress/{progress_id}")
-def upload_analysis_progress(progress_id: str) -> dict:
+def upload_analysis_progress(progress_id: str, include_overview: bool = False) -> dict:
     progress = load_analysis_progress(progress_id)
+    response = {"progress": progress or {}}
     if isinstance(progress, dict) and progress.get("project_id"):
         try:
-            root = project_root(str(progress["project_id"]))
+            project_id = str(progress["project_id"])
+            root = project_root(project_id)
             live_stream = load_llm_live_stream(root)
             if live_stream.get("channel") == "upload_analysis":
                 progress = dict(progress)
                 progress["live_stream"] = live_stream
+                response["progress"] = progress
+            if include_overview:
+                response["project"] = project_detail(project_id)
+                response["overview"] = build_product_overview_response()
         except Exception:
             pass
-    return {"progress": progress or {}}
+    return response
 
 
 @app.get("/api/skills/backend")

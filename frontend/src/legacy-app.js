@@ -3684,7 +3684,7 @@ els.form.addEventListener("submit", async (event) => {
     : "正在上传并解析，请稍候。";
   try {
     const detail = await api(endpoint, { method: "POST", body: formData });
-    await refreshUploadProgress(progressId);
+    await refreshUploadProgress(progressId, { includeOverview: true });
     els.status.textContent = "分析完成。";
     showToast("赛题分析完成", "success");
     renderProject(detail);
@@ -3706,14 +3706,14 @@ els.form.addEventListener("submit", async (event) => {
       }
     }
   } catch (error) {
-    await refreshUploadProgress(progressId);
+    await refreshUploadProgress(progressId, { includeOverview: true });
     els.status.textContent = `分析失败：${error.message}`;
     showToast(`赛题分析失败：${error.message}`, "error");
   } finally {
     if (state.uploadProgressStop) {
       state.uploadProgressStop();
       state.uploadProgressStop = null;
-      await refreshUploadProgress(progressId);
+      await refreshUploadProgress(progressId, { includeOverview: true });
     }
     button.disabled = false;
   }
@@ -3745,12 +3745,19 @@ function startUploadProgressPolling(progressId) {
   };
 }
 
-async function refreshUploadProgress(progressId) {
+async function refreshUploadProgress(progressId, { includeOverview = false } = {}) {
   if (!progressId || !els.uploadProgress) {
     return false;
   }
   try {
-    const payload = await api(`/api/upload-analysis-progress/${encodeURIComponent(progressId)}`);
+    const suffix = includeOverview ? "?include_overview=true" : "";
+    const payload = await api(`/api/upload-analysis-progress/${encodeURIComponent(progressId)}${suffix}`);
+    if (payload.project) {
+      renderProject(payload.project);
+    }
+    if (payload.overview) {
+      applyProductOverviewPayload(payload.overview);
+    }
     const progress = payload.progress || {};
     if (!Object.keys(progress).length) {
       return false;
