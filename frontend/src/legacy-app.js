@@ -475,13 +475,26 @@ function renderLlmSettings(settings) {
     const summary = settings.workflow_strategy_summary || "速度和成功率兼顾。";
     els.workflowStrategyHint.textContent = `当前策略：${label}。${summary}`;
   }
+  const label = settings.connection_label || (settings.configured ? "已配置接口" : "未配置接口");
+  const detail = settings.connection_detail || (settings.configured ? llmTestSummary(settings.last_test) : "尚未配置 API 密钥。");
+  const source = settings.source === "env" ? "环境变量" : "本地设置";
+  const strategy = settings.workflow_strategy_label ? ` · ${settings.workflow_strategy_label}` : "";
   if (settings.configured) {
-    const source = settings.source === "env" ? "环境变量" : "本地设置";
-    const strategy = settings.workflow_strategy_label ? ` · ${settings.workflow_strategy_label}` : "";
-    const test = llmTestSummary(settings.last_test);
-    els.llmSettingsStatus.textContent = `已配置：${settings.masked_api_key} · ${source}${strategy}${test ? ` · ${test}` : ""}`;
+    setLlmSettingsStatus(`${label}：${detail} · ${settings.masked_api_key} · ${source}${strategy}`, settings.connection_tone || "warning");
   } else {
-    els.llmSettingsStatus.textContent = "尚未配置 API 密钥。";
+    setLlmSettingsStatus(`${label}：${detail}`, settings.connection_tone || "failed");
+  }
+}
+
+function setLlmSettingsStatus(message, tone = "") {
+  if (!els.llmSettingsStatus) {
+    return;
+  }
+  els.llmSettingsStatus.textContent = message || "";
+  if (tone) {
+    els.llmSettingsStatus.dataset.status = tone;
+  } else {
+    delete els.llmSettingsStatus.dataset.status;
   }
 }
 
@@ -4408,13 +4421,13 @@ els.llmSettingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = els.llmSettingsForm.querySelector("button[type='submit']");
   button.disabled = true;
-  els.llmSettingsStatus.textContent = "正在保存大模型设置。";
+  setLlmSettingsStatus("正在保存大模型设置。", "running");
   try {
     await saveLlmSettingsFromForm();
     await refreshCurrentProjectDetail().catch(() => {});
     showToast("大模型设置已保存", "success");
   } catch (error) {
-    els.llmSettingsStatus.textContent = `保存失败：${error.message}`;
+    setLlmSettingsStatus(`保存失败：${error.message}`, "failed");
     showToast(`大模型设置保存失败：${error.message}`, "error");
   } finally {
     button.disabled = false;
@@ -4423,16 +4436,16 @@ els.llmSettingsForm.addEventListener("submit", async (event) => {
 
 els.testLlmSettings?.addEventListener("click", async () => {
   els.testLlmSettings.disabled = true;
-  els.llmSettingsStatus.textContent = "正在保存当前大模型设置并测试连接。";
+  setLlmSettingsStatus("正在保存当前大模型设置并测试连接。", "running");
   try {
     await saveLlmSettingsFromForm();
-    els.llmSettingsStatus.textContent = "正在测试大模型连接。";
+    setLlmSettingsStatus("正在测试大模型连接。", "running");
     const result = await api("/api/settings/llm/test", { method: "POST" });
     if (result.settings) {
       state.llmSettings = result.settings;
     }
     if (result.ok) {
-      els.llmSettingsStatus.textContent = "大模型连接测试成功，可以运行大模型+代码一键流程。";
+      setLlmSettingsStatus("大模型连接测试成功，可以运行大模型+代码一键流程。", "success");
       showToast("大模型连接测试成功", "success");
       await refreshCurrentProjectDetail();
       return;
@@ -4440,7 +4453,7 @@ els.testLlmSettings?.addEventListener("click", async () => {
     const diagnosis = result.diagnosis || {};
     const label = diagnosis.label ? `${diagnosis.label}：` : "";
     const hint = diagnosis.suggested_action || result.message || "请检查接口地址、模型名和 API Key。";
-    els.llmSettingsStatus.textContent = `大模型连接测试失败：${label}${hint}`;
+    setLlmSettingsStatus(`大模型连接测试失败：${label}${hint}`, "failed");
     try {
       await refreshCurrentProjectDetail();
     } catch {
@@ -4448,7 +4461,7 @@ els.testLlmSettings?.addEventListener("click", async () => {
     }
     showToast("大模型连接测试失败，请查看设置提示", "error");
   } catch (error) {
-    els.llmSettingsStatus.textContent = `大模型连接测试失败：${error.message}`;
+    setLlmSettingsStatus(`大模型连接测试失败：${error.message}`, "failed");
     await refreshCurrentProjectDetail().catch(() => {});
     showToast(`大模型连接测试失败：${error.message}`, "error");
   } finally {
@@ -4458,14 +4471,14 @@ els.testLlmSettings?.addEventListener("click", async () => {
 
 els.clearLlmSettings.addEventListener("click", async () => {
   els.clearLlmSettings.disabled = true;
-  els.llmSettingsStatus.textContent = "正在清除大模型设置。";
+  setLlmSettingsStatus("正在清除大模型设置。", "running");
   try {
     const settings = await api("/api/settings/llm", { method: "DELETE" });
     renderLlmSettings(settings);
     await refreshCurrentProjectDetail().catch(() => {});
     showToast("大模型设置已清除", "success");
   } catch (error) {
-    els.llmSettingsStatus.textContent = `清除失败：${error.message}`;
+    setLlmSettingsStatus(`清除失败：${error.message}`, "failed");
     showToast(`清除大模型设置失败：${error.message}`, "error");
   } finally {
     els.clearLlmSettings.disabled = false;

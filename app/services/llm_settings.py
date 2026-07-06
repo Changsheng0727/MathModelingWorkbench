@@ -50,6 +50,9 @@ def get_llm_settings() -> dict[str, Any]:
         "connection_status": llm_connection_status(last_test),
         "connection_blocked": llm_connection_blocked(last_test),
         "connection_issue": llm_connection_issue(last_test),
+        "connection_label": llm_connection_label(bool(api_key), last_test),
+        "connection_detail": llm_connection_detail(bool(api_key), last_test),
+        "connection_tone": llm_connection_tone(bool(api_key), last_test),
     }
 
 
@@ -161,6 +164,36 @@ def llm_connection_issue(last_test: dict[str, Any]) -> str:
     reason = diagnosis.get("label") or last_test.get("message") or "连接测试失败"
     action = diagnosis.get("suggested_action") or "请检查接口地址、模型名、API Key 权限和余额。"
     return f"{reason}；{action}"
+
+
+def llm_connection_label(configured: bool, last_test: dict[str, Any]) -> str:
+    if not configured:
+        return "未配置接口"
+    status = llm_connection_status(last_test)
+    if status == "passed":
+        return "连接正常"
+    if status == "failed":
+        return "连接测试失败"
+    return "等待测试连接"
+
+
+def llm_connection_detail(configured: bool, last_test: dict[str, Any]) -> str:
+    if not configured:
+        return "填写 API Key 后先测试连接，再启动自动求解。"
+    status = llm_connection_status(last_test)
+    if status == "passed":
+        return "最近一次测试成功，可以运行大模型和代码自动流程。"
+    if status == "failed":
+        return llm_connection_issue(last_test)
+    return "接口已保存，但还没有成功测试记录；建议先测试以减少中途失败。"
+
+
+def llm_connection_tone(configured: bool, last_test: dict[str, Any]) -> str:
+    if not configured or llm_connection_status(last_test) == "failed":
+        return "failed"
+    if llm_connection_status(last_test) == "passed":
+        return "success"
+    return "warning"
 
 
 def normalize_api_key(value: str | None) -> str:

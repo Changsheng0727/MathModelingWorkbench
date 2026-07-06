@@ -5481,6 +5481,39 @@ ul.problem-meta {
   overflow-wrap: anywhere;
 }
 
+.status[data-status] {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  box-shadow: var(--shadow-inset);
+}
+
+.status[data-status="success"] {
+  border-color: color-mix(in oklch, var(--teal) 32%, var(--line));
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.status[data-status="warning"] {
+  border-color: color-mix(in oklch, var(--amber) 34%, var(--line));
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.status[data-status="failed"] {
+  border-color: color-mix(in oklch, var(--red) 34%, var(--line));
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.status[data-status="running"] {
+  border-color: color-mix(in oklch, var(--primary) 34%, var(--line));
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
 .status-stack {
   display: grid;
   gap: 6px;
