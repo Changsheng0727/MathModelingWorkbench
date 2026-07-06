@@ -1797,6 +1797,9 @@ def start_project_auto_workflow(project_id: str) -> dict:
         root = project_root(project_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    issue = auto_workflow_preflight_issue(root, resume=False)
+    if issue:
+        raise HTTPException(status_code=400, detail=issue)
     job = start_auto_workflow_job(project_id, root, resume=False)
     return {"auto_job": job, "project": project_detail(project_id)}
 
@@ -1829,6 +1832,9 @@ def start_project_auto_workflow_resume(project_id: str) -> dict:
         root = project_root(project_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="项目不存在。") from exc
+    issue = auto_workflow_preflight_issue(root, resume=True)
+    if issue:
+        raise HTTPException(status_code=400, detail=issue)
     job = start_auto_workflow_job(project_id, root, resume=True)
     return {"auto_job": job, "project": project_detail(project_id)}
 
@@ -1900,6 +1906,10 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
             continue
         meta = load_json(root / "metadata.json")
         resume = should_resume_batch_project(meta, mode)
+        issue = auto_workflow_preflight_issue(root, meta=meta, resume=resume)
+        if issue:
+            skipped.append({"project_id": project_id, "reason": issue})
+            continue
         try:
             job = start_auto_workflow_job(project_id, root, resume=resume)
         except Exception as exc:
@@ -1950,6 +1960,30 @@ def should_resume_batch_project(meta: dict, mode: str) -> bool:
         or progress.get("can_resume")
         or meta.get("last_failure_diagnosis")
     )
+
+
+def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resume: bool = False) -> str:
+    if not get_llm_settings().get("configured"):
+        return "尚未配置大模型接口密钥。"
+    analysis_path = root / "artifacts" / "analysis.json"
+    if not analysis_path.exists():
+        return "项目尚未完成赛题分析。"
+    if resume:
+        return ""
+    metadata = meta if isinstance(meta, dict) else load_json(root / "metadata.json")
+    final_problem = metadata.get("final_problem") if isinstance(metadata.get("final_problem"), dict) else {}
+    final_id = str(final_problem.get("id") or final_problem.get("final_problem_id") or "").strip()
+    if final_id:
+        return ""
+    try:
+        analysis = load_json(analysis_path)
+    except Exception:
+        analysis = {}
+    recommended = analysis.get("recommended_problem") if isinstance(analysis.get("recommended_problem"), dict) else {}
+    recommended_id = str(recommended.get("id") or recommended.get("final_problem_id") or "").strip()
+    if recommended_id:
+        return f"请先确认 {recommended_id} 题为最终选题。"
+    return "尚未确认最终选题。"
 
 
 @app.get("/api/auto/jobs/{job_id}")

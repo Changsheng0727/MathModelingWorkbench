@@ -1088,6 +1088,32 @@ async function startSelectedProjectsBatch() {
     els.batchProjectStatus.textContent = "请先选择已分析项目。";
     return;
   }
+  let settings;
+  try {
+    settings = await api("/api/settings/llm");
+    state.llmSettings = settings;
+  } catch (error) {
+    els.batchProjectStatus.textContent = `暂时无法确认大模型设置：${error.message}`;
+    showToast("大模型设置读取失败，暂不批量入队", "error");
+    return;
+  }
+  if (!settings.configured) {
+    els.batchProjectStatus.textContent = "请先配置并测试大模型接口，再批量入队自动流程。";
+    scrollIntoViewIfPossible(els.llmSettingsForm);
+    showToast("缺少大模型接口密钥，已停止批量入队", "warning");
+    return;
+  }
+  const projectById = new Map((state.projects || []).map((project) => [project.id, project]));
+  const unconfirmed = projectIds.filter((projectId) => {
+    const project = projectById.get(projectId) || {};
+    return !projectShouldResumeAuto(project) && !selectedProblemId(project);
+  });
+  if (unconfirmed.length) {
+    const first = projectById.get(unconfirmed[0]) || {};
+    els.batchProjectStatus.textContent = `${unconfirmed.length} 个项目尚未确认最终选题，请先打开${first.name ? `“${first.name}”` : "对应项目"}确认选题。`;
+    showToast("存在未确认选题的项目，已停止批量入队", "warning");
+    return;
+  }
   els.batchStartProjects.disabled = true;
   els.selectAnalyzedProjects.disabled = true;
   els.clearProjectSelection.disabled = true;
@@ -1508,6 +1534,16 @@ function selectedProblemSource(metadata) {
 function selectedProblemId(metadata) {
   const finalProblem = metadata.final_problem || {};
   return finalProblem.id || finalProblem.final_problem_id || "";
+}
+
+function projectShouldResumeAuto(metadata) {
+  const status = metadata.auto_workflow_status || "";
+  const progress = metadata.auto_workflow_progress || {};
+  return Boolean(
+    ["failed", "cancelled", "completed_with_warnings", "interrupted"].includes(status)
+      || progress.can_resume
+      || metadata.last_failure_diagnosis
+  );
 }
 
 function displayProblem(metadata, analysis) {
@@ -4620,7 +4656,7 @@ async function runAutoWorkflow(
     return;
   }
   const selectedId = selectedProblemId(state.currentProject?.metadata || {});
-  if (!selectedId) {
+  if (!resume && !selectedId) {
     els.autoWorkflowStatus.textContent = "请先在“选题”模块点击“选择此题”，确认后再运行一键自动流程。";
     return;
   }
