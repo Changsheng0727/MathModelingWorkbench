@@ -743,6 +743,8 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_attention_reason"] = project_attention_reason(project)
     project["readiness_header_summary"] = project_readiness_header_summary(project)
     project["readiness_header_detail"] = project_readiness_header_detail(project)
+    project["readiness_header_progress_percent"] = project_readiness_header_progress_percent(project)
+    project["readiness_header_progress_label"] = project_readiness_header_progress_label(project)
     return project
 
 
@@ -831,6 +833,27 @@ def project_readiness_header_detail(project: dict) -> str:
         ]
         if part
     )
+
+
+def project_readiness_header_progress_percent(project: dict) -> int:
+    try:
+        step = int(project.get("readiness_phase_step") or 0)
+        total = int(project.get("readiness_phase_total") or 0)
+    except (TypeError, ValueError):
+        step = 0
+        total = 0
+    if total:
+        return max(0, min(100, round(100 * step / total)))
+    try:
+        return max(0, min(100, int(project.get("readiness_required_percent") or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def project_readiness_header_progress_label(project: dict) -> str:
+    step = project.get("readiness_phase_step") or 0
+    total = project.get("readiness_phase_total") or 0
+    return f"阶段 {step}/{total}" if step and total else str(project.get("readiness_required_label") or "")
 
 
 def project_readiness_action_hint(action: dict, project: dict) -> str:

@@ -135,6 +135,9 @@ export default function WorkbenchPage() {
               <h2 id="project-title">等待上传赛题</h2>
               <p id="environment-status" className="environment-status" aria-live="polite">检测执行环境中</p>
               <p id="project-stage-summary" className="project-stage-summary hidden" aria-live="polite"></p>
+              <div id="project-stage-progress" className="project-stage-progress hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <span></span>
+              </div>
             </div>
             <div className="topbar-actions">
               <button id="project-next-action" className="primary compact hidden" type="button">下一步</button>

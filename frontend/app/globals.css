@@ -1316,6 +1316,25 @@ p {
   overflow-wrap: anywhere;
 }
 
+.project-stage-progress {
+  width: min(360px, 100%);
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: var(--panel-soft);
+  box-shadow: var(--shadow-pressed);
+  overflow: hidden;
+}
+
+.project-stage-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary), var(--teal));
+  transition: width 0.18s var(--ease);
+}
+
 .health {
   display: inline-flex;
   align-items: center;

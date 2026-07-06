@@ -58,6 +58,7 @@ const els = {
   openProjectRoot: document.querySelector("#open-project-root"),
   environment: document.querySelector("#environment-status"),
   projectStageSummary: document.querySelector("#project-stage-summary"),
+  projectStageProgress: document.querySelector("#project-stage-progress"),
   empty: document.querySelector("#empty-state"),
   analysisView: document.querySelector("#analysis-view"),
   recommended: document.querySelector("#recommended-problem"),
@@ -997,6 +998,9 @@ function projectSearchText(project = {}) {
     project.readiness_phase?.step && project.readiness_phase?.total ? `阶段 ${project.readiness_phase.step}/${project.readiness_phase.total}` : "",
     project.readiness_phase_label,
     project.readiness_phase_detail,
+    project.readiness_header_summary,
+    project.readiness_header_detail,
+    project.readiness_header_progress_label,
     project.readiness_completion?.label,
     project.readiness_completion_label,
     project.readiness_todo_count ? `待办 ${project.readiness_todo_count}` : "",
@@ -1195,11 +1199,13 @@ function syncTopbarProjectSummary(metadata = {}) {
     node.textContent = "";
     node.title = "";
     node.classList.add("hidden");
+    els.projectStageProgress?.classList.add("hidden");
     return;
   }
   node.textContent = text;
   node.title = metadata.readiness_header_detail || metadata.readiness_phase_detail || metadata.readiness_action_hint || text;
   node.classList.remove("hidden");
+  syncTopbarProjectProgress(metadata);
 }
 
 function fallbackProjectHeaderSummary(metadata = {}) {
@@ -1210,6 +1216,30 @@ function fallbackProjectHeaderSummary(metadata = {}) {
   const gap = metadata.readiness_gap_label || metadata.readiness_attention_reason || "";
   const action = metadata.readiness_action_label || metadata.readiness_action?.label || "";
   return [phase, gap, action ? `下一步：${action}` : ""].filter(Boolean).join(" · ");
+}
+
+function syncTopbarProjectProgress(metadata = {}) {
+  const node = els.projectStageProgress;
+  if (!node) {
+    return;
+  }
+  const rawPercent = Number(metadata.readiness_header_progress_percent ?? fallbackProjectHeaderProgress(metadata));
+  const percent = Number.isFinite(rawPercent) ? Math.max(0, Math.min(100, rawPercent)) : 0;
+  const label = metadata.readiness_header_progress_label || `${percent}%`;
+  node.querySelector("span")?.style.setProperty("width", `${percent}%`);
+  node.setAttribute("aria-valuenow", String(percent));
+  node.setAttribute("aria-label", label ? `${label}，${percent}%` : `项目进度 ${percent}%`);
+  node.title = label ? `${label} · ${percent}%` : `项目进度 ${percent}%`;
+  node.classList.toggle("hidden", percent <= 0 && !metadata.readiness_header_progress_label);
+}
+
+function fallbackProjectHeaderProgress(metadata = {}) {
+  const step = Number(metadata.readiness_phase_step || metadata.readiness_phase?.step || 0);
+  const total = Number(metadata.readiness_phase_total || metadata.readiness_phase?.total || 0);
+  if (step && total) {
+    return Math.round((100 * step) / total);
+  }
+  return Number(metadata.readiness_required_percent || 0);
 }
 
 function renderArtifactLoadErrorTitle(errors = []) {
