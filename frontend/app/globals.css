@@ -3650,6 +3650,17 @@ p {
   font-size: 12px;
 }
 
+.progress-notice {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--amber-soft);
+  border-radius: 7px;
+  background: var(--amber-soft);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .progress-bar {
   height: 8px;
   overflow: hidden;

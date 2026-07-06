@@ -3820,7 +3820,8 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
   const steps = progress.steps || [];
   const current = progress.current_step;
   const liveStream = progress.live_stream || {};
-  if (!steps.length && !current && !hasLiveStream(liveStream)) {
+  const hasNotice = Boolean(progress.detail || progress.resume_hint);
+  if (!steps.length && !current && !hasLiveStream(liveStream) && !hasNotice) {
     element.classList.add("hidden");
     element.innerHTML = "";
     return;
@@ -3831,6 +3832,7 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
   const percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
   const allSteps = current ? [...steps, current] : steps;
   const currentTitle = current?.title || statusLabel(progress.status) || "等待更新";
+  const notice = progress.detail || progress.resume_hint || "";
   element.innerHTML = `
     <div class="progress-head">
       <div>
@@ -3839,6 +3841,7 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
       </div>
       <b>${escapeHtml(percent)}%</b>
     </div>
+    ${notice ? `<p class="progress-notice" data-status="${escapeHtml(progress.status || "")}">${escapeHtml(notice)}</p>` : ""}
     <div class="progress-bar"><i style="width: ${percent}%"></i></div>
     <div class="progress-steps">
       ${allSteps.map((step) => renderProgressStep(step, progress)).join("")}

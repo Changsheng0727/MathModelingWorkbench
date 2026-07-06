@@ -712,7 +712,7 @@ def normalize_project_auto_status_for_summary(root: Path, project: dict) -> None
         progress = load_json(progress_path) if progress_path.exists() else project.get("auto_workflow_progress", {})
     except Exception:
         progress = {}
-    if not isinstance(progress, dict) or auto_progress_is_stale(progress):
+    if auto_progress_is_missing_or_stale(progress):
         project["auto_workflow_status"] = "interrupted"
         project["auto_workflow_repair_hint"] = "上次自动流程已没有后台任务，可点击继续生成。"
 
@@ -1622,33 +1622,40 @@ def project_progress(project_id: str) -> dict:
     response_status = meta.get("auto_workflow_status") or "idle"
     if active_job.get("status") in {"queued", "running"}:
         response_status = str(active_job.get("status") or response_status)
-    if isinstance(progress, dict):
-        progress = dict(progress)
-        status = response_status or progress.get("status") or "idle"
-        stale_running = status == "running" and not active_job and auto_progress_is_stale(progress)
-        progress["can_resume"] = bool(
-            progress.get("can_resume")
-            or status in {"failed", "cancelled", "completed_with_warnings", "cancel_requested"}
-            or stale_running
+    if not isinstance(progress, dict):
+        progress = {}
+    progress = dict(progress)
+    status = response_status or progress.get("status") or "idle"
+    stale_running = (
+        status in {"queued", "running", "between_steps", "cancel_requested"}
+        and not active_job
+        and auto_progress_is_missing_or_stale(progress)
+    )
+    progress["can_resume"] = bool(
+        progress.get("can_resume")
+        or status in {"failed", "cancelled", "completed_with_warnings", "cancel_requested"}
+        or stale_running
+    )
+    progress["last_failure_diagnosis"] = progress.get("last_failure_diagnosis") or meta.get("last_failure_diagnosis", {})
+    progress["resume_hint"] = progress.get("resume_hint") or meta.get("auto_workflow_repair_hint", "")
+    if active_job:
+        progress["auto_job"] = active_job
+    progress["can_cancel"] = (
+        not stale_running
+        and (
+            status in {"queued", "running", "cancel_requested"}
+            or progress.get("status") in {"queued", "running", "between_steps"}
         )
-        progress["last_failure_diagnosis"] = progress.get("last_failure_diagnosis") or meta.get("last_failure_diagnosis", {})
-        progress["resume_hint"] = progress.get("resume_hint") or meta.get("auto_workflow_repair_hint", "")
-        if active_job:
-            progress["auto_job"] = active_job
-        progress["can_cancel"] = (
-            not stale_running
-            and (
-                status in {"queued", "running", "cancel_requested"}
-                or progress.get("status") in {"queued", "running", "between_steps"}
-            )
-        )
-        if stale_running:
-            progress["status"] = "interrupted"
-            progress["detail"] = "检测到上次自动流程长时间无进度更新，可点击继续生成。"
-            response_status = "interrupted"
-        live_stream = load_llm_live_stream(root)
-        if live_stream.get("channel") == "auto_workflow":
-            progress["live_stream"] = live_stream
+    )
+    if stale_running:
+        progress["status"] = "interrupted"
+        progress["stale"] = True
+        progress["detail"] = "检测到上次自动流程没有可用后台任务，可点击继续生成。"
+        progress["resume_hint"] = progress.get("resume_hint") or "系统会从上次成功阶段继续。"
+        response_status = "interrupted"
+    live_stream = load_llm_live_stream(root)
+    if live_stream.get("channel") == "auto_workflow":
+        progress["live_stream"] = live_stream
     return {
         "project_id": project_id,
         "status": response_status,
@@ -1665,8 +1672,16 @@ def auto_progress_is_stale(progress: dict, seconds: int = 180) -> bool:
     try:
         updated = datetime.fromisoformat(updated_at)
     except ValueError:
-        return False
+        return True
     return (datetime.now() - updated).total_seconds() > seconds
+
+
+def auto_progress_is_missing_or_stale(progress: object, seconds: int = 180) -> bool:
+    if not isinstance(progress, dict):
+        return True
+    if not str(progress.get("updated_at") or "").strip():
+        return True
+    return auto_progress_is_stale(progress, seconds)
 
 
 @app.get("/api/projects/{project_id}/llm/model-assistant/progress")
