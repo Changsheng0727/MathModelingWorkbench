@@ -715,29 +715,37 @@ async function syncOverviewAfterAction(payload = {}) {
   }
 }
 
-async function loadGrowthMetrics() {
+async function loadGrowthMetrics({ includeOverview = false } = {}) {
   if (!els.growthCenter) {
     return;
   }
   try {
-    const payload = await api("/api/product/growth");
-    state.growthMetrics = payload.growth || {};
-    renderGrowthCenter(state.growthMetrics);
+    const payload = await api(`/api/product/growth${includeOverview ? "?include_overview=true" : ""}`);
+    if (payload.overview) {
+      applyProductOverviewPayload(payload.overview);
+    } else {
+      state.growthMetrics = payload.growth || {};
+      renderGrowthCenter(state.growthMetrics);
+    }
   } catch (error) {
     els.growthCenter.innerHTML = `<p class="status">解题进度中心暂不可用：${escapeHtml(error.message)}</p>`;
   }
 }
 
-async function loadTrustCenter() {
+async function loadTrustCenter({ includeOverview = false } = {}) {
   if (!els.trustCenter) {
     return;
   }
   try {
-    const payload = await api("/api/product/trust");
-    state.trustMetrics = payload.trust || {};
-    state.trustExports = payload.trust_exports || null;
-    state.repairCampaigns = payload.repair_campaigns || null;
-    renderTrustCenter(state.trustMetrics, state.trustExports);
+    const payload = await api(`/api/product/trust${includeOverview ? "?include_overview=true" : ""}`);
+    if (payload.overview) {
+      applyProductOverviewPayload(payload.overview);
+    } else {
+      state.trustMetrics = payload.trust || {};
+      state.trustExports = payload.trust_exports || null;
+      state.repairCampaigns = payload.repair_campaigns || null;
+      renderTrustCenter(state.trustMetrics, state.trustExports);
+    }
   } catch (error) {
     els.trustCenter.innerHTML = `<p class="status">信任中心暂不可用：${escapeHtml(error.message)}</p>`;
   }
@@ -3812,7 +3820,7 @@ els.refreshGrowthMetrics?.addEventListener("click", async () => {
     els.growthCenterStatus.textContent = "正在刷新项目漏斗、交付产出和任务吞吐指标。";
   }
   try {
-    await loadGrowthMetrics();
+    await loadGrowthMetrics({ includeOverview: true });
     if (els.growthCenterStatus) {
       els.growthCenterStatus.textContent = "解题进度中心已刷新。";
     }
@@ -3833,7 +3841,7 @@ els.refreshTrustCenter?.addEventListener("click", async () => {
     els.trustCenterStatus.textContent = "正在刷新质量与交付信任证据。";
   }
   try {
-    await loadTrustCenter();
+    await loadTrustCenter({ includeOverview: true });
     if (els.trustCenterStatus) {
       els.trustCenterStatus.textContent = "信任中心已刷新。";
     }

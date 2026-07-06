@@ -314,7 +314,10 @@ def build_capacity_autotune_plan(
 
 
 @app.get("/api/product/growth")
-def product_growth_metrics() -> dict:
+def product_growth_metrics(include_overview: bool = False) -> dict:
+    if include_overview:
+        overview = build_product_overview_response()
+        return {"growth": overview.get("growth") or {}, "overview": overview}
     projects_snapshot = list_projects()
     jobs_snapshot = list_auto_workflow_jobs()
     delivery_batches = list_delivery_package_batches()
@@ -349,7 +352,15 @@ def product_experience_center() -> dict:
 
 
 @app.get("/api/product/trust")
-def product_trust_center() -> dict:
+def product_trust_center(include_overview: bool = False) -> dict:
+    if include_overview:
+        overview = build_product_overview_response()
+        return {
+            "trust": overview.get("trust") or {},
+            "trust_exports": overview.get("trust_exports") or [],
+            "repair_campaigns": overview.get("repair_campaigns") or [],
+            "overview": overview,
+        }
     projects_snapshot = list_projects()
     jobs_snapshot = list_auto_workflow_jobs()
     delivery_batch_jobs = list_delivery_batch_jobs()
