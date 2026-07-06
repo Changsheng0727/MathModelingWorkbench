@@ -11,6 +11,7 @@ READINESS_PHASES: dict[str, tuple[int, str, str, str]] = {
     "focus_upload": (2, "analyze", "上传分析", "先上传赛题并完成材料分析。"),
     "open_problems": (3, "select", "确认选题", "确认最终解题题号。"),
     "start_auto": (4, "solve", "自动求解", "启动代码求解、运行和论文回填。"),
+    "watch_auto": (4, "solve", "自动求解中", "查看代码求解、结果运行和论文回填进度。"),
     "resume_auto": (5, "repair", "继续修复", "从中断或失败处继续生成。"),
     "open_outputs": (6, "paper", "整理论文", "检查代码结果和论文文件。"),
     "compile": (7, "compile", "编译论文", "生成或修复 PDF 论文。"),
@@ -30,6 +31,7 @@ READINESS_ROADMAP_ACTIONS = [
     "build_delivery_package",
     "open_primary_output",
 ]
+RUNNING_AUTO_STATUSES = {"queued", "running", "between_steps", "cancel_requested"}
 
 
 def build_project_readiness(
@@ -157,6 +159,10 @@ def check_results(root: Path, metadata: dict[str, Any]) -> dict[str, Any]:
         status = "pass"
         detail = "已找到代码运行结果和 manifest。"
         action = {"id": "open_outputs", "label": "查看结果"}
+    elif auto_status in RUNNING_AUTO_STATUSES:
+        status = "warning"
+        detail = "自动求解正在运行或排队，完成后会生成代码结果。"
+        action = {"id": "watch_auto", "label": "查看进度"}
     elif failed:
         status = "fail"
         detail = "代码求解或自动流程失败，需要继续修复。"

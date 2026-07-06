@@ -1749,7 +1749,7 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
       { id: "open_outputs", label: "查看日志" },
     ], "failed");
   }
-  if (["running", "queued", "cancel_requested"].includes(autoStatus)) {
+  if (["running", "queued", "between_steps", "cancel_requested"].includes(autoStatus)) {
     return guideStep(3, "等待自动求解完成", "大模型正在规划、生成代码、运行结果并回填论文。可以在输出页查看流式进度。", [
       { id: "open_outputs", label: "看进度", primary: true },
       { id: "cancel_auto", label: "中断流程" },
@@ -3279,7 +3279,7 @@ async function runGuideAction(action, options = {}) {
     activateModuleTab("problems", { focus: true });
     return;
   }
-  if (action === "open_outputs") {
+  if (action === "open_outputs" || action === "watch_auto") {
     activateModuleTab("outputs", { focus: true });
     scrollIntoViewIfPossible(els.autoWorkflowProgress || els.artifacts);
     return;
