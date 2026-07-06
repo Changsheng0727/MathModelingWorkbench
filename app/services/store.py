@@ -336,10 +336,10 @@ def project_identity_from_folder(folder_name: str) -> tuple[str, str]:
     return folder_name, folder_name
 
 
-def list_projects() -> list[dict[str, Any]]:
+def list_projects(*, refresh: bool = False) -> list[dict[str, Any]]:
     global _projects_cache
     now = time.monotonic()
-    if _projects_cache and now - _projects_cache[0] <= PROJECT_LIST_CACHE_TTL_SECONDS:
+    if not refresh and _projects_cache and now - _projects_cache[0] <= PROJECT_LIST_CACHE_TTL_SECONDS:
         return copy.deepcopy(_projects_cache[1])
 
     projects = []

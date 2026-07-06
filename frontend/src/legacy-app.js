@@ -565,14 +565,14 @@ function llmConnectionBlocker(settings = {}) {
   return "";
 }
 
-async function loadProjects({ restore = false } = {}) {
+async function loadProjects({ restore = false, refresh = false } = {}) {
   if (els.projectCount) {
     els.projectCount.classList.add("is-loading");
     els.projectCount.textContent = "正在刷新项目状态…";
   }
   els.projectList?.setAttribute("aria-busy", "true");
   try {
-    state.projects = await api("/api/projects");
+    state.projects = await api(`/api/projects${refresh ? "?refresh=true" : ""}`);
     pruneSelectedProjects();
     renderProjectList();
     renderExperienceGuide(state.experience || {});
@@ -3729,7 +3729,7 @@ function folderNameFromFiles(files) {
 els.refresh.addEventListener("click", async () => {
   els.refresh.disabled = true;
   try {
-    await loadProjects();
+    await loadProjects({ refresh: true });
     await loadAutoJobs();
     await loadGrowthMetrics();
     await loadTrustCenter();

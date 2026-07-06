@@ -634,9 +634,9 @@ def format_bytes(value: int) -> str:
 
 
 @app.get("/api/projects")
-def projects() -> list[dict]:
+def projects(refresh: bool = False) -> list[dict]:
     llm_settings = get_llm_settings()
-    items = [attach_project_readiness_summary(project, llm_settings) for project in list_projects()]
+    items = [attach_project_readiness_summary(project, llm_settings) for project in list_projects(refresh=refresh)]
     items.sort(key=project_attention_sort_rank)
     if items:
         mark_default_project(items[0])
