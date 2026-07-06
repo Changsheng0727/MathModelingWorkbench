@@ -573,6 +573,7 @@ function renderProjectList() {
         const quickAction = renderProjectQuickAction(project);
         const deliveryBadge = renderProjectDeliveryBadge(project);
         const artifactBadge = renderProjectArtifactBadge(project);
+        const artifactMeta = renderProjectArtifactMeta(project);
         const diagnosis = project.last_failure_diagnosis || {};
         const diagnosisBadge = diagnosis.category
           ? `<span class="project-badge project-badge-error" title="${escapeHtml(diagnosis.suggested_action || diagnosis.repair_focus || diagnosis.evidence || "")}">${escapeHtml(diagnosis.label || diagnosis.category)}</span>`
@@ -592,6 +593,7 @@ function renderProjectList() {
             <span class="project-name">${escapeHtml(project.name)}</span>
             <span class="project-meta">更新 ${escapeHtml(formatProjectTime(updatedAt))} · ${escapeHtml(status)}</span>
             <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${rootRepairBadge}${autoBadge}${deliveryBadge}${artifactBadge}${diagnosisBadge}</span>
+            ${artifactMeta}
             ${requiredProgress}
             ${nextStep}
           </button>
@@ -702,6 +704,23 @@ function renderProjectArtifactBadge(project = {}) {
   const label = project.artifact_health_label || `文件 ${Number(summary.available || 0)}/${total}`;
   const title = project.artifact_health_summary || label;
   return `<span class="project-badge${className}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
+}
+
+function renderProjectArtifactMeta(project = {}) {
+  const summary = project.artifact_summary || {};
+  const total = Number(summary.total || 0);
+  if (total <= 1) {
+    return "";
+  }
+  const size = Number(summary.size_bytes || 0);
+  const parts = [
+    size ? `输出 ${formatBytes(size)}` : "",
+    summary.latest_modified_at ? `最近 ${formatProjectTime(summary.latest_modified_at)}` : "",
+  ].filter(Boolean);
+  if (!parts.length) {
+    return "";
+  }
+  return `<span class="project-output-meta">${escapeHtml(parts.join(" · "))}</span>`;
 }
 
 function hasArtifactIssue(project = {}) {
@@ -871,6 +890,8 @@ function projectSearchText(project = {}) {
     project.artifact_summary?.missing ? `文件缺失 ${project.artifact_summary.missing}` : "",
     project.artifact_summary?.unsafe ? `路径异常 ${project.artifact_summary.unsafe}` : "",
     project.artifact_summary?.available ? `可打开文件 ${project.artifact_summary.available}` : "",
+    project.artifact_summary?.size_bytes ? `生成文件大小 ${formatBytes(project.artifact_summary.size_bytes)}` : "",
+    project.artifact_summary?.latest_modified_at ? `生成文件更新 ${formatProjectTime(project.artifact_summary.latest_modified_at)}` : "",
     project.readiness_label,
     project.readiness_summary,
     project.readiness_action?.label,

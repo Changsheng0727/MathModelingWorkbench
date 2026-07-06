@@ -127,28 +127,55 @@ def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[st
     }
 
 
+def format_artifact_size(size_bytes: object) -> str:
+    try:
+        size = float(size_bytes or 0)
+    except (TypeError, ValueError):
+        return ""
+    if size <= 0:
+        return ""
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size < 1024 or unit == "GB":
+            return f"{int(size)} B" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return ""
+
+
+def artifact_summary_detail(summary: dict[str, object]) -> str:
+    parts = []
+    size = format_artifact_size(summary.get("size_bytes"))
+    if size:
+        parts.append(f"总大小 {size}")
+    latest = str(summary.get("latest_modified_at") or "").replace("T", " ")[:16]
+    if latest:
+        parts.append(f"最近更新 {latest}")
+    return "，".join(parts)
+
+
 def describe_artifact_health(summary: dict[str, object]) -> dict[str, str]:
     total = int(summary.get("total") or 0)
     available = int(summary.get("available") or 0)
     missing = int(summary.get("missing") or 0)
     unsafe = int(summary.get("unsafe") or 0)
+    detail = artifact_summary_detail(summary)
+    detail_sentence = f"{detail}。" if detail else ""
     if unsafe:
         return {
             "artifact_health_status": "error",
             "artifact_health_label": f"路径异常 {unsafe}",
-            "artifact_health_summary": f"可打开 {available}/{total} 个生成文件，{unsafe} 个路径不在项目目录内。",
+            "artifact_health_summary": f"可打开 {available}/{total} 个生成文件，{unsafe} 个路径不在项目目录内。{detail_sentence}",
         }
     if missing:
         return {
             "artifact_health_status": "warning",
             "artifact_health_label": f"文件缺失 {missing}",
-            "artifact_health_summary": f"可打开 {available}/{total} 个生成文件，{missing} 个文件尚未生成或已移动。",
+            "artifact_health_summary": f"可打开 {available}/{total} 个生成文件，{missing} 个文件尚未生成或已移动。{detail_sentence}",
         }
     if total > 1:
         return {
             "artifact_health_status": "success",
             "artifact_health_label": f"文件 {available}/{total}",
-            "artifact_health_summary": f"生成文件均可打开：{available}/{total}。",
+            "artifact_health_summary": f"生成文件均可打开：{available}/{total}。{detail_sentence}",
         }
     return {
         "artifact_health_status": "pending",
@@ -217,7 +244,7 @@ def project_metadata_error_stub(root: Path, exc: Exception) -> dict[str, Any]:
         "root": str(root),
         "status": "metadata_error",
         "metadata_error": error,
-        "artifact_summary": {"total": 0, "available": 0, "missing": 0, "unsafe": 0},
+        "artifact_summary": {"total": 0, "available": 0, "missing": 0, "unsafe": 0, "size_bytes": 0, "latest_modified_at": ""},
         "artifact_health_status": "error",
         "artifact_health_label": "元数据异常",
         "artifact_health_summary": f"metadata.json 无法读取：{error}",

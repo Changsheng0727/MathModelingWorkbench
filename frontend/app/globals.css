@@ -1003,6 +1003,14 @@ p {
   white-space: nowrap;
 }
 
+.project-output-meta {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .project-required-progress {
   display: grid;
   grid-template-columns: minmax(44px, 1fr) auto;
