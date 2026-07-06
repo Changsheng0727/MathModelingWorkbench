@@ -587,12 +587,17 @@ async function restoreInitialProject() {
   }
 }
 
-async function loadAutoJobs() {
+async function loadAutoJobs({ includeOverview = false } = {}) {
   if (!els.autoJobCenter) {
     return;
   }
   try {
-    applyAutoJobsPayload(await api("/api/auto/jobs"));
+    const payload = await api(`/api/auto/jobs${includeOverview ? "?include_overview=true" : ""}`);
+    if (payload.overview) {
+      applyProductOverviewPayload(payload.overview);
+    } else {
+      applyAutoJobsPayload(payload);
+    }
   } catch (error) {
     els.autoJobCenter.innerHTML = `<p class="status">后台任务中心暂不可用：${escapeHtml(error.message)}</p>`;
   }
@@ -4146,7 +4151,7 @@ async function runGuideAction(action, options = {}) {
     if (capacityButton) {
       capacityButton.click();
     } else {
-      await loadAutoJobs();
+      await loadAutoJobs({ includeOverview: true });
       els.autoJobCenter?.querySelector("[data-capacity-action='autotune']")?.click();
     }
     return;

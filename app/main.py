@@ -1933,17 +1933,20 @@ def project_auto_workflow_status(project_id: str) -> dict:
 
 
 @app.get("/api/auto/jobs")
-def auto_workflow_jobs() -> dict:
-    return build_auto_jobs_response()
+def auto_workflow_jobs(include_overview: bool = False) -> dict:
+    return build_auto_jobs_response(include_overview=include_overview)
 
 
-def build_auto_jobs_response() -> dict:
-    return {
+def build_auto_jobs_response(*, include_overview: bool = False) -> dict:
+    response = {
         "auto_jobs": list_auto_workflow_jobs(),
         "delivery_batch_jobs": list_delivery_batch_jobs(),
         "capacity_settings": load_capacity_settings(),
         "capacity_autotune": list_capacity_autotune_events(),
     }
+    if include_overview:
+        response["overview"] = build_product_overview_response()
+    return response
 
 
 @app.post("/api/auto/batch/start")
