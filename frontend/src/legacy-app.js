@@ -712,7 +712,7 @@ async function syncOverviewAfterAction(payload = {}) {
     applyProductOverviewPayload(payload.overview);
     return true;
   } else {
-    await loadProjects();
+    await loadProductOverview();
     return false;
   }
 }
@@ -4231,17 +4231,7 @@ els.autoJobCenter?.addEventListener("click", async (event) => {
     setAutoJobCenterStatus(progress || "正在应用容量推荐。", "running");
     try {
       const response = await api("/api/product/capacity/autotune", { method: "POST" });
-      if (response.overview) {
-        applyProductOverviewPayload(response.overview);
-      } else {
-        state.capacitySettings = response.capacity_settings || state.capacitySettings;
-        state.capacityAutotune = response.capacity_autotune_history || { latest: response.capacity_autotune, items: [response.capacity_autotune].filter(Boolean) };
-        state.autoJobs = response.auto_jobs || state.autoJobs;
-        state.deliveryBatchJobs = response.delivery_batch_jobs || state.deliveryBatchJobs;
-        renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
-        await loadGrowthMetrics();
-        await loadTrustCenter();
-      }
+      await syncOverviewAfterAction(response);
       const plan = response.capacity_autotune || {};
       const message = plan.status === "already_optimal" ? "容量已经最优。" : success || "容量推荐已应用。";
       setAutoJobCenterStatus(message, "success");
@@ -4297,16 +4287,7 @@ els.autoJobCenter?.addEventListener("submit", async (event) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (response.overview) {
-      applyProductOverviewPayload(response.overview);
-    } else {
-      state.capacitySettings = response.capacity_settings || state.capacitySettings;
-      state.autoJobs = response.auto_jobs || state.autoJobs;
-      state.deliveryBatchJobs = response.delivery_batch_jobs || state.deliveryBatchJobs;
-      renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
-      await loadGrowthMetrics();
-      await loadTrustCenter();
-    }
+    await syncOverviewAfterAction(response);
     const message = success || "容量设置已应用。";
     setAutoJobCenterStatus(message, "success");
     showToast(message, "success");

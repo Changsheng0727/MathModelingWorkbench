@@ -191,13 +191,14 @@ def update_product_capacity_settings(payload: CapacitySettingsPayload) -> dict:
         auto_update = configure_auto_workflow_capacity(int(settings.get("auto_workflow_workers") or 2))
     if "delivery_batch_job_workers" in settings_payload:
         delivery_update = configure_delivery_batch_job_capacity(int(settings.get("delivery_batch_job_workers") or 1))
+    overview = build_product_overview_response()
     return {
-        "capacity_settings": load_capacity_settings(),
+        "capacity_settings": overview.get("capacity_settings") or load_capacity_settings(),
         "auto_update": auto_update or {},
         "delivery_update": delivery_update or {},
-        "auto_jobs": list_auto_workflow_jobs(),
-        "delivery_batch_jobs": list_delivery_batch_jobs(),
-        "overview": build_product_overview_response(),
+        "auto_jobs": overview.get("auto_jobs") or list_auto_workflow_jobs(),
+        "delivery_batch_jobs": overview.get("delivery_batch_jobs") or list_delivery_batch_jobs(),
+        "overview": overview,
     }
 
 
@@ -219,16 +220,16 @@ def autotune_product_capacity() -> dict:
         delivery_update = configure_delivery_batch_job_capacity(int(updates["delivery_batch_job_workers"]))
     settings_after = load_capacity_settings()
     event = record_capacity_autotune_event(plan, settings_after)
-    history = list_capacity_autotune_events()
+    overview = build_product_overview_response()
     return {
         "capacity_autotune": event,
-        "capacity_autotune_history": history,
-        "capacity_settings": settings_after,
+        "capacity_autotune_history": overview.get("capacity_autotune") or list_capacity_autotune_events(),
+        "capacity_settings": overview.get("capacity_settings") or settings_after,
         "auto_update": auto_update,
         "delivery_update": delivery_update,
-        "auto_jobs": list_auto_workflow_jobs(),
-        "delivery_batch_jobs": list_delivery_batch_jobs(),
-        "overview": build_product_overview_response(),
+        "auto_jobs": overview.get("auto_jobs") or list_auto_workflow_jobs(),
+        "delivery_batch_jobs": overview.get("delivery_batch_jobs") or list_delivery_batch_jobs(),
+        "overview": overview,
     }
 
 
