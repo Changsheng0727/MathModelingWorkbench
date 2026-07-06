@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.services.analyzer import apply_problem_selection, build_analysis
-from app.services.action_catalog import ACTION_ALIASES, ACTION_OUTCOMES, ACTION_PROGRESS, ACTION_SUCCESS, action_outcome, action_progress, action_success
+from app.services.action_catalog import ACTION_ALIASES, ACTION_BUTTONS, ACTION_OUTCOMES, ACTION_PROGRESS, ACTION_SUCCESS, action_outcome, action_progress, action_success
 from app.services.analysis_progress import AnalysisProgress, load_analysis_progress
 from app.services.auto_workflow import diagnose_auto_workflow_exception, request_auto_workflow_cancel, run_auto_workflow
 from app.services.auto_workflow_jobs import (
@@ -337,6 +337,7 @@ def product_experience_center() -> dict:
         "action_catalog": ACTION_OUTCOMES,
         "action_progress_catalog": ACTION_PROGRESS,
         "action_success_catalog": ACTION_SUCCESS,
+        "action_button_catalog": ACTION_BUTTONS,
         "experience": build_experience_center(
             projects_snapshot,
             auto_jobs,

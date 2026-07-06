@@ -22,6 +22,7 @@ const state = {
   actionCatalog: {},
   actionProgressCatalog: {},
   actionSuccessCatalog: {},
+  actionButtonCatalog: {},
   uploadProgressStop: null,
   projectRestoreTried: false,
 };
@@ -507,6 +508,7 @@ async function loadExperienceCenter() {
     state.actionCatalog = payload.action_catalog || state.actionCatalog || {};
     state.actionProgressCatalog = payload.action_progress_catalog || state.actionProgressCatalog || {};
     state.actionSuccessCatalog = payload.action_success_catalog || state.actionSuccessCatalog || {};
+    state.actionButtonCatalog = payload.action_button_catalog || state.actionButtonCatalog || {};
     state.experience = payload.experience || {};
     renderExperienceGuide(state.experience);
     if (!state.projects?.length) {
@@ -700,6 +702,7 @@ function normalizedGuideActions(actions = [], fallback = []) {
       outcome: action.outcome ? String(action.outcome) : guideActionOutcome(action.id),
       progress: action.progress ? String(action.progress) : guideActionProgress(action.id),
       success: action.success ? String(action.success) : guideActionSuccess(action.id),
+      buttonLabel: action.button_label || action.buttonLabel ? String(action.button_label || action.buttonLabel) : guideActionButtonLabel(action.id),
       path: action.path ? String(action.path) : "",
       problemId: action.problem_id || action.problemId ? String(action.problem_id || action.problemId) : "",
     }));
@@ -729,6 +732,11 @@ function guideActionProgress(actionId = "") {
 function guideActionSuccess(actionId = "") {
   const id = String(actionId || "");
   return state.actionSuccessCatalog?.[id] || state.actionSuccessCatalog?.[guideActionId(id)] || "";
+}
+
+function guideActionButtonLabel(actionId = "") {
+  const id = String(actionId || "");
+  return state.actionButtonCatalog?.[id] || state.actionButtonCatalog?.[guideActionId(id)] || "";
 }
 
 function reportGuideActionError(error, label = "执行下一步失败") {
@@ -2237,6 +2245,7 @@ function renderGuideActionButton(action = {}, className = "growth-action-button"
   const progress = action.progress || guideActionProgress(id);
   const success = action.success || guideActionSuccess(id);
   const outcome = action.outcome || guideActionOutcome(id);
+  const buttonLabel = action.button_label || action.buttonLabel || guideActionButtonLabel(id) || "执行";
   if (!progress && !success && !outcome && guideActionId(id) === id) {
     return "";
   }
@@ -2244,7 +2253,7 @@ function renderGuideActionButton(action = {}, className = "growth-action-button"
   const title = titleText ? ` title="${escapeHtml(titleText)}"` : "";
   const progressAttr = progress ? ` data-guide-progress="${escapeHtml(progress)}"` : "";
   const successAttr = success ? ` data-guide-success="${escapeHtml(success)}"` : "";
-  return `<button class="${escapeHtml(className)}" type="button" data-guide-action="${escapeHtml(id)}"${progressAttr}${successAttr}${title}>执行</button>`;
+  return `<button class="${escapeHtml(className)}" type="button" data-guide-action="${escapeHtml(id)}"${progressAttr}${successAttr}${title}>${escapeHtml(buttonLabel)}</button>`;
 }
 
 function renderGrowthDeliveryBatch(batch = {}) {
@@ -2459,8 +2468,9 @@ function renderTrustList(title, rows = [], kind = "evidence") {
 
 function renderTrustAction(action = {}) {
   const command = guideActionId(action.id || "");
+  const buttonLabel = action.button_label || action.buttonLabel || guideActionButtonLabel(action.id || command) || "执行";
   const actionButton = ["repair_campaign", "export_audit"].includes(command)
-    ? `<button class="trust-action-button" type="button" data-trust-action="${escapeHtml(command)}">执行</button>`
+    ? `<button class="trust-action-button" type="button" data-trust-action="${escapeHtml(command)}">${escapeHtml(buttonLabel)}</button>`
     : renderGuideActionButton(action, "trust-action-button");
   return `
     <article>
@@ -3534,18 +3544,30 @@ els.refreshTrustCenter?.addEventListener("click", async () => {
   }
 });
 
-async function runGuideButton(button) {
+async function runGuideButton(button, statusNode = null) {
+  const actionId = button.dataset.guideAction || "";
+  const progress = button.dataset.guideProgress || guideActionProgress(actionId);
   button.disabled = true;
+  if (statusNode && progress) {
+    statusNode.textContent = progress;
+  }
   try {
-    const completed = await runGuideAction(button.dataset.guideAction, {
+    const completed = await runGuideAction(actionId, {
       path: button.dataset.guidePath || "",
       problemId: button.dataset.guideProblemId || "",
-      progress: button.dataset.guideProgress || "",
+      progress,
     });
     if (completed !== false) {
-      reportGuideActionSuccess(button.dataset.guideAction, { success: button.dataset.guideSuccess || "" });
+      const success = button.dataset.guideSuccess || guideActionSuccess(actionId);
+      if (statusNode && success) {
+        statusNode.textContent = success;
+      }
+      reportGuideActionSuccess(actionId, { success });
     }
   } catch (error) {
+    if (statusNode) {
+      statusNode.textContent = `执行失败：${error?.message || error || "未知错误"}`;
+    }
     reportGuideActionError(error);
   } finally {
     button.disabled = false;
@@ -3555,7 +3577,7 @@ async function runGuideButton(button) {
 els.trustCenter?.addEventListener("click", async (event) => {
   const guideButton = event.target.closest("[data-guide-action]");
   if (guideButton) {
-    await runGuideButton(guideButton);
+    await runGuideButton(guideButton, els.trustCenterStatus);
     return;
   }
   const button = event.target.closest("[data-trust-action]");
@@ -3620,7 +3642,7 @@ els.trustCenter?.addEventListener("click", async (event) => {
 els.growthCenter?.addEventListener("click", async (event) => {
   const guideButton = event.target.closest("[data-guide-action]");
   if (guideButton) {
-    await runGuideButton(guideButton);
+    await runGuideButton(guideButton, els.growthCenterStatus);
     return;
   }
   const button = event.target.closest("[data-growth-action]");

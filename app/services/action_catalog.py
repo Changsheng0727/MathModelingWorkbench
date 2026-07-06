@@ -84,6 +84,33 @@ ACTION_SUCCESS: dict[str, str] = {
 }
 
 
+ACTION_BUTTONS: dict[str, str] = {
+    "focus_llm": "去配置",
+    "test_llm": "测试连接",
+    "focus_upload": "去上传",
+    "focus_projects": "查看项目",
+    "open_problems": "确认选题",
+    "confirm_recommended_problem": "采用推荐",
+    "start_auto": "开始求解",
+    "watch_auto": "查看进度",
+    "resume_auto": "继续生成",
+    "cancel_auto": "中断流程",
+    "open_outputs": "查看输出",
+    "compile": "编译论文",
+    "review": "开始审查",
+    "refresh_delivery": "刷新检查",
+    "refresh_repair": "刷新修复",
+    "build_delivery_package": "生成交付包",
+    "open_project_root": "打开文件夹",
+    "open_primary_output": "打开输出",
+    "select_analyzed": "选中项目",
+    "batch_packages": "开始打包",
+    "autotune_capacity": "调优并发",
+    "repair_campaign": "开始修复",
+    "refresh_all": "刷新状态",
+}
+
+
 ACTION_ALIASES: dict[str, str] = {
     "resume_auto_workflow": "resume_auto",
     "fix_completeness_gate": "resume_auto",
@@ -132,10 +159,18 @@ ACTION_SUCCESS.update(
         "download_support_zip": "已打开支撑材料包下载。",
     }
 )
+ACTION_BUTTONS.update(
+    {
+        "analyze_project": "重新分析",
+        "refresh_diagnostics": "刷新诊断",
+        "download_support_zip": "下载支撑包",
+    }
+)
 
 ACTION_OUTCOMES.setdefault("export_audit", "会导出当前项目池的信任审计包。")
 ACTION_PROGRESS.setdefault("export_audit", "正在导出信任审计包。")
 ACTION_SUCCESS.setdefault("export_audit", "已导出信任审计包。")
+ACTION_BUTTONS.setdefault("export_audit", "导出审计包")
 
 for alias, target in ACTION_ALIASES.items():
     if target in ACTION_OUTCOMES:
@@ -144,6 +179,8 @@ for alias, target in ACTION_ALIASES.items():
         ACTION_PROGRESS.setdefault(alias, ACTION_PROGRESS[target])
     if target in ACTION_SUCCESS:
         ACTION_SUCCESS.setdefault(alias, ACTION_SUCCESS[target])
+    if target in ACTION_BUTTONS:
+        ACTION_BUTTONS.setdefault(alias, ACTION_BUTTONS[target])
 
 
 def action_outcome(action_id: str) -> str:
@@ -158,6 +195,10 @@ def action_success(action_id: str) -> str:
     return ACTION_SUCCESS.get(str(action_id or ""), "")
 
 
+def action_button(action_id: str) -> str:
+    return ACTION_BUTTONS.get(str(action_id or ""), "")
+
+
 def enrich_action(action: dict[str, Any]) -> dict[str, Any]:
     action_id = str(action.get("id") or "")
     if not action_id:
@@ -166,5 +207,6 @@ def enrich_action(action: dict[str, Any]) -> dict[str, Any]:
     enriched.setdefault("outcome", action_outcome(action_id))
     enriched.setdefault("progress", action_progress(action_id))
     enriched.setdefault("success", action_success(action_id))
+    enriched.setdefault("button_label", action_button(action_id))
     enriched.setdefault("canonical_id", ACTION_ALIASES.get(action_id, action_id))
     return enriched
