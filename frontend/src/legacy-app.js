@@ -5014,7 +5014,7 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
   const steps = progress.steps || [];
   const current = progress.current_step;
   const liveStream = progress.live_stream || {};
-  const hasNotice = Boolean(progress.detail || progress.resume_hint);
+  const hasNotice = Boolean(progress.detail || progress.error || progress.resume_hint);
   if (!steps.length && !current && !hasLiveStream(liveStream) && !hasNotice) {
     element.classList.add("hidden");
     element.innerHTML = "";
@@ -5026,7 +5026,7 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
   const percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
   const allSteps = current ? [...steps, current] : steps;
   const currentTitle = current?.title || statusLabel(progress.status) || "等待更新";
-  const notice = progress.detail || progress.resume_hint || "";
+  const notice = progress.detail || progress.error || progress.resume_hint || "";
   const noticeTitle = progress.progress_error || notice;
   element.innerHTML = `
     <div class="progress-head">

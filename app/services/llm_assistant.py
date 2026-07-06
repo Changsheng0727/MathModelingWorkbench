@@ -306,10 +306,11 @@ def _run_custom_model_assistance(root: Path, problem_ref: str, model_name: str, 
         final_status = "success" if payload.get("success") else "warning"
         write_model_assistant_progress(root, started_at, steps, None, status=final_status, artifacts=artifacts)
         return artifacts
-    except Exception:
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
         if current_step:
-            finish_step("failed", "执行失败，详细错误会返回到界面。")
-        write_model_assistant_progress(root, started_at, steps, None, status="failed")
+            finish_step("failed", f"执行失败：{error}")
+        write_model_assistant_progress(root, started_at, steps, None, status="failed", detail=error, error=error)
         raise
 
 
@@ -320,6 +321,8 @@ def write_model_assistant_progress(
     current_step: dict[str, Any] | None,
     status: str,
     artifacts: dict[str, str] | None = None,
+    detail: str = "",
+    error: str = "",
 ) -> None:
     total = 5
     completed = len(steps)
@@ -334,6 +337,10 @@ def write_model_assistant_progress(
         "percent": min(100, round((completed + (0.35 if current_step else 0)) / total * 100)),
         "artifacts": artifacts or {},
     }
+    if detail:
+        progress["detail"] = detail
+    if error:
+        progress["error"] = error
     path = root / MODEL_ASSISTANT_PROGRESS_RELATIVE
     path.parent.mkdir(parents=True, exist_ok=True)
     save_json(path, progress)
