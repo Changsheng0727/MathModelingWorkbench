@@ -532,12 +532,27 @@ function renderLlmSettings(settings) {
 }
 
 function renderLlmSettingsResponse(payload = {}) {
-  const { overview, ...settings } = payload;
+  const { overview, project, project_warning: _projectWarning, ...settings } = payload;
   renderLlmSettings(settings);
+  if (project) {
+    renderProject(project);
+  }
   if (overview) {
     applyProductOverviewPayload(overview);
   }
   return settings;
+}
+
+function currentProjectQuery() {
+  const projectId = state.currentProject?.metadata?.id;
+  return projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+}
+
+async function refreshCurrentProjectIfMissing(payload = {}) {
+  if (payload.project) {
+    return;
+  }
+  await refreshCurrentProjectDetail().catch(() => {});
 }
 
 function setLlmSettingsStatus(message, tone = "") {
@@ -4477,12 +4492,13 @@ function llmSettingsPayloadFromForm() {
 }
 
 async function saveLlmSettingsFromForm() {
-  const settings = await api("/api/settings/llm", {
+  const payload = await api(`/api/settings/llm${currentProjectQuery()}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(llmSettingsPayloadFromForm()),
   });
-  return renderLlmSettingsResponse(settings);
+  renderLlmSettingsResponse(payload);
+  return payload;
 }
 
 els.llmSettingsForm.addEventListener("submit", async (event) => {
@@ -4491,8 +4507,8 @@ els.llmSettingsForm.addEventListener("submit", async (event) => {
   button.disabled = true;
   setLlmSettingsStatus("正在保存大模型设置。", "running");
   try {
-    await saveLlmSettingsFromForm();
-    await refreshCurrentProjectDetail().catch(() => {});
+    const settings = await saveLlmSettingsFromForm();
+    await refreshCurrentProjectIfMissing(settings);
     showToast("大模型设置已保存", "success");
   } catch (error) {
     setLlmSettingsStatus(`保存失败：${error.message}`, "failed");
@@ -4506,30 +4522,30 @@ els.testLlmSettings?.addEventListener("click", async () => {
   els.testLlmSettings.disabled = true;
   setLlmSettingsStatus("正在保存当前大模型设置并测试连接。", "running");
   try {
-    await saveLlmSettingsFromForm();
+    const savedSettings = await saveLlmSettingsFromForm();
+    await refreshCurrentProjectIfMissing(savedSettings);
     setLlmSettingsStatus("正在测试大模型连接。", "running");
-    const result = await api("/api/settings/llm/test", { method: "POST" });
+    const result = await api(`/api/settings/llm/test${currentProjectQuery()}`, { method: "POST" });
     if (result.settings) {
       renderLlmSettings(result.settings);
     }
     if (result.overview) {
       applyProductOverviewPayload(result.overview);
     }
+    if (result.project) {
+      renderProject(result.project);
+    }
     if (result.ok) {
       setLlmSettingsStatus("大模型连接测试成功，可以运行大模型+代码一键流程。", "success");
       showToast("大模型连接测试成功", "success");
-      await refreshCurrentProjectDetail();
+      await refreshCurrentProjectIfMissing(result);
       return;
     }
     const diagnosis = result.diagnosis || {};
     const label = diagnosis.label ? `${diagnosis.label}：` : "";
     const hint = diagnosis.suggested_action || result.message || "请检查接口地址、模型名和 API Key。";
     setLlmSettingsStatus(`大模型连接测试失败：${label}${hint}`, "failed");
-    try {
-      await refreshCurrentProjectDetail();
-    } catch {
-      // Keep the connection-test diagnosis visible if project refresh fails.
-    }
+    await refreshCurrentProjectIfMissing(result);
     showToast("大模型连接测试失败，请查看设置提示", "error");
   } catch (error) {
     setLlmSettingsStatus(`大模型连接测试失败：${error.message}`, "failed");
@@ -4544,9 +4560,9 @@ els.clearLlmSettings.addEventListener("click", async () => {
   els.clearLlmSettings.disabled = true;
   setLlmSettingsStatus("正在清除大模型设置。", "running");
   try {
-    const settings = await api("/api/settings/llm", { method: "DELETE" });
+    const settings = await api(`/api/settings/llm${currentProjectQuery()}`, { method: "DELETE" });
     renderLlmSettingsResponse(settings);
-    await refreshCurrentProjectDetail().catch(() => {});
+    await refreshCurrentProjectIfMissing(settings);
     showToast("大模型设置已清除", "success");
   } catch (error) {
     setLlmSettingsStatus(`清除失败：${error.message}`, "failed");

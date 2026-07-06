@@ -610,21 +610,32 @@ def read_llm_settings(include_overview: bool = False) -> dict:
     return settings
 
 
+def attach_optional_project(response: dict, project_id: str | None) -> dict:
+    if project_id:
+        try:
+            response["project"] = project_detail(project_id)
+        except HTTPException as exc:
+            response["project_warning"] = str(exc.detail)
+        except Exception as exc:
+            response["project_warning"] = f"{type(exc).__name__}: {exc}"
+    return response
+
+
 @app.put("/api/settings/llm")
-def update_llm_settings(payload: LLMSettingsPayload) -> dict:
+def update_llm_settings(payload: LLMSettingsPayload, project_id: str | None = None) -> dict:
     try:
         settings = save_llm_settings(payload.api_key, payload.base_url, payload.model, payload.workflow_strategy)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     settings["overview"] = build_product_overview_response()
-    return settings
+    return attach_optional_project(settings, project_id)
 
 
 @app.post("/api/settings/llm/test")
-def test_llm_settings() -> dict:
+def test_llm_settings(project_id: str | None = None) -> dict:
     settings = get_llm_settings()
     if not settings.get("configured"):
-        return {
+        return attach_optional_project({
             "ok": False,
             "status": "requires_api_key",
             "message": "请先填写 API 密钥后再测试连接。",
@@ -634,7 +645,7 @@ def test_llm_settings() -> dict:
                 "label": "未配置 API 密钥",
                 "suggested_action": "在左侧 AI 设置中填写有效 API Key 后再测试连接。",
             },
-        }
+        }, project_id)
     try:
         content = call_chat_completion(
             "请只回复 OK，用于数学建模客户端连接测试。",
@@ -645,30 +656,30 @@ def test_llm_settings() -> dict:
     except Exception as exc:
         diagnosis = diagnose_auto_workflow_exception(exc, "llm_settings_test")
         updated_settings = record_llm_test_result(False, "failed", f"{type(exc).__name__}: {exc}", diagnosis)
-        return {
+        return attach_optional_project({
             "ok": False,
             "status": "failed",
             "message": f"{type(exc).__name__}: {exc}",
             "diagnosis": diagnosis,
             "settings": updated_settings,
             "overview": build_product_overview_response(),
-        }
+        }, project_id)
     updated_settings = record_llm_test_result(True, "success", "AI 连接测试成功。")
-    return {
+    return attach_optional_project({
         "ok": True,
         "status": "success",
         "message": "AI 连接测试成功。",
         "sample": content[:80],
         "settings": updated_settings,
         "overview": build_product_overview_response(),
-    }
+    }, project_id)
 
 
 @app.delete("/api/settings/llm")
-def delete_llm_settings() -> dict:
+def delete_llm_settings(project_id: str | None = None) -> dict:
     settings = clear_llm_settings()
     settings["overview"] = build_product_overview_response()
-    return settings
+    return attach_optional_project(settings, project_id)
 
 
 @app.get("/api/templates")
