@@ -412,12 +412,27 @@ async function loadProjects({ restore = false } = {}) {
   if (els.projectCount) {
     els.projectCount.textContent = "正在刷新项目状态…";
   }
-  state.projects = await api("/api/projects");
-  pruneSelectedProjects();
-  renderProjectList();
-  renderExperienceGuide(state.experience || {});
-  if (restore) {
-    await restoreInitialProject();
+  try {
+    state.projects = await api("/api/projects");
+    pruneSelectedProjects();
+    renderProjectList();
+    renderExperienceGuide(state.experience || {});
+    if (restore) {
+      await restoreInitialProject();
+    }
+  } catch (error) {
+    renderProjectListLoadError(error);
+    throw error;
+  }
+}
+
+function renderProjectListLoadError(error) {
+  const existingCount = (state.projects || []).length;
+  if (els.projectCount) {
+    els.projectCount.textContent = existingCount ? `刷新失败，仍显示 ${existingCount} 个旧项目` : "项目列表加载失败";
+  }
+  if (els.projectList && !existingCount) {
+    els.projectList.innerHTML = `<p class="status">项目列表暂时无法读取：${escapeHtml(error.message)}。请检查本地后端是否已启动，或重新打开客户端。</p>`;
   }
 }
 
@@ -430,7 +445,12 @@ async function restoreInitialProject() {
   const savedId = readPreference("mmw-last-project-id", "");
   const candidate = projects.find((project) => project.id === savedId) || projects.find((project) => project.default_open) || projects[0];
   if (candidate?.id) {
-    await openProject(candidate.id, { silent: true });
+    try {
+      await openProject(candidate.id, { silent: true });
+    } catch (error) {
+      writePreference("mmw-last-project-id", "");
+      showToast(`自动恢复上次项目失败：${error.message}`, "warning");
+    }
   }
 }
 
@@ -544,6 +564,7 @@ function renderProjectList() {
         const metadataErrorBadge = project.metadata_error
           ? `<span class="project-badge project-badge-error" title="${escapeHtml(project.metadata_error)}">元数据异常</span>`
           : "";
+        const openBadge = project.can_open === false ? '<span class="project-badge project-badge-error">不可打开</span>' : "";
         const nextStep = renderProjectNextStep(project);
         const quickAction = renderProjectQuickAction(project);
         const deliveryBadge = renderProjectDeliveryBadge(project);
@@ -555,16 +576,17 @@ function renderProjectList() {
         const updatedAt = project.project_updated_at || project.updated_at || project.created_at;
         const checked = state.selectedProjectIds.has(project.id) ? " checked" : "";
         const disabled = project.analysis_available ? "" : " disabled";
+        const openDisabled = project.can_open === false ? " disabled" : "";
         return `
         <article class="project-row${active}${batchVisible ? " is-batch-visible" : ""}">
           <label class="project-select">
             <input class="project-select-input" type="checkbox" data-project-id="${escapeHtml(project.id)}"${checked}${disabled} />
             <span class="sr-only">选择${escapeHtml(project.name || project.id)}</span>
           </label>
-          <button class="project-button project-open${active}" type="button" data-project-id="${escapeHtml(project.id)}">
+          <button class="project-button project-open${active}" type="button" data-project-id="${escapeHtml(project.id)}"${openDisabled}>
             <span class="project-name">${escapeHtml(project.name)}</span>
             <span class="project-meta">更新 ${escapeHtml(formatProjectTime(updatedAt))} · ${escapeHtml(status)}</span>
-            <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
+            <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
             ${nextStep}
           </button>
           ${quickAction}
@@ -4225,7 +4247,9 @@ els.runLlmAnalysis.addEventListener("click", async () => {
 initThemeToggle();
 initModuleTabs();
 checkHealth();
-loadProjects({ restore: true });
+loadProjects({ restore: true }).catch((error) => {
+  showToast(`项目列表加载失败：${error.message}`, "error");
+});
 loadExperienceCenter();
 loadAutoJobs();
 loadGrowthMetrics();

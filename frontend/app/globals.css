@@ -941,6 +941,12 @@ p {
   transform: translateY(-1px);
 }
 
+.project-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  transform: none;
+}
+
 .project-button.is-active {
   border-color: var(--primary);
   background:

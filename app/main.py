@@ -662,6 +662,8 @@ def projects() -> list[dict]:
 def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project = dict(project)
     root = Path(project.get("root") or project_root(str(project.get("id", ""))))
+    project["can_open"] = root.exists()
+    project["open_warning"] = "项目元数据异常，可打开项目文件夹修复。" if project.get("metadata_error") else ""
     analysis = project.get("analysis_summary") if isinstance(project.get("analysis_summary"), dict) else None
     if project.get("analysis_available") and not analysis:
         analysis = {"analysis_available": True}
