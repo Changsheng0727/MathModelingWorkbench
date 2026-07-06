@@ -39,6 +39,9 @@ def create_project(original_name: str) -> dict[str, Any]:
 
 
 def project_root(project_id: str) -> Path:
+    direct = PROJECTS_ROOT / project_id
+    if direct.is_dir():
+        return direct
     matches = sorted(PROJECTS_ROOT.glob(f"{project_id}-*"))
     if not matches:
         raise FileNotFoundError(project_id)
@@ -216,20 +219,24 @@ def project_identity_from_folder(folder_name: str) -> tuple[str, str]:
 def list_projects() -> list[dict[str, Any]]:
     projects = []
     for root in sorted(PROJECTS_ROOT.glob("*"), reverse=True):
+        if not root.is_dir():
+            continue
         meta_path = root / "metadata.json"
-        if meta_path.exists():
-            try:
-                meta = load_json(meta_path)
-                if not isinstance(meta, dict):
-                    raise ValueError("metadata.json must contain a JSON object")
-            except Exception as exc:
-                projects.append(project_metadata_error_stub(root, exc))
-                continue
-            analysis_path = root / "artifacts" / "analysis.json"
-            if analysis_path.exists():
-                meta["analysis_available"] = True
-            meta = attach_project_runtime_fields(meta, root, meta_path)
-            projects.append(attach_project_artifact_fields(meta, root, include_status=False))
+        if not meta_path.exists():
+            projects.append(project_metadata_error_stub(root, FileNotFoundError("metadata.json is missing")))
+            continue
+        try:
+            meta = load_json(meta_path)
+            if not isinstance(meta, dict):
+                raise ValueError("metadata.json must contain a JSON object")
+        except Exception as exc:
+            projects.append(project_metadata_error_stub(root, exc))
+            continue
+        analysis_path = root / "artifacts" / "analysis.json"
+        if analysis_path.exists():
+            meta["analysis_available"] = True
+        meta = attach_project_runtime_fields(meta, root, meta_path)
+        projects.append(attach_project_artifact_fields(meta, root, include_status=False))
     projects.sort(key=lambda item: item.get("project_updated_at") or item.get("created_at") or "", reverse=True)
     return projects
 
