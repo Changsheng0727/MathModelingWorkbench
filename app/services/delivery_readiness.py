@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.services.action_catalog import enrich_action
 from app.services.store import load_json, save_json
 
 
@@ -16,11 +17,15 @@ def write_delivery_readiness_report(root: Path, meta: dict[str, Any] | None = No
     save_json(root / DELIVERY_READINESS_JSON_RELATIVE, payload)
     (root / DELIVERY_READINESS_RELATIVE).write_text(render_delivery_markdown(payload), encoding="utf-8")
     if isinstance(meta, dict):
+        primary_action = payload.get("primary_action", {})
+        primary_action = primary_action if isinstance(primary_action, dict) else {}
         meta["delivery_readiness_status"] = payload.get("status", "")
         meta["delivery_readiness_label"] = payload.get("label", "")
         meta["delivery_readiness_summary"] = payload.get("summary", "")
         meta["delivery_readiness_score"] = payload.get("score", 0)
-        meta["delivery_readiness_action"] = payload.get("primary_action", {}).get("id", "")
+        meta["delivery_readiness_action"] = primary_action.get("id", "")
+        meta["delivery_readiness_action_label"] = primary_action.get("label", "")
+        meta["delivery_readiness_action_button_label"] = primary_action.get("button_label", "")
         meta["delivery_readiness_can_submit"] = payload.get("can_submit", False)
         meta.setdefault("artifacts", {}).update(
             {
@@ -309,7 +314,7 @@ def build_actions(metadata: dict[str, Any], checks: list[dict[str, Any]], can_su
                 "detail": "核心交付件已具备，可生成正式交付包；建议同时处理上方提醒。",
             }
         )
-    return dedupe_actions(actions)[:6]
+    return [enrich_action(action) for action in dedupe_actions(actions)[:6]]
 
 
 def delivery_action_priority(item: dict[str, Any]) -> str:

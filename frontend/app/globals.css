@@ -4024,6 +4024,12 @@ p {
   transform: translateY(-1px);
 }
 
+.delivery-action:disabled {
+  opacity: 0.62;
+  cursor: wait;
+  transform: none;
+}
+
 .delivery-meta,
 .delivery-links {
   display: flex;

@@ -169,6 +169,10 @@ ACTION_BUTTONS.update(
         "inspect_failure_evidence": "查看证据",
         "continue_review": "查看报告",
         "start_auto_workflow": "开始求解",
+        "run_auto_workflow": "开始求解",
+        "compile_latex": "编译论文",
+        "review_paper": "审查论文",
+        "build_delivery_package": "生成交付包",
     }
 )
 

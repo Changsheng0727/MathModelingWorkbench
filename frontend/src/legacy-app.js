@@ -1941,7 +1941,12 @@ function deliveryPrimaryAction(metadata = {}, payload = {}, checks = []) {
     download_support_zip: "下载支撑材料包",
   };
   if (id) {
-    return { id, label: labels[id] || id, priority: "medium" };
+    return {
+      id,
+      label: metadata.delivery_readiness_action_label || labels[id] || id,
+      button_label: metadata.delivery_readiness_action_button_label || guideActionButtonLabel(id),
+      priority: "medium",
+    };
   }
   const failed = checks.find((item) => item.status === "fail" || item.status === "warning");
   return failed?.action ? { id: failed.action, label: labels[failed.action] || failed.action, priority: failed.required ? "high" : "medium" } : {};
@@ -1952,7 +1957,15 @@ function renderDeliveryActionButton(action = {}, projectId = "") {
   if (!command || !projectId) {
     return "";
   }
-  return `<button class="delivery-action" type="button" data-delivery-action="${escapeHtml(command)}">${escapeHtml(action.label || "处理")}</button>`;
+  const actionId = String(action.id || "");
+  const progress = action.progress || guideActionProgress(actionId);
+  const success = action.success || guideActionSuccess(actionId);
+  const buttonLabel = action.button_label || action.buttonLabel || guideActionButtonLabel(actionId) || action.label || "处理";
+  const titleText = [action.detail, action.outcome ? `点击后：${action.outcome}` : ""].filter(Boolean).join("；");
+  const titleAttr = titleText ? ` title="${escapeHtml(titleText)}"` : "";
+  const progressAttr = progress ? ` data-delivery-progress="${escapeHtml(progress)}"` : "";
+  const successAttr = success ? ` data-delivery-success="${escapeHtml(success)}"` : "";
+  return `<button class="delivery-action" type="button" data-delivery-action="${escapeHtml(command)}" data-delivery-action-id="${escapeHtml(actionId)}"${progressAttr}${successAttr}${titleAttr}>${escapeHtml(buttonLabel)}</button>`;
 }
 
 function deliveryActionCommand(actionId = "") {
@@ -4973,47 +4986,53 @@ els.deliveryCenter?.addEventListener("click", async (event) => {
     return;
   }
   const command = button.dataset.deliveryAction;
+  const actionId = button.dataset.deliveryActionId || "";
+  const progress = button.dataset.deliveryProgress || guideActionProgress(actionId);
+  const success = button.dataset.deliverySuccess || guideActionSuccess(actionId);
+  const setDeliveryStatus = (message) => {
+    if (message && els.deliveryReadinessStatus) {
+      els.deliveryReadinessStatus.textContent = message;
+    }
+  };
   button.disabled = true;
   try {
+    setDeliveryStatus(progress);
     if (command === "resume") {
       await runAutoWorkflow(projectId, { resume: true });
+      setDeliveryStatus(success);
       return;
     }
     if (command === "start") {
       await runAutoWorkflow(projectId, { resume: false });
+      setDeliveryStatus(success);
       return;
     }
     if (command === "analyze") {
-      if (els.deliveryReadinessStatus) {
-        els.deliveryReadinessStatus.textContent = "正在重建赛题分析并刷新交付门禁。";
-      }
       const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/analyze`, { method: "POST" });
       renderProject(payload.project);
       await refreshDeliveryReadinessForProject(projectId);
       await loadProjects();
+      setDeliveryStatus(success);
       return;
     }
     if (command === "diagnostics") {
       await refreshDiagnosticsForProject(projectId);
       await refreshDeliveryReadinessForProject(projectId);
+      setDeliveryStatus(success);
       return;
     }
     if (command === "repair") {
       await refreshRepairCenterForProject(projectId);
       await refreshDeliveryReadinessForProject(projectId);
+      setDeliveryStatus(success);
       return;
     }
     if (command === "package") {
-      if (els.deliveryReadinessStatus) {
-        els.deliveryReadinessStatus.textContent = "正在生成正式交付包、清单和文件哈希。";
-      }
       const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/delivery/package`, { method: "POST" });
       renderProject(payload.project);
       const size = payload.package?.package?.size_bytes;
       const sizeText = Number.isFinite(Number(size)) ? `，大小 ${formatBytes(Number(size))}` : "";
-      if (els.deliveryReadinessStatus) {
-        els.deliveryReadinessStatus.textContent = `正式交付包已生成${sizeText}。`;
-      }
+      setDeliveryStatus(`正式交付包已生成${sizeText}。`);
       showToast("正式交付包已生成", "success");
       await loadProjects();
       await loadGrowthMetrics();
@@ -5026,6 +5045,7 @@ els.deliveryCenter?.addEventListener("click", async (event) => {
       renderProject(payload.project);
       els.compileStatus.textContent = payload.compile.success ? "编译完成：已生成 PDF，并导出 Word 文档。" : "编译失败，请查看编译日志和 Word 导出日志。";
       await loadProjects();
+      setDeliveryStatus(success);
       return;
     }
     if (command === "review") {
@@ -5034,10 +5054,12 @@ els.deliveryCenter?.addEventListener("click", async (event) => {
       renderProject(payload.project);
       els.paperReviewStatus.textContent = "论文审查完成，可查看审查报告。";
       await loadProjects();
+      setDeliveryStatus(success);
       return;
     }
     if (command === "support_zip") {
       window.open(`/api/projects/${encodeURIComponent(projectId)}/download/support.zip`, "_blank", "noopener");
+      setDeliveryStatus(success);
     }
   } catch (error) {
     if (els.deliveryReadinessStatus) {
