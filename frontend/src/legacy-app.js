@@ -525,10 +525,10 @@ function renderProjectList() {
   const projects = state.projects || [];
   const query = normalizeSearch(state.projectQuery);
   const filter = state.projectFilter || "all";
-  const filtered = projects.filter((project) => {
+  const filtered = sortProjectsForAttention(projects.filter((project) => {
     const matchesQuery = !query || projectSearchText(project).includes(query);
     return matchesQuery && projectFilterMatches(project, filter);
-  });
+  }));
   renderProjectFilters(projects);
   const selectedCount = state.selectedProjectIds.size;
   const batchVisible = Boolean(els.projectBatchDetails?.open);
@@ -742,6 +742,16 @@ function isUrgentProject(project = {}) {
   return (project.readiness_next_step_urgency || project.readiness_next_step?.urgency || "") === "high";
 }
 
+function sortProjectsForAttention(projects = []) {
+  return [...projects].sort((a, b) => {
+    const rank = Number(a.readiness_attention_rank ?? 99) - Number(b.readiness_attention_rank ?? 99);
+    if (rank) {
+      return rank;
+    }
+    return String(b.project_updated_at || b.updated_at || b.created_at || "").localeCompare(String(a.project_updated_at || a.updated_at || a.created_at || ""));
+  });
+}
+
 function renderProjectReadinessBadge(project = {}) {
   const label = project.readiness_label || "";
   if (!label) {
@@ -940,6 +950,7 @@ function projectSearchText(project = {}) {
     project.readiness_next_step_label,
     project.readiness_next_step_detail,
     project.readiness_next_step_urgency === "high" ? "高优先级 优先处理" : "",
+    project.readiness_attention_rank !== undefined ? `优先级 ${project.readiness_attention_rank}` : "",
     project.readiness_phase?.label,
     project.readiness_phase?.detail,
     project.readiness_phase?.step && project.readiness_phase?.total ? `阶段 ${project.readiness_phase.step}/${project.readiness_phase.total}` : "",

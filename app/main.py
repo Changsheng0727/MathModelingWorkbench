@@ -654,9 +654,11 @@ def format_bytes(value: int) -> str:
 def projects() -> list[dict]:
     llm_settings = get_llm_settings()
     items = [attach_project_readiness_summary(project, llm_settings) for project in list_projects()]
+    items.sort(key=lambda item: str(item.get("project_updated_at") or item.get("created_at") or ""), reverse=True)
+    items.sort(key=lambda item: int(item.get("readiness_attention_rank") or 99))
     if items:
         items[0]["default_open"] = True
-        items[0]["default_open_reason"] = "最近更新"
+        items[0]["default_open_reason"] = "优先处理" if int(items[0].get("readiness_attention_rank") or 99) <= 20 else "最近更新"
     return items
 
 
@@ -716,6 +718,7 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_required_label"] = f"必需 {required_passed}/{required_total}" if required_total else ""
     project["readiness_bucket"] = project_readiness_bucket(project)
     project["readiness_bucket_label"] = project_readiness_bucket_label(project["readiness_bucket"])
+    project["readiness_attention_rank"] = project_attention_rank(project)
     project.pop("root", None)
     return project
 
@@ -767,6 +770,21 @@ def project_readiness_bucket_label(bucket: str) -> str:
         "deliverable": "可交付",
         "normal": "普通",
     }.get(bucket, "普通")
+
+
+def project_attention_rank(project: dict) -> int:
+    urgency = str(project.get("readiness_next_step_urgency") or "")
+    if urgency == "high":
+        return 0
+    auto_status = str(project.get("auto_workflow_status") or "")
+    if auto_status in {"queued", "running", "between_steps", "cancel_requested"}:
+        return 10
+    if project.get("metadata_error") or project.get("artifact_health_status") in {"error", "warning"}:
+        return 20
+    if urgency == "medium":
+        return 30
+    bucket = str(project.get("readiness_bucket") or "")
+    return {"needs_action": 40, "normal": 60, "deliverable": 80}.get(bucket, 70)
 
 
 def summarize_analysis_for_metadata(analysis: dict) -> dict:
