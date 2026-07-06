@@ -175,13 +175,16 @@ def environments(refresh: bool = False, include_overview: bool = False) -> dict:
 
 
 @app.get("/api/product/capacity")
-def product_capacity_settings() -> dict:
-    return {
+def product_capacity_settings(include_overview: bool = False) -> dict:
+    response = {
         "capacity_settings": load_capacity_settings(),
         "auto_jobs": list_auto_workflow_jobs(),
         "delivery_batch_jobs": list_delivery_batch_jobs(),
         "capacity_autotune": list_capacity_autotune_events(),
     }
+    if include_overview:
+        response["overview"] = build_product_overview_response()
+    return response
 
 
 @app.put("/api/product/capacity")
@@ -332,7 +335,18 @@ def product_growth_metrics(include_overview: bool = False) -> dict:
 
 
 @app.get("/api/product/experience")
-def product_experience_center() -> dict:
+def product_experience_center(include_overview: bool = False) -> dict:
+    if include_overview:
+        overview = build_product_overview_response()
+        return {
+            "action_alias_catalog": overview.get("action_alias_catalog") or ACTION_ALIASES,
+            "action_catalog": overview.get("action_catalog") or ACTION_OUTCOMES,
+            "action_progress_catalog": overview.get("action_progress_catalog") or ACTION_PROGRESS,
+            "action_success_catalog": overview.get("action_success_catalog") or ACTION_SUCCESS,
+            "action_button_catalog": overview.get("action_button_catalog") or ACTION_BUTTONS,
+            "experience": overview.get("experience") or {},
+            "overview": overview,
+        }
     projects_snapshot = list_projects()
     auto_jobs = list_auto_workflow_jobs()
     delivery_jobs = list_delivery_batch_jobs()

@@ -1399,13 +1399,17 @@ async function openProject(projectId, { silent = false } = {}) {
   }
 }
 
-async function refreshCurrentProjectDetail() {
+async function refreshCurrentProjectDetail({ includeOverview = true } = {}) {
   const projectId = state.currentProject?.metadata?.id || "";
   if (!projectId) {
     return null;
   }
-  const detail = await api(`/api/projects/${encodeURIComponent(projectId)}`);
+  const suffix = includeOverview ? "?include_overview=true" : "";
+  const detail = await api(`/api/projects/${encodeURIComponent(projectId)}${suffix}`);
   renderProject(detail);
+  if (detail.overview) {
+    await syncOverviewAfterAction(detail);
+  }
   return detail;
 }
 
@@ -4147,7 +4151,7 @@ async function runGuideAction(action, options = {}) {
     if (growthButton) {
       growthButton.click();
     } else {
-      await loadGrowthMetrics();
+      await loadGrowthMetrics({ includeOverview: true });
       els.growthCenter?.querySelector("[data-growth-action='batch_packages']")?.click();
     }
     return;
@@ -4167,7 +4171,7 @@ async function runGuideAction(action, options = {}) {
     if (repairButton) {
       repairButton.click();
     } else {
-      await loadTrustCenter();
+      await loadTrustCenter({ includeOverview: true });
       els.trustCenter?.querySelector("[data-trust-action='repair_campaign']")?.click();
     }
     return;
@@ -4177,7 +4181,7 @@ async function runGuideAction(action, options = {}) {
     if (auditButton) {
       auditButton.click();
     } else {
-      await loadTrustCenter();
+      await loadTrustCenter({ includeOverview: true });
       els.trustCenter?.querySelector("[data-trust-action='export_audit']")?.click();
     }
     return;
@@ -4881,7 +4885,7 @@ async function waitForAutoWorkflowCompletion(projectId) {
         renderAutoWorkflowProgress(latest.progress);
         updateAutoWorkflowButtons(latest.status, latest.progress || {});
       } catch {
-        await loadAutoJobs();
+        await loadAutoJobs({ includeOverview: true });
       }
       return latest;
     }
