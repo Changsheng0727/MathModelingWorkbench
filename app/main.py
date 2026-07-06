@@ -649,18 +649,14 @@ def projects() -> list[dict]:
 def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project = dict(project)
     root = Path(project.get("root") or project_root(str(project.get("id", ""))))
-    analysis_path = root / "artifacts" / "analysis.json"
-    repair_path = root / REPAIR_BRIEFING_JSON_RELATIVE
-    delivery_path = root / DELIVERY_READINESS_JSON_RELATIVE
-    package_path = root / DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE
+    analysis = project.get("analysis_summary") if isinstance(project.get("analysis_summary"), dict) else None
+    if project.get("analysis_available") and not analysis:
+        analysis = {"analysis_available": True}
     readiness = build_project_readiness(
         root,
         project,
-        load_json(analysis_path) if analysis_path.exists() else None,
+        analysis,
         llm_settings=llm_settings,
-        repair=load_json(repair_path) if repair_path.exists() else None,
-        delivery=load_json(delivery_path) if delivery_path.exists() else None,
-        package=load_json(package_path) if package_path.exists() else None,
     )
     project["readiness_status"] = readiness.get("status")
     project["readiness_label"] = readiness.get("label")
@@ -670,6 +666,24 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_required_passed"] = readiness.get("required_passed", 0)
     project["readiness_required_total"] = readiness.get("required_total", 0)
     return project
+
+
+def summarize_analysis_for_metadata(analysis: dict) -> dict:
+    summary: dict = {
+        "analysis_available": True,
+        "problem_count": len(analysis.get("problems", []) or []),
+        "recommended_problem": analysis.get("recommended_problem", {}) or {},
+        "system_recommended_problem": analysis.get("system_recommended_problem", {}) or {},
+        "contest_summary": analysis.get("contest_summary", {}) or {},
+    }
+    for key in ["recommended_problem", "system_recommended_problem"]:
+        problem = summary.get(key)
+        if isinstance(problem, dict):
+            summary[key] = {
+                "id": problem.get("id") or problem.get("final_problem_id") or "",
+                "title": problem.get("title") or problem.get("final_problem_title") or "",
+            }
+    return summary
 
 
 @app.post("/api/projects")
@@ -881,6 +895,7 @@ def analyze_project_materials(root: Path, meta: dict, progress: AnalysisProgress
         if progress:
             progress.start_step("llm_problem_analysis", "LLM 补充赛题分析", "未配置 API Key，跳过大模型补充分析。")
             progress.finish_step("warning", "未配置 API Key，已跳过 LLM 补充分析；本地赛题分析可正常使用。")
+    meta["analysis_summary"] = summarize_analysis_for_metadata(analysis)
     meta["status"] = "analyzed"
     attach_artifacts_safely(meta, artifacts)
     save_json(root / "metadata.json", meta)
@@ -897,6 +912,9 @@ def project_detail(project_id: str) -> dict:
     meta = load_json(root / "metadata.json")
     analysis_path = root / "artifacts" / "analysis.json"
     analysis = load_json(analysis_path) if analysis_path.exists() else None
+    if analysis and not isinstance(meta.get("analysis_summary"), dict):
+        meta["analysis_summary"] = summarize_analysis_for_metadata(analysis)
+        save_json(root / "metadata.json", meta)
     repair_path = root / REPAIR_BRIEFING_JSON_RELATIVE
     repair = load_json(repair_path) if repair_path.exists() else None
     delivery_path = root / DELIVERY_READINESS_JSON_RELATIVE

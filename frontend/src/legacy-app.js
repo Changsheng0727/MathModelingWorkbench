@@ -406,6 +406,9 @@ function renderLlmSettings(settings) {
 }
 
 async function loadProjects() {
+  if (els.projectCount) {
+    els.projectCount.textContent = "正在刷新项目状态…";
+  }
   state.projects = await api("/api/projects");
   pruneSelectedProjects();
   renderProjectList();
