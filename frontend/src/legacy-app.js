@@ -18,6 +18,7 @@ const state = {
   deliveryReadiness: null,
   deliveryPackage: null,
   experience: null,
+  actionAliasCatalog: {},
   actionCatalog: {},
   actionProgressCatalog: {},
   actionSuccessCatalog: {},
@@ -502,6 +503,7 @@ async function loadExperienceCenter() {
   }
   try {
     const payload = await api("/api/product/experience");
+    state.actionAliasCatalog = payload.action_alias_catalog || state.actionAliasCatalog || {};
     state.actionCatalog = payload.action_catalog || state.actionCatalog || {};
     state.actionProgressCatalog = payload.action_progress_catalog || state.actionProgressCatalog || {};
     state.actionSuccessCatalog = payload.action_success_catalog || state.actionSuccessCatalog || {};
@@ -654,7 +656,7 @@ function renderProjectEmptyState(onboarding = {}) {
   `;
 }
 
-const GUIDE_ACTION_ALIASES = {
+const DEFAULT_GUIDE_ACTION_ALIASES = {
   resume_auto_workflow: "resume_auto",
   fix_completeness_gate: "resume_auto",
   run_auto_workflow: "start_auto",
@@ -667,7 +669,7 @@ const GUIDE_ACTION_ALIASES = {
 
 function guideActionId(actionId = "") {
   const id = String(actionId || "");
-  return GUIDE_ACTION_ALIASES[id] || id;
+  return state.actionAliasCatalog?.[id] || DEFAULT_GUIDE_ACTION_ALIASES[id] || id;
 }
 
 function normalizedGuideActions(actions = [], fallback = []) {
