@@ -20,7 +20,7 @@ def build_experience_center(
     running = sum(1 for item in projects if item.get("auto_workflow_status") in {"running", "queued", "cancel_requested"})
     solved = sum(1 for item in projects if item.get("auto_workflow_status") == "success")
     failed = sum(1 for item in projects if item.get("auto_workflow_status") == "failed")
-    deliverable = sum(1 for item in projects if item.get("delivery_readiness_status") == "ready")
+    deliverable = sum(1 for item in projects if delivery_is_ready(item))
     packaged = sum(1 for item in projects if item.get("delivery_package_status") == "success" or item.get("delivery_package_sha256"))
     repair_backlog = sum(1 for item in projects if item.get("repair_center_action") in {"resume", "repair", "refresh"})
     configured = bool(llm_settings.get("configured"))
@@ -157,6 +157,10 @@ def delivery_score(deliverable: int, packaged: int) -> int:
         return 58
     ratio = packaged / max(1, deliverable)
     return max(42, min(100, round(56 + ratio * 38 + min(6, packaged))))
+
+
+def delivery_is_ready(project: dict[str, Any]) -> bool:
+    return str(project.get("delivery_readiness_status") or "") in {"deliverable", "review", "ready", "success"}
 
 
 def recommended_actions(

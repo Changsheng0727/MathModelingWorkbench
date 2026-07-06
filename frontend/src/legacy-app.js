@@ -2019,6 +2019,8 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
   const finalProblem = metadata.final_problem || {};
   const autoStatus = metadata.auto_workflow_status || "";
   const deliveryStatus = metadata.delivery_readiness_status || "";
+  const deliveryReady = ["ready", "success", "deliverable", "review"].includes(deliveryStatus);
+  const deliveryPackaged = metadata.delivery_package_status === "success" || Boolean(metadata.delivery_package_sha256 || metadata.artifacts?.delivery_package);
   const hasArtifacts = Boolean(metadata.artifacts && Object.keys(metadata.artifacts).length);
   const configured = state.llmSettings?.configured;
   const onboarding = experience.onboarding || {};
@@ -2080,12 +2082,19 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
       { id: "open_outputs", label: "查看输出区" },
     ]);
   }
-  if (deliveryStatus !== "ready" && deliveryStatus !== "success") {
+  if (!deliveryReady) {
     return guideStep(4, "检查论文并生成交付包", "自动求解已完成。下一步检查论文、编译 PDF/Word，并生成支撑材料包。", [
       { id: "compile", label: "编译论文", primary: !hasArtifacts },
       { id: "review", label: "审查论文" },
       { id: "refresh_delivery", label: "刷新交付" },
     ], "success");
+  }
+  if (!deliveryPackaged) {
+    return guideStep(4, "生成正式交付包", "交付门禁已通过。下一步生成包含论文、结果、审查报告和支撑材料的正式压缩包。", [
+      { id: "build_delivery_package", label: "生成交付包", primary: true },
+      { id: "refresh_delivery", label: "刷新交付检查" },
+      { id: "open_outputs", label: "查看生成文件" },
+    ], deliveryStatus === "review" ? "warning" : "success");
   }
   return guideStep(4, "交付文件已就绪", "论文、结果和支撑材料已经进入交付阶段。可以打开项目文件夹或在生成文件里下载。", [
     { id: "open_project_root", label: "打开文件夹", primary: true },
