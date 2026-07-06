@@ -1371,7 +1371,8 @@ function renderProject(detail) {
   renderDeliveryCenter(metadata, analysis.project?.id || metadata.id, detail.delivery || {});
   renderArtifacts(metadata, analysis.project?.id || metadata.id);
   renderAutoWorkflowProgress(metadata.auto_workflow_progress);
-  updateAutoWorkflowButtons(metadata.auto_workflow_status, metadata.auto_workflow_progress || {});
+  updateAutoWorkflowButtons(metadata.auto_workflow_status, metadata.auto_workflow_progress || {}, metadata);
+  renderAutoWorkflowPreflight(metadata);
   renderModelAssistantProgress(metadata.model_assistant_progress);
   renderProgressPanel(els.uploadProgress, metadata.analysis_progress, 7);
 }
@@ -4762,21 +4763,44 @@ function renderAutoWorkflowProgress(progress = {}) {
   renderProgressPanel(els.autoWorkflowProgress, progress, 7);
 }
 
-function updateAutoWorkflowButtons(status = "", progress = {}) {
+function updateAutoWorkflowButtons(status = "", progress = {}, metadata = state.currentProject?.metadata || {}) {
   const running = isAutoWorkflowActive(status, progress);
-  const canResume = Boolean(progress.can_resume) || ["failed", "cancelled", "completed_with_warnings", "cancel_requested", "interrupted"].includes(status);
+  const preflight = metadata.auto_workflow_preflight || {};
+  const hasPreflight = Object.keys(preflight).length > 0;
+  const canStart = !hasPreflight || preflight.can_start !== false;
+  const canResume = Boolean(progress.can_resume || preflight.can_resume) || ["failed", "cancelled", "completed_with_warnings", "cancel_requested", "interrupted"].includes(status);
   if (els.runAutoWorkflow) {
-    els.runAutoWorkflow.disabled = running;
+    els.runAutoWorkflow.disabled = running || !canStart;
+    els.runAutoWorkflow.title = running
+      ? "自动流程正在运行"
+      : canStart
+        ? preflight.detail || "开始一键自动流程"
+        : preflight.detail || "请先完成准备项";
   }
   if (els.resumeAutoWorkflow) {
     els.resumeAutoWorkflow.disabled = running || !canResume;
     els.resumeAutoWorkflow.title = canResume
-      ? progress.resume_hint || progress.last_failure_diagnosis?.suggested_action || "从上次成功阶段继续生成"
+      ? progress.resume_hint || progress.last_failure_diagnosis?.suggested_action || preflight.detail || "从上次成功阶段继续生成"
       : "当前没有可继续的自动流程";
   }
   if (els.cancelAutoWorkflow) {
     els.cancelAutoWorkflow.disabled = !running || Boolean(progress.cancel_requested);
   }
+}
+
+function renderAutoWorkflowPreflight(metadata = {}) {
+  if (!els.autoWorkflowStatus) {
+    return;
+  }
+  const progress = metadata.auto_workflow_progress || {};
+  if (isAutoWorkflowActive(metadata.auto_workflow_status || "", progress)) {
+    return;
+  }
+  const preflight = metadata.auto_workflow_preflight || {};
+  if (!preflight.label && !preflight.detail) {
+    return;
+  }
+  els.autoWorkflowStatus.textContent = `${preflight.label || "自动流程状态"}：${preflight.detail || ""}`;
 }
 
 function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {

@@ -1361,11 +1361,13 @@ def project_detail(project_id: str) -> dict:
     package_path = root / DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE
     package = load_optional_project_json(root, package_path, meta, "交付包清单")
     meta = attach_project_artifact_fields(meta, root)
+    llm_settings = get_llm_settings()
+    meta["auto_workflow_preflight"] = build_auto_workflow_preflight(root, meta)
     readiness = build_project_readiness(
         root,
         meta,
         analysis,
-        llm_settings=get_llm_settings(),
+        llm_settings=llm_settings,
         repair=repair,
         delivery=delivery,
         package=package,
@@ -1984,6 +1986,45 @@ def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resum
     if recommended_id:
         return f"请先确认 {recommended_id} 题为最终选题。"
     return "尚未确认最终选题。"
+
+
+def build_auto_workflow_preflight(root: Path, meta: dict | None = None) -> dict:
+    metadata = meta if isinstance(meta, dict) else load_json(root / "metadata.json")
+    start_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=False)
+    resume_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=True)
+    can_resume = should_resume_batch_project(metadata, "auto") and not resume_issue
+    status = str(metadata.get("auto_workflow_status") or "")
+    if status == "success":
+        return {
+            "status": "success",
+            "can_start": not start_issue,
+            "can_resume": False,
+            "label": "自动流程已完成",
+            "detail": "可以查看生成文件；若题目或设置有变化，也可重新开始。",
+        }
+    if can_resume:
+        return {
+            "status": "warning",
+            "can_start": not start_issue,
+            "can_resume": True,
+            "label": "可从断点继续",
+            "detail": resume_issue or metadata.get("auto_workflow_repair_hint") or "系统会复用已完成阶段并继续修复。",
+        }
+    if start_issue:
+        return {
+            "status": "failed",
+            "can_start": False,
+            "can_resume": False,
+            "label": "暂不能开始自动流程",
+            "detail": start_issue,
+        }
+    return {
+        "status": "success",
+        "can_start": True,
+        "can_resume": False,
+        "label": "可以开始自动流程",
+        "detail": "已具备大模型接口、赛题分析和最终选题，可生成代码、运行结果并撰写论文。",
+    }
 
 
 @app.get("/api/auto/jobs/{job_id}")
