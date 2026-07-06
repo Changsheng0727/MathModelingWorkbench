@@ -270,23 +270,40 @@ def readiness_next_step(action: dict[str, Any], item: dict[str, Any] | None) -> 
     if not action_id or not label:
         return {}
     check_label = str((item or {}).get("label") or "")
+    check_status = str((item or {}).get("status") or "")
+    required = bool((item or {}).get("required"))
     detail = str(action.get("detail") or "").strip()
     if not detail and item:
         detail = str(item.get("detail") or "").strip()
     if not detail and action.get("path"):
         detail = f"打开 {Path(str(action.get('path'))).name or '输出文件'} 所在位置。"
-    context = f"{'必需项' if (item or {}).get('required') else '建议项'}：{check_label}" if check_label else ""
+    context = f"{'必需项' if required else '建议项'}：{check_label}" if check_label else ""
+    tone = readiness_next_step_tone(action_id, check_status, required)
     return {
         "id": action_id,
         "label": label,
         "detail": detail,
         "check_id": str((item or {}).get("id") or ""),
         "check_label": check_label,
-        "check_status": str((item or {}).get("status") or ""),
-        "required": bool((item or {}).get("required")),
+        "check_status": check_status,
+        "required": required,
         "context": context,
+        "tone": tone,
+        "urgency": "high" if tone == "failed" and required else "medium" if tone in {"failed", "warning"} else "low",
         "path": str(action.get("path") or ""),
     }
+
+
+def readiness_next_step_tone(action_id: str, check_status: str, required: bool) -> str:
+    if action_id == "watch_auto":
+        return "running"
+    if action_id == "open_primary_output":
+        return "success"
+    if check_status == "fail":
+        return "failed" if required else "warning"
+    if check_status == "warning":
+        return "warning"
+    return "normal"
 
 
 def readiness_phase(status: str, action: dict[str, Any]) -> dict[str, Any]:

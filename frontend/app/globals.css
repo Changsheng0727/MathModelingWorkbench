@@ -1004,6 +1004,18 @@ p {
   white-space: nowrap;
 }
 
+.project-next[data-tone="failed"] {
+  color: var(--red);
+}
+
+.project-next[data-tone="warning"] {
+  color: var(--amber);
+}
+
+.project-next[data-tone="running"] {
+  color: var(--primary-strong);
+}
+
 .project-phase {
   display: inline-flex;
   width: fit-content;
@@ -1902,6 +1914,21 @@ p {
 .readiness-next b {
   flex: 0 0 auto;
   color: var(--primary-strong);
+}
+
+.readiness-next[data-tone="failed"] {
+  border-color: color-mix(in oklch, var(--red) 34%, transparent);
+  background: var(--red-soft);
+}
+
+.readiness-next[data-tone="warning"] {
+  border-color: color-mix(in oklch, var(--amber) 36%, transparent);
+  background: var(--amber-soft);
+}
+
+.readiness-next[data-tone="running"] {
+  border-color: color-mix(in oklch, var(--primary) 34%, transparent);
+  background: var(--primary-soft);
 }
 
 .readiness-todos {
