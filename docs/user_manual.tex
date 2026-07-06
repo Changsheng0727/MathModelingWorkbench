@@ -1,0 +1,740 @@
+\documentclass[UTF8,a4paper,12pt]{ctexart}
+
+\usepackage{geometry}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+
+\geometry{left=2.5cm,right=2.5cm,top=2.7cm,bottom=2.7cm}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black,
+  citecolor=blue!60!black,
+  pdftitle={数模方舟 ModelArk 使用说明},
+  pdfauthor={ModelArk}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{数模方舟 ModelArk}
+\rhead{使用说明}
+\cfoot{\thepage}
+\setlength{\headheight}{15pt}
+
+\setlist[itemize]{leftmargin=2em,itemsep=0.25em}
+\setlist[enumerate]{leftmargin=2em,itemsep=0.35em}
+\renewcommand{\arraystretch}{1.25}
+\newcommand{\app}{数模方舟 ModelArk}
+\newcommand{\button}[1]{\fbox{\textsf{#1}}}
+\newcommand{\menu}[1]{\textbf{#1}}
+\newcommand{\status}[1]{\textbf{#1}}
+\newcommand{\filepath}[1]{\begingroup\Urlmuskip=0mu plus 1mu\path{#1}\endgroup}
+
+\title{\bfseries 数模方舟 ModelArk 使用说明}
+\author{适用于 Windows 客户端与本地 Web 工作台}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{center}
+  \vspace{1em}
+  \large 面向数学建模竞赛的一站式本地智能工作台
+
+  \vspace{1.5em}
+  \normalsize
+  本说明面向普通用户，重点解释如何安装、配置、上传赛题、选择题目、运行自动求解、查看进度、导出论文与支撑材料。
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+
+\section{软件简介}
+
+\app 是一个面向数学建模竞赛的本地智能客户端。它把赛题材料整理、选题分析、代码求解、结果回填、论文生成、论文审查和文件导出连接成一条可跟踪的工作流。用户只需要按界面中的``下一步''提示完成少量选择，其余高级功能默认收纳在高级设置中。
+
+\subsection{核心流程}
+
+软件的标准使用流程如下：
+
+\begin{center}
+\fbox{\parbox{0.88\linewidth}{
+\centering
+上传赛题材料 $\rightarrow$ 分析题目和附件 $\rightarrow$ 确认选题 $\rightarrow$ 自动求解 $\rightarrow$ 生成论文 $\rightarrow$ 导出交付文件
+}}
+\end{center}
+
+\subsection{适合的使用场景}
+
+\begin{itemize}
+  \item 数学建模竞赛队伍希望快速完成赛题拆解、建模方案设计、代码求解和论文初稿。
+  \item 用户希望大模型参与建模，但要求关键数值、表格和图像来自实际代码运行结果。
+  \item 用户需要统一管理题面、附件、结果、论文、日志和支撑材料包。
+  \item 用户希望减少重复操作，把``解题、跑代码、回填论文、编译、审查''串成一个连续流程。
+\end{itemize}
+
+\subsection{软件不会替代的工作}
+
+\app 可以显著提高整理和生成效率，但不会替代人工复核。正式提交前，仍建议用户检查以下内容：
+
+\begin{itemize}
+  \item 模型假设是否符合题目语境；
+  \item 公式、约束、变量定义是否严谨；
+  \item 每个子问题是否都有对应结果；
+  \item 图表下方分析是否解释了图表的实际含义；
+  \item 摘要是否写明每一问的模型、算法和核心结果；
+  \item 论文格式是否符合竞赛官方要求。
+\end{itemize}
+
+\section{安装与启动}
+
+\subsection{安装包方式}
+
+普通用户推荐使用安装包：
+
+\begin{verbatim}
+MathModelingWorkbench-Setup.exe
+\end{verbatim}
+
+安装步骤如下：
+
+\begin{enumerate}
+  \item 双击安装包。
+  \item 等待安装程序完成解压和快捷方式创建。
+  \item 从桌面快捷方式或开始菜单启动 \app。
+  \item 首次启动时，软件会自动启动本地后端服务，并打开桌面窗口。
+\end{enumerate}
+
+安装版默认安装到：
+
+\begin{verbatim}
+%LOCALAPPDATA%\MathModelingWorkbench
+\end{verbatim}
+
+\subsection{绿色版方式}
+
+如果不希望安装，可以使用绿色版压缩包：
+
+\begin{verbatim}
+MathModelingWorkbench-Windows-x64.zip
+\end{verbatim}
+
+使用步骤如下：
+
+\begin{enumerate}
+  \item 将压缩包解压到一个固定目录。
+  \item 双击目录中的 \texttt{MathModelingWorkbench.exe}。
+  \item 等待桌面窗口打开。
+\end{enumerate}
+
+绿色版不会自动创建开始菜单入口；如果需要固定入口，可手动创建快捷方式。
+
+\subsection{首次运行提示}
+
+安装包尚未代码签名时，Windows 可能显示安全提醒。若确认安装包来自可信来源，可以选择继续运行。首次启动可能需要几十秒，因为软件要启动本地服务、检测运行环境并读取项目列表。
+
+\section{依赖与运行环境}
+
+\subsection{必须准备的内容}
+
+\begin{longtable}{p{0.22\linewidth}p{0.68\linewidth}}
+\toprule
+项目 & 说明 \\
+\midrule
+Windows 系统 & 推荐 Windows 10 或 Windows 11。 \\
+大模型 API Key & 自动分析、代码求解、论文生成、模型辅助等功能需要 API Key。 \\
+赛题材料 & 可以是压缩包、题面 PDF/Word、Excel/CSV 数据文件，或包含全部材料的文件夹。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{可选但推荐的外部工具}
+
+\begin{longtable}{p{0.25\linewidth}p{0.63\linewidth}}
+\toprule
+工具 & 用途 \\
+\midrule
+Pandoc & 用于 Word 导出和部分文档转换。 \\
+XeLaTeX / MiKTeX / TeX Live & 用于编译 PDF 论文。 \\
+winget & Windows 下自动下载部分缺失依赖时可能使用。 \\
+\bottomrule
+\end{longtable}
+
+客户端会尝试检测 Pandoc 和 XeLaTeX。如果缺失且系统支持 \texttt{winget}，软件可能在后台尝试安装。若网络受限、权限不足或安装器需要人工确认，用户仍可能需要手动安装。
+
+\section{界面总览}
+
+当前界面按``少选择、跟着下一步走''的方式组织。普通用户主要关注四个区域。
+
+\subsection{左侧：上传赛题}
+
+左侧 \menu{上传赛题} 区域用于选择赛题文件或压缩包。默认只显示一个主要上传入口：
+
+\begin{itemize}
+  \item \button{选择赛题文件或压缩包}：选择 \texttt{zip}、\texttt{pdf}、\texttt{docx}、\texttt{xlsx}、\texttt{csv} 等文件；
+  \item \button{开始分析}：上传材料并启动赛题解析。
+\end{itemize}
+
+文件夹上传、上传后自动运行等功能放在 \menu{高级上传选项} 中。
+
+\subsection{左侧：大模型设置}
+
+\menu{大模型设置} 区域用于保存 API Key。普通用户只需要填写密钥并点击：
+
+\begin{itemize}
+  \item \button{保存}：保存当前 API 设置；
+  \item \button{测试连接}：检查接口是否可用；
+  \item \button{获取密钥}：打开密钥获取页面。
+\end{itemize}
+
+接口地址、模型名称和求解策略位于 \menu{高级模型设置}。除非你知道自己需要切换服务商、模型或策略，否则保持默认即可。
+
+\subsection{左侧：项目}
+
+\menu{项目} 区域列出历史项目。上传一次赛题会生成一个独立项目。点击项目即可打开。搜索框可以按项目名称、状态和时间过滤项目。
+
+批量入队等多项目操作位于 \menu{高级批量操作}，普通用户可以不展开。
+
+\subsection{主工作区}
+
+主工作区包含三个主要标签页：
+
+\begin{itemize}
+  \item \menu{概览}：显示下一步、当前选题、文档数、数据附件和流程状态；
+  \item \menu{选题}：查看候选题评分与推荐结果，并确认最终选题；
+  \item \menu{输出}：启动一键生成、继续中断流程、查看生成文件。
+\end{itemize}
+
+\menu{更多} 中包含 \menu{材料} 和 \menu{论文设置}。这些属于进阶入口，不是每次都必须操作。
+
+\section{第一次使用：从零到生成论文}
+
+\subsection{步骤一：填写 API Key}
+
+\begin{enumerate}
+  \item 打开软件。
+  \item 在左侧 \menu{大模型设置} 中填写 API Key。
+  \item 如需自定义接口地址或模型，展开 \menu{高级模型设置} 后填写。
+  \item 点击 \button{保存}。
+  \item 点击 \button{测试连接}，确认连接成功。
+\end{enumerate}
+
+若连接失败，请检查 API Key 是否正确、接口地址是否可访问、网络代理是否正常、账户余额或额度是否充足。
+
+\subsection{步骤二：上传赛题材料}
+
+\begin{enumerate}
+  \item 点击 \button{选择赛题文件或压缩包}。
+  \item 选择官方赛题压缩包，或选择题面、附件、数据文件之一。
+  \item 点击 \button{开始分析}。
+  \item 等待界面显示分析进度。
+\end{enumerate}
+
+如果赛题材料分散在多个文件中，推荐先把它们放进同一个文件夹或压缩包。若要直接上传文件夹，请展开 \menu{高级上传选项}。
+
+\subsection{步骤三：查看下一步提示}
+
+上传完成后，\menu{概览} 页面会显示 \menu{下一步} 面板。用户可以按提示操作：
+
+\begin{itemize}
+  \item 若提示``确认要做哪一题''，点击进入 \menu{选题}；
+  \item 若提示``配置大模型接口''，返回左侧设置并测试连接；
+  \item 若提示``启动自动求解''，进入 \menu{输出} 并点击一键生成；
+  \item 若提示``继续生成并自动修复''，点击继续，让软件读取错误日志并续跑。
+\end{itemize}
+
+\subsection{步骤四：确认选题}
+
+进入 \menu{选题} 标签页后，软件会显示候选题卡片。每张卡片包含：
+
+\begin{itemize}
+  \item 题号和题目标题；
+  \item 综合得分；
+  \item 智能适配度和可行性；
+  \item ``系统推荐''或``已选择''标识；
+  \item 少量关键子问题；
+  \item 可展开的评分、方法和风险细节。
+\end{itemize}
+
+确认题目后点击 \button{选择此题}。后续自动求解和论文生成会以当前选题为准。
+
+\subsection{步骤五：启动一键生成}
+
+进入 \menu{输出} 标签页，点击：
+
+\begin{center}
+\button{开始一键生成}
+\end{center}
+
+软件会依次执行：
+
+\begin{enumerate}
+  \item 读取赛题材料和附件数据；
+  \item 生成解题方案和代码求解规范；
+  \item 让大模型生成 Python 求解脚本；
+  \item 运行脚本并产出表格、图像和指标；
+  \item 检查每个子问题是否完成；
+  \item 将具体结果回填到论文；
+  \item 根据正文生成标题、摘要、关键词和结论；
+  \item 编译 LaTeX，导出 PDF；
+  \item 在可用时导出 Word；
+  \item 生成审查报告和支撑材料包。
+\end{enumerate}
+
+一键生成时间取决于题目复杂度、附件大小、模型响应速度和本机运行环境。复杂题目可能需要较长时间。
+
+\subsection{步骤六：查看进度和结果}
+
+运行期间，\menu{输出} 页面会显示自动流程状态和阶段进度。若某一步正在调用大模型，界面会显示当前大模型正在生成或处理的内容片段。若运行代码失败，软件会保留错误日志，并尝试让大模型根据错误继续修复。
+
+完成后，在 \menu{生成文件} 区域查看论文、代码、图表、日志和支撑材料包。
+
+\section{赛题上传建议}
+
+\subsection{推荐的材料组织方式}
+
+为了提高识别成功率，推荐把赛题材料组织成如下形式：
+
+\begin{verbatim}
+赛题文件夹/
+  A题.pdf
+  B题.pdf
+  C题.pdf
+  附件1.xlsx
+  附件2.csv
+  论文格式要求.pdf
+  其他说明.docx
+\end{verbatim}
+
+也可以把上述文件压缩成 \texttt{zip} 后上传。
+
+\subsection{常见文件类型}
+
+\begin{longtable}{p{0.18\linewidth}p{0.72\linewidth}}
+\toprule
+类型 & 建议 \\
+\midrule
+\texttt{.zip} & 最推荐，适合包含多个题目和附件。 \\
+\texttt{.pdf} & 适合上传题面或格式说明。若 PDF 是扫描件，识别效果取决于 OCR。 \\
+\texttt{.docx} & 适合题面、格式说明或补充文档。 \\
+\texttt{.xlsx} & 适合 Excel 数据附件。建议保留表头和单位说明。 \\
+\texttt{.csv} & 适合结构化数据。建议使用 UTF-8 编码。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{上传后看不到结果怎么办}
+
+如果上传后没有生成分析结果，可以依次检查：
+
+\begin{enumerate}
+  \item 文件是否为空或损坏；
+  \item 压缩包是否有密码；
+  \item 路径中是否包含异常字符；
+  \item 题面是否为纯图片扫描件；
+  \item 左侧项目列表是否已经生成新项目；
+  \item 输出区或项目文件夹中是否有错误日志。
+\end{enumerate}
+
+\section{选题分析说明}
+
+\subsection{软件如何辅助选题}
+
+选题分析会综合考虑：
+
+\begin{itemize}
+  \item 题目是否能拆成明确子问题；
+  \item 附件数据是否足够支撑求解；
+  \item 是否适合用代码产生表格、图像和指标；
+  \item 建模方法是否清晰；
+  \item 论文是否容易写出完整逻辑；
+  \item 风险是否可控。
+\end{itemize}
+
+如果配置了 API Key，大模型会参与读取题目相关文件，帮助识别子问题、数据字段和潜在建模路线。
+
+\subsection{选题卡片中的信息}
+
+\begin{longtable}{p{0.24\linewidth}p{0.64\linewidth}}
+\toprule
+字段 & 含义 \\
+\midrule
+综合得分 & 根据数据、任务、模型、计算和论文可写性等因素得到的综合评价。 \\
+智能适配 & 题目是否适合由大模型辅助拆解和生成代码。 \\
+可行性 & 结合附件、数据质量和求解难度的可完成程度。 \\
+系统推荐 & 软件建议优先选择的题目。 \\
+查看方法、评分和风险 & 展开后查看模型类型、可用方法、风险项和评分细节。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{什么时候需要手动改选题}
+
+如果你对某个题目更熟悉，或竞赛队伍已经确定分工，可以手动选择目标题。选择后，自动流程会以该题为准。若一键流程已经开始，建议不要中途改题，除非准备重新运行完整流程。
+
+\section{自动求解与论文生成}
+
+\subsection{一键生成的原则}
+
+\app 的自动求解不是使用固定专题模板，而是根据当前赛题当场生成求解规范和代码。软件会尽量保证：
+
+\begin{itemize}
+  \item 先解题，再写论文；
+  \item 先完成每个子问题的结果和图表，再进入论文撰写；
+  \item 论文中的关键数值来自代码输出；
+  \item 模型检验需要回填具体指标、表格和图像；
+  \item 摘要在正文完成后生成，并写明每一问具体模型、算法和结果；
+  \item 失败时保留日志并尝试自动修复。
+\end{itemize}
+
+\subsection{运行过程中的状态}
+
+常见状态包括：
+
+\begin{longtable}{p{0.22\linewidth}p{0.66\linewidth}}
+\toprule
+状态 & 含义 \\
+\midrule
+等待 & 尚未启动自动流程。 \\
+运行中 & 正在分析、生成代码、运行脚本或写论文。 \\
+需要配置 API Key & 尚未保存可用的大模型接口。 \\
+失败 & 某一步运行失败，可查看日志或点击继续。 \\
+可继续 & 检测到断点或失败记录，可以尝试续跑。 \\
+成功 & 自动流程完成。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{中断与继续}
+
+如果流程运行时间较长，用户可以在 \menu{高级操作} 中中断流程。中断后，点击 \button{继续} 可以尝试从已有阶段恢复。若软件意外退出，重新打开项目后也可以在 \menu{输出} 中点击 \button{继续}。
+
+继续生成时，软件会读取项目已有的中间产物、错误日志、代码脚本和进度记录，尽量避免无意义地完全重跑。
+
+\subsection{自动修复}
+
+若自动生成的求解脚本报错，软件会保留：
+
+\begin{itemize}
+  \item 当前脚本；
+  \item 标准输出和错误输出；
+  \item 返回码；
+  \item 失败阶段；
+  \item 大模型修复记录。
+\end{itemize}
+
+然后软件会要求大模型根据错误信息修改代码并再次运行。复杂错误仍可能需要用户人工查看日志。
+
+\section{论文设置与模型辅助}
+
+\subsection{论文设置}
+
+在 \menu{更多} 中打开 \menu{论文设置}，可以设置：
+
+\begin{itemize}
+  \item 格式模板；
+  \item 正文目标页数；
+  \item 新增 LaTeX 模板或 Word/PDF 格式说明。
+\end{itemize}
+
+如果没有特殊要求，可以使用默认模板。若竞赛提供官方模板，建议上传官方模板或格式说明。
+
+\subsection{Word reference 模板}
+
+软件打包时会内置一个 Pandoc Word reference 模板，用于 Word 导出样式控制。若本机 Pandoc 可用，生成 Word 时会尽量使用该模板。
+
+\subsection{模型辅助}
+
+\menu{模型辅助} 用于在主流程之外补充某个模型或算法方案。例如，你可以指定：
+
+\begin{itemize}
+  \item 问题二使用 LSTM 预测；
+  \item 问题三使用整数规划；
+  \item 增加 TOPSIS 综合评价；
+  \item 对已有模型做敏感性分析。
+\end{itemize}
+
+模型辅助生成的是补充建议和过程记录。是否写入正式论文，仍需要结合当前自动流程和人工判断。
+
+\section{生成文件说明}
+
+\subsection{如何找到生成文件}
+
+完成自动流程后，进入 \menu{输出} 标签页，在 \menu{生成文件} 区域查看文件。每个文件通常支持：
+
+\begin{itemize}
+  \item 点击打开或下载；
+  \item 点击打开所在文件夹；
+  \item 通过顶部 \button{打开项目文件夹} 进入整个项目目录。
+\end{itemize}
+
+\subsection{常见输出文件}
+
+\begin{longtable}{p{0.42\linewidth}p{0.48\linewidth}}
+\toprule
+文件 & 说明 \\
+\midrule
+\filepath{artifacts/analysis_report.md} & 赛题分析报告。 \\
+\filepath{artifacts/llm_problem_analysis.md} & 大模型赛题分析记录。 \\
+\filepath{artifacts/computed_solver_spec.md} & 代码求解规范。 \\
+\filepath{code/run_computed_solution.py} & 自动生成的 Python 求解脚本。 \\
+\filepath{results/computed_manifest.json} & 结果清单，记录表格、图像、指标和子问题完成情况。 \\
+\filepath{results/computed_summary.md} & 计算结果摘要。 \\
+\filepath{paper/main.tex} & 论文 LaTeX 源文件。 \\
+\filepath{paper/main.pdf} & 论文 PDF。 \\
+\filepath{paper/main.docx} & 论文 Word，依赖 Pandoc。 \\
+\filepath{artifacts/auto_workflow_report.md} & 自动流程报告。 \\
+\filepath{artifacts/paper_review.md} & 论文审查报告。 \\
+\filepath{artifacts/support_materials.zip} & 支撑材料包。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{项目文件夹结构}
+
+每个项目通常包含：
+
+\begin{verbatim}
+project/
+  raw/        原始赛题材料
+  artifacts/ 分析报告、LLM记录、审查报告
+  code/       自动生成或辅助生成的代码
+  results/    表格、图像、指标和manifest
+  paper/      LaTeX、PDF、Word论文文件
+\end{verbatim}
+
+\section{高级功能}
+
+\subsection{高级上传选项}
+
+展开 \menu{高级上传选项} 后可以：
+
+\begin{itemize}
+  \item 上传包含全部赛题材料的文件夹；
+  \item 启用上传后按推荐题目自动运行一键流程。
+\end{itemize}
+
+如果你还不熟悉软件，建议先不要启用自动运行，先人工确认选题。
+
+\subsection{高级模型设置}
+
+展开 \menu{高级模型设置} 后可以配置：
+
+\begin{itemize}
+  \item 接口地址；
+  \item 模型名称；
+  \item 求解策略；
+  \item 清除设置。
+\end{itemize}
+
+求解策略通常包括：
+
+\begin{longtable}{p{0.2\linewidth}p{0.68\linewidth}}
+\toprule
+策略 & 说明 \\
+\midrule
+均衡 & 速度和成功率兼顾，适合大多数题目。 \\
+稳妥 & 更多校验和自动修复，适合复杂或高风险题目。 \\
+极速 & 更强调并行读取和执行，适合材料清晰、希望更快得到结果的场景。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{高级状态与检查}
+
+\menu{概览} 中的 \menu{高级状态：并发、修复、信任与交付} 包含更细的运行信息。普通用户只在需要排查问题时展开。
+
+\menu{输出} 中的 \menu{高级检查：修复与交付} 包含：
+
+\begin{itemize}
+  \item 自动修复中心；
+  \item 交付就绪中心；
+  \item 诊断、性能和修复证据。
+\end{itemize}
+
+\subsection{高级操作}
+
+\menu{输出} 中的 \menu{高级操作} 包含中断流程、刷新诊断、生成技能库报告、生成代码图谱、编译 LaTeX、审查论文等入口。这些功能通常由一键流程自动调用，只有在需要单独重跑某一步时才手动点击。
+
+\section{数据保存与隐私}
+
+\subsection{安装版数据目录}
+
+安装版默认把项目、模板、API 设置和日志保存在：
+
+\begin{verbatim}
+%LOCALAPPDATA%\MathModelingWorkbench\data
+\end{verbatim}
+
+升级安装一般会保留该目录。
+
+\subsection{绿色版数据目录}
+
+绿色版通常把数据保存在解压目录下的：
+
+\begin{verbatim}
+data/
+\end{verbatim}
+
+如果移动绿色版目录，请一起移动 \texttt{data} 文件夹。
+
+\subsection{API Key 安全}
+
+API Key 属于敏感信息。请注意：
+
+\begin{itemize}
+  \item 不要把包含 API Key 的截图、配置文件或日志发到公开网站；
+  \item 不要把自己的 token 粘贴到 Issue、群聊或公开仓库；
+  \item 如果怀疑密钥泄露，应立即在服务商后台撤销或重置。
+\end{itemize}
+
+\section{常见问题}
+
+\subsection{为什么一键生成失败？}
+
+常见原因包括：
+
+\begin{itemize}
+  \item API Key 不可用；
+  \item 网络连接失败；
+  \item 题面或附件无法解析；
+  \item 数据字段和题目描述不一致；
+  \item 生成的求解脚本运行出错；
+  \item 本机缺少 LaTeX 或 Pandoc；
+  \item 题目本身需要复杂求解器或人工建模。
+\end{itemize}
+
+处理方式：
+
+\begin{enumerate}
+  \item 查看 \menu{输出} 页的错误状态；
+  \item 点击 \button{继续} 尝试自动修复；
+  \item 展开 \menu{高级检查：修复与交付} 查看修复中心；
+  \item 打开项目文件夹查看日志；
+  \item 必要时整理数据后重新上传。
+\end{enumerate}
+
+\subsection{为什么 Word 没有生成？}
+
+Word 导出通常依赖 Pandoc。如果没有生成 \texttt{main.docx}，请检查：
+
+\begin{itemize}
+  \item Pandoc 是否安装；
+  \item 论文 LaTeX 是否已经生成；
+  \item 导出日志中是否有错误；
+  \item 模板文件是否可读。
+\end{itemize}
+
+\subsection{为什么 PDF 没有生成？}
+
+PDF 编译通常依赖 XeLaTeX、MiKTeX 或 TeX Live。若失败，请检查：
+
+\begin{itemize}
+  \item 本机是否安装 LaTeX；
+  \item 论文中是否有未闭合公式或特殊字符；
+  \item 图像路径是否存在；
+  \item 编译日志中是否有 \texttt{LaTeX Error} 或 \texttt{Undefined control sequence}。
+\end{itemize}
+
+\subsection{为什么摘要看起来不够具体？}
+
+正式流程会尽量在正文完成后，根据正文内容生成摘要。如果摘要仍然笼统，建议检查：
+
+\begin{itemize}
+  \item 每个子问题是否有具体结果；
+  \item \texttt{computed\_manifest.json} 是否包含对应指标；
+  \item 论文正文中是否已经写入模型名称、算法和结果；
+  \item 是否中途失败导致摘要在正文完成前生成。
+\end{itemize}
+
+\subsection{如何重新生成某个阶段？}
+
+普通用户优先点击 \button{继续}。如果只想单独执行某一步，可以进入 \menu{高级操作}，选择编译 LaTeX、审查论文、刷新诊断等操作。
+
+\section{提交前检查清单}
+
+正式提交竞赛论文前，建议按以下清单复核：
+
+\begin{enumerate}
+  \item 选题是否正确；
+  \item 每一问是否都有模型、求解过程和结果；
+  \item 所有关键数值是否来自代码结果；
+  \item 图表是否有编号、标题和正文解释；
+  \item 显式公式是否居中并编号，内联公式是否无乱码；
+  \item 摘要是否写明每一问的模型、算法和核心结果；
+  \item 模型检验是否包含具体指标、表格或图像；
+  \item PDF 是否能正常打开；
+  \item Word 是否符合提交要求；
+  \item 支撑材料包是否包含代码、数据、结果和说明；
+  \item 队伍信息、页数和格式是否符合竞赛规则。
+\end{enumerate}
+
+\section{开发者与高级用户}
+
+\subsection{从源码启动}
+
+如果从源码运行本地 Web 版本，可以在项目根目录执行：
+
+\begin{verbatim}
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
+\end{verbatim}
+
+然后打开：
+
+\begin{verbatim}
+http://127.0.0.1:8765
+\end{verbatim}
+
+\subsection{重新构建前端}
+
+修改前端后执行：
+
+\begin{verbatim}
+cd frontend
+npm install
+npm run build
+\end{verbatim}
+
+\subsection{重新打包 Windows 客户端}
+
+在项目根目录执行：
+
+\begin{verbatim}
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\build-windows-installer.ps1
+\end{verbatim}
+
+构建结果通常位于：
+
+\begin{verbatim}
+release/MathModelingWorkbench-Setup.exe
+release/MathModelingWorkbench-Windows-x64.zip
+\end{verbatim}
+
+\section{反馈与贡献}
+
+欢迎在 GitHub 仓库提交 Issue 或 Pull Request。反馈问题时建议提供：
+
+\begin{itemize}
+  \item 软件版本；
+  \item Windows 系统版本；
+  \item 复现步骤；
+  \item 错误截图；
+  \item 项目中的错误日志路径；
+  \item 是否配置了 API Key、Pandoc 和 LaTeX。
+\end{itemize}
+
+联系方式：
+
+\begin{verbatim}
+2821452633@qq.com
+\end{verbatim}
+
+\section*{结语}
+\addcontentsline{toc}{section}{结语}
+
+\app 的目标是让数学建模竞赛中的重复工作更少、过程更清楚、结果更容易复核。建议用户把它当作``建模工作台''而不是``自动交卷机器''：让软件负责整理材料、生成代码、运行结果和搭建论文框架；让人负责判断模型是否合理、结论是否可信、表达是否符合竞赛要求。
+
+\end{document}
