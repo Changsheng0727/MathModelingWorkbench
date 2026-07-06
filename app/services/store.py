@@ -71,10 +71,11 @@ def attach_project_runtime_fields(meta: dict[str, Any], root: Path, meta_path: P
     return meta
 
 
-def attach_project_artifact_fields(meta: dict[str, Any], root: Path) -> dict[str, Any]:
+def attach_project_artifact_fields(meta: dict[str, Any], root: Path, include_status: bool = True) -> dict[str, Any]:
     artifact_status = build_artifact_status(root, meta.get("artifacts"))
     artifact_summary = summarize_artifact_status(artifact_status)
-    meta["artifact_status"] = artifact_status
+    if include_status:
+        meta["artifact_status"] = artifact_status
     meta["artifact_summary"] = artifact_summary
     meta.update(describe_artifact_health(artifact_summary))
     return meta
@@ -223,7 +224,7 @@ def list_projects() -> list[dict[str, Any]]:
             if analysis_path.exists():
                 meta["analysis_available"] = True
             meta = attach_project_runtime_fields(meta, root, meta_path)
-            projects.append(attach_project_artifact_fields(meta, root))
+            projects.append(attach_project_artifact_fields(meta, root, include_status=False))
     projects.sort(key=lambda item: item.get("project_updated_at") or item.get("created_at") or "", reverse=True)
     return projects
 
