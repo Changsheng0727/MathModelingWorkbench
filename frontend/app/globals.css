@@ -930,6 +930,16 @@ p {
   line-height: 1.45;
 }
 
+.project-next {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-badges {
   display: flex;
   flex-wrap: wrap;

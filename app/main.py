@@ -642,7 +642,34 @@ def format_bytes(value: int) -> str:
 
 @app.get("/api/projects")
 def projects() -> list[dict]:
-    return list_projects()
+    llm_settings = get_llm_settings()
+    return [attach_project_readiness_summary(project, llm_settings) for project in list_projects()]
+
+
+def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
+    project = dict(project)
+    root = Path(project.get("root") or project_root(str(project.get("id", ""))))
+    analysis_path = root / "artifacts" / "analysis.json"
+    repair_path = root / REPAIR_BRIEFING_JSON_RELATIVE
+    delivery_path = root / DELIVERY_READINESS_JSON_RELATIVE
+    package_path = root / DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE
+    readiness = build_project_readiness(
+        root,
+        project,
+        load_json(analysis_path) if analysis_path.exists() else None,
+        llm_settings=llm_settings,
+        repair=load_json(repair_path) if repair_path.exists() else None,
+        delivery=load_json(delivery_path) if delivery_path.exists() else None,
+        package=load_json(package_path) if package_path.exists() else None,
+    )
+    project["readiness_status"] = readiness.get("status")
+    project["readiness_label"] = readiness.get("label")
+    project["readiness_score"] = readiness.get("score")
+    project["readiness_summary"] = readiness.get("summary")
+    project["readiness_action"] = readiness.get("primary_action", {})
+    project["readiness_required_passed"] = readiness.get("required_passed", 0)
+    project["readiness_required_total"] = readiness.get("required_total", 0)
+    return project
 
 
 @app.post("/api/projects")

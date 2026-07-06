@@ -514,6 +514,8 @@ function renderProjectList() {
         const active = state.currentProject?.metadata?.id === project.id ? " is-active" : "";
         const autoBadge = project.auto_workflow_status ? `<span class="project-badge">${escapeHtml(project.auto_workflow_status)}</span>` : "";
         const analysisBadge = project.analysis_available ? '<span class="project-badge project-badge-ok">已分析</span>' : '<span class="project-badge project-badge-muted">未分析</span>';
+        const readinessBadge = renderProjectReadinessBadge(project);
+        const nextStep = renderProjectNextStep(project);
         const deliveryBadge = renderProjectDeliveryBadge(project);
         const diagnosis = project.last_failure_diagnosis || {};
         const diagnosisBadge = diagnosis.category
@@ -531,7 +533,8 @@ function renderProjectList() {
           <button class="project-button project-open${active}" type="button" data-project-id="${escapeHtml(project.id)}">
             <span class="project-name">${escapeHtml(project.name)}</span>
             <span class="project-meta">${escapeHtml(formatProjectTime(project.created_at))} · ${escapeHtml(status)}</span>
-            <span class="project-badges">${analysisBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
+            <span class="project-badges">${analysisBadge}${readinessBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
+            ${nextStep}
           </button>
         </article>
       `;
@@ -556,6 +559,29 @@ function renderProjectDeliveryBadge(project = {}) {
   const className = tone === "success" ? " project-badge-ok" : tone === "failed" ? " project-badge-error" : tone === "pending" ? " project-badge-muted" : "";
   const title = project.delivery_readiness_summary || label;
   return `<span class="project-badge${className}" title="${escapeHtml(title)}">${escapeHtml(label)}${escapeHtml(scoreText)}</span>`;
+}
+
+function renderProjectReadinessBadge(project = {}) {
+  const label = project.readiness_label || "";
+  if (!label) {
+    return "";
+  }
+  const score = Number(project.readiness_score);
+  const scoreText = Number.isFinite(score) ? ` ${score}分` : "";
+  const tone = statusTone(project.readiness_status);
+  const className = tone === "success" ? " project-badge-ok" : tone === "failed" ? " project-badge-error" : tone === "pending" ? " project-badge-muted" : "";
+  return `<span class="project-badge${className}" title="${escapeHtml(project.readiness_summary || label)}">${escapeHtml(label)}${escapeHtml(scoreText)}</span>`;
+}
+
+function renderProjectNextStep(project = {}) {
+  const action = project.readiness_action || {};
+  const label = action.label || "";
+  const summary = project.readiness_summary || "";
+  if (!label && !summary) {
+    return "";
+  }
+  const text = label ? `下一步：${label}${summary ? ` · ${summary}` : ""}` : summary;
+  return `<span class="project-next">${escapeHtml(text)}</span>`;
 }
 
 function pruneSelectedProjects() {
@@ -652,6 +678,9 @@ function projectSearchText(project = {}) {
     project.delivery_readiness_label,
     project.delivery_readiness_summary,
     project.delivery_readiness_action,
+    project.readiness_label,
+    project.readiness_summary,
+    project.readiness_action?.label,
     project.delivery_package_summary,
     project.delivery_package_sha256,
     project.last_failure_diagnosis?.label,
@@ -1860,7 +1889,7 @@ function statusTone(value) {
   if (value === "failed" || value === "interrupted" || value === "action_required" || value === "saturated" || value === "blocked" || value === "fail" || value === "at_risk") {
     return "failed";
   }
-  if (value === "completed_with_warnings" || value === "requires_api_key" || value === "cancelled" || value === "repairable" || value === "optimize" || value === "busy" || value === "delivery_ready" || value === "building" || value === "needs_work" || value === "review" || value === "solution_ready" || value === "incubating" || value === "watch") {
+  if (value === "warning" || value === "completed_with_warnings" || value === "requires_api_key" || value === "cancelled" || value === "repairable" || value === "optimize" || value === "busy" || value === "delivery_ready" || value === "building" || value === "needs_work" || value === "review" || value === "solution_ready" || value === "incubating" || value === "watch") {
     return "warning";
   }
   return "pending";
