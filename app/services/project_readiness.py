@@ -249,17 +249,23 @@ def readiness_todo_items(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     priorities = {"fail": 0, "warning": 1}
     items = [item for item in checks if str(item.get("status") or "") != "pass"]
     items.sort(key=lambda item: (0 if item.get("required") else 1, priorities.get(str(item.get("status") or ""), 2)))
-    return [
-        {
-            "id": str(item.get("id") or ""),
-            "label": str(item.get("label") or ""),
-            "status": str(item.get("status") or ""),
-            "detail": str(item.get("detail") or ""),
-            "required": bool(item.get("required")),
-            "action": action_with_detail(item),
-        }
-        for item in items
-    ]
+    rows = []
+    for item in items:
+        action = action_with_detail(item)
+        rows.append(
+            {
+                "id": str(item.get("id") or ""),
+                "label": str(item.get("label") or ""),
+                "status": str(item.get("status") or ""),
+                "detail": str(item.get("detail") or ""),
+                "required": bool(item.get("required")),
+                "action": action,
+                "action_id": str(action.get("id") or ""),
+                "action_label": str(action.get("label") or ""),
+                "action_path": str(action.get("path") or ""),
+            }
+        )
+    return rows
 
 
 def score_checks(checks: list[dict[str, Any]]) -> int:

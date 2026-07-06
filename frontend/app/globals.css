@@ -1926,9 +1926,10 @@ p {
 }
 
 .readiness-todos li strong b,
-.readiness-todos li > span {
+.readiness-todo-action {
   flex: 0 0 auto;
   padding: 2px 6px;
+  border: 0;
   border-radius: 999px;
   background: var(--primary-soft);
   color: var(--primary-strong);
@@ -1936,6 +1937,26 @@ p {
   font-weight: 800;
   line-height: 1.4;
   white-space: nowrap;
+}
+
+.readiness-todo-action {
+  cursor: pointer;
+  min-height: 24px;
+}
+
+.readiness-todo-action:hover {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.readiness-todo-action:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus);
+}
+
+.readiness-todo-action:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .readiness-todos li p {

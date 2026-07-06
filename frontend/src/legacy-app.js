@@ -904,7 +904,7 @@ function projectSearchText(project = {}) {
     project.readiness_next_step_label,
     project.readiness_next_step_detail,
     project.readiness_todo_count ? `待办 ${project.readiness_todo_count}` : "",
-    ...(Array.isArray(project.readiness_todo_preview) ? project.readiness_todo_preview.flatMap((item) => [item.label, item.detail, item.action?.label]) : []),
+    ...(Array.isArray(project.readiness_todo_preview) ? project.readiness_todo_preview.flatMap((item) => [item.label, item.detail, item.action_label || item.action?.label]) : []),
     project.readiness_action?.label,
     project.readiness_action?.detail,
     project.readiness_action_id,
@@ -1292,16 +1292,22 @@ function renderReadinessTodos(todos = []) {
 
 function renderReadinessTodo(item = {}) {
   const action = item.action || {};
+  const actionId = item.action_id || action.id || "";
+  const actionLabel = item.action_label || action.label || "";
+  const actionPath = item.action_path || action.path || "";
   const status = statusTone(item.status);
   const required = item.required ? '<b>必需</b>' : "";
-  const actionLabel = action.label ? `<span>${escapeHtml(action.label)}</span>` : "";
+  const pathAttribute = actionPath ? ` data-readiness-path="${escapeHtml(actionPath)}"` : "";
+  const actionButton = actionId && actionLabel
+    ? `<button class="readiness-todo-action" type="button" data-readiness-action="${escapeHtml(actionId)}"${pathAttribute}>${escapeHtml(actionLabel)}</button>`
+    : "";
   return `
     <li data-status="${escapeHtml(status)}">
       <div>
         <strong>${escapeHtml(item.label || "-")}${required}</strong>
         <p>${escapeHtml(item.detail || statusLabel(item.status))}</p>
       </div>
-      ${actionLabel}
+      ${actionButton}
     </li>
   `;
 }
