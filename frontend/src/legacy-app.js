@@ -2,7 +2,7 @@ const state = {
   currentProject: null,
   projects: [],
   projectQuery: "",
-  projectFilter: "all",
+  projectFilter: validProjectFilter(readPreference("mmw-project-filter", "all")),
   selectedProjectIds: new Set(),
   templates: [],
   llmSettings: null,
@@ -583,10 +583,11 @@ function renderProjectFilters(projects = []) {
 }
 
 function projectFilterMatches(project = {}, filter = "all") {
-  if (filter === "all") {
+  const validFilter = validProjectFilter(filter);
+  if (validFilter === "all") {
     return true;
   }
-  return (project.readiness_bucket || "normal") === filter;
+  return (project.readiness_bucket || "normal") === validFilter;
 }
 
 function projectFilterLabel(filter = "all") {
@@ -597,6 +598,10 @@ function projectFilterLabel(filter = "all") {
     deliverable: "可交付",
   };
   return labels[filter] || labels.all;
+}
+
+function validProjectFilter(filter = "all") {
+  return ["all", "needs_action", "running", "deliverable"].includes(filter) ? filter : "all";
 }
 
 function renderProjectDeliveryBadge(project = {}) {
@@ -748,7 +753,7 @@ function projectSearchText(project = {}) {
     project.readiness_action?.label,
     project.readiness_action_id,
     project.readiness_action_label,
-    projectFilterLabel(project.readiness_bucket),
+    project.readiness_bucket_label || projectFilterLabel(project.readiness_bucket),
     project.delivery_package_summary,
     project.delivery_package_sha256,
     project.last_failure_diagnosis?.label,
@@ -3011,7 +3016,8 @@ els.projectFilters?.addEventListener("click", (event) => {
   if (!button) {
     return;
   }
-  state.projectFilter = button.dataset.projectFilter || "all";
+  state.projectFilter = validProjectFilter(button.dataset.projectFilter || "all");
+  writePreference("mmw-project-filter", state.projectFilter);
   renderProjectList();
 });
 

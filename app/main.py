@@ -670,6 +670,7 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_required_passed"] = readiness.get("required_passed", 0)
     project["readiness_required_total"] = readiness.get("required_total", 0)
     project["readiness_bucket"] = project_readiness_bucket(project)
+    project["readiness_bucket_label"] = project_readiness_bucket_label(project["readiness_bucket"])
     return project
 
 
@@ -689,6 +690,15 @@ def project_readiness_bucket(project: dict) -> str:
     if project.get("readiness_status") == "success" or score >= 90:
         return "deliverable"
     return "needs_action" if project.get("readiness_status") == "warning" else "normal"
+
+
+def project_readiness_bucket_label(bucket: str) -> str:
+    return {
+        "needs_action": "需处理",
+        "running": "运行中",
+        "deliverable": "可交付",
+        "normal": "普通",
+    }.get(bucket, "普通")
 
 
 def summarize_analysis_for_metadata(analysis: dict) -> dict:
