@@ -57,6 +57,7 @@ const els = {
   projectNextAction: document.querySelector("#project-next-action"),
   openProjectRoot: document.querySelector("#open-project-root"),
   environment: document.querySelector("#environment-status"),
+  projectStageSummary: document.querySelector("#project-stage-summary"),
   empty: document.querySelector("#empty-state"),
   analysisView: document.querySelector("#analysis-view"),
   recommended: document.querySelector("#recommended-problem"),
@@ -1110,6 +1111,7 @@ function renderProject(detail) {
   const { metadata, analysis } = detail;
   els.title.textContent = metadata.name || metadata.original_name || "项目";
   syncTopbarProjectAction(metadata);
+  syncTopbarProjectSummary(metadata);
   if (els.openProjectRoot) {
     els.openProjectRoot.classList.remove("hidden");
     els.openProjectRoot.disabled = false;
@@ -1181,6 +1183,33 @@ function syncTopbarProjectAction(metadata = {}) {
   button.dataset.guidePath = path;
   button.disabled = false;
   button.classList.remove("hidden");
+}
+
+function syncTopbarProjectSummary(metadata = {}) {
+  const node = els.projectStageSummary;
+  if (!node) {
+    return;
+  }
+  const text = metadata.readiness_header_summary || fallbackProjectHeaderSummary(metadata);
+  if (!text) {
+    node.textContent = "";
+    node.title = "";
+    node.classList.add("hidden");
+    return;
+  }
+  node.textContent = text;
+  node.title = metadata.readiness_header_detail || metadata.readiness_phase_detail || metadata.readiness_action_hint || text;
+  node.classList.remove("hidden");
+}
+
+function fallbackProjectHeaderSummary(metadata = {}) {
+  const phaseLabel = metadata.readiness_phase_label || metadata.readiness_phase?.label || "";
+  const phaseStep = Number(metadata.readiness_phase_step || metadata.readiness_phase?.step || 0);
+  const phaseTotal = Number(metadata.readiness_phase_total || metadata.readiness_phase?.total || 0);
+  const phase = phaseLabel && phaseStep && phaseTotal ? `阶段 ${phaseStep}/${phaseTotal}：${phaseLabel}` : phaseLabel;
+  const gap = metadata.readiness_gap_label || metadata.readiness_attention_reason || "";
+  const action = metadata.readiness_action_label || metadata.readiness_action?.label || "";
+  return [phase, gap, action ? `下一步：${action}` : ""].filter(Boolean).join(" · ");
 }
 
 function renderArtifactLoadErrorTitle(errors = []) {

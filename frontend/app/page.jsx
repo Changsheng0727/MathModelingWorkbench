@@ -134,6 +134,7 @@ export default function WorkbenchPage() {
               <p className="eyebrow">数模方舟工作台</p>
               <h2 id="project-title">等待上传赛题</h2>
               <p id="environment-status" className="environment-status" aria-live="polite">检测执行环境中</p>
+              <p id="project-stage-summary" className="project-stage-summary hidden" aria-live="polite"></p>
             </div>
             <div className="topbar-actions">
               <button id="project-next-action" className="primary compact hidden" type="button">下一步</button>

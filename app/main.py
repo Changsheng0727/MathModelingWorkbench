@@ -741,6 +741,8 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_bucket_label"] = project_readiness_bucket_label(project["readiness_bucket"])
     project["readiness_attention_rank"] = project_attention_rank(project)
     project["readiness_attention_reason"] = project_attention_reason(project)
+    project["readiness_header_summary"] = project_readiness_header_summary(project)
+    project["readiness_header_detail"] = project_readiness_header_detail(project)
     return project
 
 
@@ -803,6 +805,32 @@ def project_readiness_gap_label(gap_items: list[dict], warning_todos: list[dict]
         suffix = "等" if len(warning_todos) > 3 else ""
         return f"建议处理 {len(warning_todos)} 项" + (f"：{labels}{suffix}" if labels else "")
     return ""
+
+
+def project_readiness_header_summary(project: dict) -> str:
+    phase_label = str(project.get("readiness_phase_label") or "").strip()
+    try:
+        phase_step = int(project.get("readiness_phase_step") or 0)
+        phase_total = int(project.get("readiness_phase_total") or 0)
+    except (TypeError, ValueError):
+        phase_step = 0
+        phase_total = 0
+    phase = f"阶段 {phase_step}/{phase_total}：{phase_label}" if phase_label and phase_step and phase_total else phase_label
+    gap = str(project.get("readiness_gap_label") or project.get("readiness_attention_reason") or "").strip()
+    action = str(project.get("readiness_action_label") or "").strip()
+    action_text = f"下一步：{action}" if action else ""
+    return " · ".join(part for part in [phase, gap, action_text] if part)
+
+
+def project_readiness_header_detail(project: dict) -> str:
+    return " · ".join(
+        part
+        for part in [
+            str(project.get("readiness_phase_detail") or "").strip(),
+            str(project.get("readiness_action_hint") or "").strip(),
+        ]
+        if part
+    )
 
 
 def project_readiness_action_hint(action: dict, project: dict) -> str:
