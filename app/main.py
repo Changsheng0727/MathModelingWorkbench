@@ -1728,7 +1728,7 @@ def refresh_project_diagnostics(project_id: str, force: bool = True) -> dict:
         save_json(root / "metadata.json", meta)
         raise HTTPException(status_code=500, detail=meta["diagnostics_refresh_error"]) from exc
     save_json(root / "metadata.json", meta)
-    return {"diagnostics": diagnostics, "project": project_detail(project_id)}
+    return {"diagnostics": diagnostics, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/repair/briefing")
@@ -1747,7 +1747,7 @@ def refresh_project_repair_briefing(project_id: str) -> dict:
         save_json(root / "metadata.json", meta)
         raise HTTPException(status_code=500, detail=meta["repair_center_summary"]) from exc
     save_json(root / "metadata.json", meta)
-    return {"repair": repair, "artifacts": artifacts, "project": project_detail(project_id)}
+    return {"repair": repair, "artifacts": artifacts, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.post("/api/projects/{project_id}/delivery/readiness")
@@ -1873,10 +1873,10 @@ def cancel_project_auto_workflow(project_id: str) -> dict:
         raise HTTPException(status_code=404, detail="项目不存在。") from exc
     queued = cancel_queued_auto_workflow_job(project_id)
     if queued.get("cancelled"):
-        return {"cancel": queued, "project": project_detail(project_id)}
+        return {"cancel": queued, "project": project_detail(project_id), "overview": build_product_overview_response()}
     meta = load_json(root / "metadata.json")
     control = request_auto_workflow_cancel(root, meta)
-    return {"cancel": {**control, "queued_job": queued}, "project": project_detail(project_id)}
+    return {"cancel": {**control, "queued_job": queued}, "project": project_detail(project_id), "overview": build_product_overview_response()}
 
 
 @app.get("/api/projects/{project_id}/auto/job")

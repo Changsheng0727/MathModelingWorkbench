@@ -701,8 +701,10 @@ async function loadProductOverview({ restore = false, refresh = false } = {}) {
 async function syncOverviewAfterAction(payload = {}) {
   if (payload?.overview) {
     applyProductOverviewPayload(payload.overview);
+    return true;
   } else {
     await loadProjects();
+    return false;
   }
 }
 
@@ -5189,9 +5191,10 @@ if (els.cancelAutoWorkflow) {
       const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/cancel`, { method: "POST" });
       renderProject(payload.project);
       await refreshAutoProgress(projectId);
-      await loadAutoJobs();
-      await syncOverviewAfterAction(payload);
-      await loadTrustCenter();
+      if (!(await syncOverviewAfterAction(payload))) {
+        await loadAutoJobs();
+        await loadTrustCenter();
+      }
     } catch (error) {
       els.autoWorkflowStatus.textContent = `中断请求失败：${error.message}`;
       els.cancelAutoWorkflow.disabled = false;
@@ -5212,8 +5215,9 @@ async function refreshDiagnosticsForProject(projectId) {
     const repairText = repair.label ? `，修复中心：${repair.label}` : "";
     els.diagnosticsStatus.textContent = `诊断资产已刷新：${health.label || "已完成"}${scoreText}${repairText}。`;
     showToast("诊断与性能报告已刷新", "success");
-    await syncOverviewAfterAction(payload);
-    await loadTrustCenter();
+    if (!(await syncOverviewAfterAction(payload))) {
+      await loadTrustCenter();
+    }
   } catch (error) {
     els.diagnosticsStatus.textContent = `诊断刷新失败：${error.message}`;
     showToast(`诊断刷新失败：${error.message}`, "error");
@@ -5246,8 +5250,9 @@ async function refreshRepairCenterForProject(projectId) {
       els.repairCenterStatus.textContent = `修复中心已刷新：${label}。`;
     }
     showToast("自动修复中心已刷新", "success");
-    await syncOverviewAfterAction(payload);
-    await loadTrustCenter();
+    if (!(await syncOverviewAfterAction(payload))) {
+      await loadTrustCenter();
+    }
   } catch (error) {
     if (els.repairCenterStatus) {
       els.repairCenterStatus.textContent = `修复中心刷新失败：${error.message}`;
