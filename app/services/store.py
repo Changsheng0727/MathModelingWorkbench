@@ -28,6 +28,7 @@ PRIMARY_OUTPUT_KEYS = [
 
 PROJECT_LIST_CACHE_TTL_SECONDS = 5.0
 _projects_cache: tuple[float, list[dict[str, Any]]] | None = None
+_project_root_cache: dict[str, Path] = {}
 
 
 def slugify(text: str) -> str:
@@ -61,8 +62,16 @@ def project_root(project_id: str) -> Path:
     name = str(project_id or "").strip()
     if not is_safe_project_lookup_name(name):
         raise FileNotFoundError(project_id)
+    cached = _project_root_cache.get(name)
+    if cached and cached.is_dir():
+        return cached
+    direct = PROJECTS_ROOT / name
+    if direct.is_dir():
+        _project_root_cache[name] = direct
+        return direct
     for root in sorted(PROJECTS_ROOT.iterdir()):
         if root.is_dir() and (root.name == name or root.name.startswith(f"{name}-")):
+            _project_root_cache[name] = root
             return root
     raise FileNotFoundError(project_id)
 
@@ -84,6 +93,7 @@ def save_json(path: Path, payload: Any) -> None:
 def clear_projects_cache() -> None:
     global _projects_cache
     _projects_cache = None
+    _project_root_cache.clear()
 
 
 def path_is_inside_projects_root(path: Path) -> bool:

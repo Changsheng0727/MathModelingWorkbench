@@ -1341,7 +1341,14 @@ function formatBytes(value) {
 }
 
 async function openProject(projectId, { silent = false } = {}) {
-  const detail = await api(`/api/projects/${projectId}`);
+  const normalizedProjectId = String(projectId || "");
+  if (!normalizedProjectId) {
+    return null;
+  }
+  if (state.currentProject?.metadata?.id === normalizedProjectId) {
+    return state.currentProject;
+  }
+  const detail = await api(`/api/projects/${encodeURIComponent(normalizedProjectId)}`);
   renderProject(detail);
   if (detail.metadata?.id) {
     writePreference("mmw-last-project-id", detail.metadata.id);
