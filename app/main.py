@@ -1617,7 +1617,12 @@ def project_progress(project_id: str) -> dict:
         raise HTTPException(status_code=404, detail="项目不存在。") from exc
     meta = load_json(root / "metadata.json")
     progress_path = root / "artifacts" / "auto_workflow_progress.json"
-    progress = load_json(progress_path) if progress_path.exists() else meta.get("auto_workflow_progress", {})
+    progress_error = ""
+    try:
+        progress = load_json(progress_path) if progress_path.exists() else meta.get("auto_workflow_progress", {})
+    except Exception as exc:
+        progress = {}
+        progress_error = f"{type(exc).__name__}: {exc}"
     active_job = get_project_auto_workflow_job(project_id)
     response_status = meta.get("auto_workflow_status") or "idle"
     if active_job.get("status") in {"queued", "running"}:
@@ -1653,6 +1658,17 @@ def project_progress(project_id: str) -> dict:
         progress["detail"] = "检测到上次自动流程没有可用后台任务，可点击继续生成。"
         progress["resume_hint"] = progress.get("resume_hint") or "系统会从上次成功阶段继续。"
         response_status = "interrupted"
+    if progress_error:
+        progress["progress_error"] = progress_error
+        if active_job.get("status") in {"queued", "running"}:
+            progress["status"] = response_status
+            progress["detail"] = "进度文件暂时读取失败，后台任务仍在运行，稍后会自动刷新。"
+        else:
+            progress["status"] = "interrupted"
+            progress["can_resume"] = True
+            progress["detail"] = "自动流程进度文件读取失败，已切换为可继续状态。"
+            progress["resume_hint"] = progress.get("resume_hint") or "点击继续生成，系统会重新读取项目上下文。"
+            response_status = "interrupted"
     live_stream = load_llm_live_stream(root)
     if live_stream.get("channel") == "auto_workflow":
         progress["live_stream"] = live_stream

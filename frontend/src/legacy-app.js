@@ -3833,6 +3833,7 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
   const allSteps = current ? [...steps, current] : steps;
   const currentTitle = current?.title || statusLabel(progress.status) || "等待更新";
   const notice = progress.detail || progress.resume_hint || "";
+  const noticeTitle = progress.progress_error || notice;
   element.innerHTML = `
     <div class="progress-head">
       <div>
@@ -3841,7 +3842,7 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
       </div>
       <b>${escapeHtml(percent)}%</b>
     </div>
-    ${notice ? `<p class="progress-notice" data-status="${escapeHtml(progress.status || "")}">${escapeHtml(notice)}</p>` : ""}
+    ${notice ? `<p class="progress-notice" data-status="${escapeHtml(progress.status || "")}" title="${escapeHtml(noticeTitle)}">${escapeHtml(notice)}</p>` : ""}
     <div class="progress-bar"><i style="width: ${percent}%"></i></div>
     <div class="progress-steps">
       ${allSteps.map((step) => renderProgressStep(step, progress)).join("")}
