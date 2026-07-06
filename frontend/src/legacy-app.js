@@ -768,7 +768,10 @@ function renderProjectPhase(project = {}) {
     return "";
   }
   const detail = project.readiness_phase_detail || phase.detail || "";
-  return `<span class="project-phase" title="${escapeHtml(detail || label)}">阶段：${escapeHtml(label)}</span>`;
+  const step = Number(project.readiness_phase_step || phase.step || 0);
+  const total = Number(project.readiness_phase_total || phase.total || 0);
+  const prefix = step && total ? `阶段 ${step}/${total}` : "阶段";
+  return `<span class="project-phase" title="${escapeHtml(detail || label)}">${escapeHtml(prefix)}：${escapeHtml(label)}</span>`;
 }
 
 function renderProjectNextStep(project = {}) {
@@ -917,6 +920,7 @@ function projectSearchText(project = {}) {
     project.readiness_next_step_detail,
     project.readiness_phase?.label,
     project.readiness_phase?.detail,
+    project.readiness_phase?.step && project.readiness_phase?.total ? `阶段 ${project.readiness_phase.step}/${project.readiness_phase.total}` : "",
     project.readiness_phase_label,
     project.readiness_phase_detail,
     project.readiness_completion?.label,
@@ -1268,8 +1272,11 @@ function renderProjectReadiness(readiness = {}) {
     : "";
   const next = readiness.next_step || {};
   const phase = readiness.phase || {};
+  const phaseStep = Number(phase.step || 0);
+  const phaseTotal = Number(phase.total || 0);
+  const phasePrefix = phaseStep && phaseTotal ? `阶段 ${phaseStep}/${phaseTotal}` : "阶段";
   const phaseLabel = phase.label
-    ? `<span class="readiness-phase" title="${escapeHtml(phase.detail || phase.label)}">阶段：${escapeHtml(phase.label)}</span>`
+    ? `<span class="readiness-phase" title="${escapeHtml(phase.detail || phase.label)}">${escapeHtml(phasePrefix)}：${escapeHtml(phase.label)}</span>`
     : "";
   const nextStep = next.label
     ? `<p class="readiness-next"><b>下一步</b><span>${escapeHtml(next.label)}${next.detail ? ` · ${escapeHtml(next.detail)}` : ""}</span></p>`

@@ -248,24 +248,32 @@ def readiness_next_step(action: dict[str, Any], item: dict[str, Any] | None) -> 
     }
 
 
-def readiness_phase(status: str, action: dict[str, Any]) -> dict[str, str]:
+def readiness_phase(status: str, action: dict[str, Any]) -> dict[str, Any]:
     action_id = str(action.get("id") or "")
     phases = {
-        "focus_llm": ("configure", "配置接口", "先保存可用的大模型接口。"),
-        "focus_upload": ("analyze", "上传分析", "先上传赛题并完成材料分析。"),
-        "open_problems": ("select", "确认选题", "确认最终解题题号。"),
-        "start_auto": ("solve", "自动求解", "启动代码求解、运行和论文回填。"),
-        "resume_auto": ("repair", "继续修复", "从中断或失败处继续生成。"),
-        "open_outputs": ("paper", "整理论文", "检查代码结果和论文文件。"),
-        "compile": ("compile", "编译论文", "生成或修复 PDF 论文。"),
-        "refresh_delivery": ("delivery", "交付检查", "检查论文、结果和支撑材料。"),
-        "build_delivery_package": ("package", "生成交付包", "打包最终提交材料。"),
-        "open_primary_output": ("done", "交付完成", "查看已经生成的交付材料。"),
+        "focus_llm": (1, "configure", "配置接口", "先保存可用的大模型接口。"),
+        "focus_upload": (2, "analyze", "上传分析", "先上传赛题并完成材料分析。"),
+        "open_problems": (3, "select", "确认选题", "确认最终解题题号。"),
+        "start_auto": (4, "solve", "自动求解", "启动代码求解、运行和论文回填。"),
+        "resume_auto": (5, "repair", "继续修复", "从中断或失败处继续生成。"),
+        "open_outputs": (6, "paper", "整理论文", "检查代码结果和论文文件。"),
+        "compile": (7, "compile", "编译论文", "生成或修复 PDF 论文。"),
+        "refresh_delivery": (8, "delivery", "交付检查", "检查论文、结果和支撑材料。"),
+        "build_delivery_package": (9, "package", "生成交付包", "打包最终提交材料。"),
+        "open_primary_output": (10, "done", "交付完成", "查看已经生成的交付材料。"),
     }
-    phase_id, label, detail = phases.get(action_id, ("review", "人工复核", "检查当前项目输出。"))
+    total = 10
+    step, phase_id, label, detail = phases.get(action_id, (10, "review", "人工复核", "检查当前项目输出。"))
     if status == "success" and action_id != "open_primary_output":
-        phase_id, label, detail = "review", "最终复核", "关键步骤已完成，可做最终人工检查。"
-    return {"id": phase_id, "label": label, "detail": detail}
+        step, phase_id, label, detail = 10, "review", "最终复核", "关键步骤已完成，可做最终人工检查。"
+    return {
+        "id": phase_id,
+        "label": label,
+        "detail": detail,
+        "step": step,
+        "total": total,
+        "percent": round(100 * step / total),
+    }
 
 
 def readiness_todo_items(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
