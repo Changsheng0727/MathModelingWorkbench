@@ -675,6 +675,15 @@ function guideActionProgress(actionId = "") {
   return state.actionProgressCatalog?.[String(actionId || "")] || "";
 }
 
+function reportGuideActionError(error, label = "执行下一步失败") {
+  const message = `${label}：${error?.message || error || "未知错误"}`;
+  if (els.guideOutcome) {
+    els.guideOutcome.textContent = message;
+    els.guideOutcome.hidden = false;
+  }
+  showToast(message, "error");
+}
+
 function renderProjectFilters(projects = []) {
   if (!els.projectFilters) {
     return;
@@ -1210,6 +1219,7 @@ function syncTopbarProjectAction(metadata = {}) {
     button.dataset.guideAction = "";
     button.dataset.guidePath = "";
     button.dataset.guideProblemId = "";
+    button.dataset.guideProgress = "";
     if (els.projectNextActionWrap) {
       els.projectNextActionWrap.dataset.tone = "";
       els.projectNextActionWrap.dataset.urgency = "";
@@ -1224,12 +1234,14 @@ function syncTopbarProjectAction(metadata = {}) {
   const urgency = metadata.readiness_top_action_urgency || metadata.readiness_next_step_urgency || "";
   const path = metadata.readiness_top_action_path || metadata.readiness_action?.path || metadata.primary_output_path || "";
   const problemId = metadata.readiness_top_action_problem_id || metadata.readiness_action?.problem_id || "";
+  const progress = metadata.readiness_top_action_progress || metadata.readiness_action_progress || metadata.readiness_action?.progress || guideActionProgress(actionId);
   button.textContent = actionLabel;
   button.title = reason || actionLabel;
   button.setAttribute("aria-label", reason ? `${actionLabel}：${reason}` : actionLabel);
   button.dataset.guideAction = actionId;
   button.dataset.guidePath = path;
   button.dataset.guideProblemId = problemId;
+  button.dataset.guideProgress = progress;
   button.disabled = false;
   if (els.projectNextActionWrap) {
     els.projectNextActionWrap.dataset.tone = tone;
@@ -1489,8 +1501,9 @@ function renderProjectReadiness(readiness = {}) {
   const actionTitle = action.detail || action.path || action.label || "";
   const actionPath = action.path ? ` data-readiness-path="${escapeHtml(action.path)}"` : "";
   const actionProblem = action.problem_id ? ` data-readiness-problem-id="${escapeHtml(action.problem_id)}"` : "";
+  const actionProgress = action.progress ? ` data-readiness-progress="${escapeHtml(action.progress)}"` : "";
   const actionButton = action.id
-    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}"${actionPath}${actionProblem} title="${escapeHtml(actionTitle)}">${escapeHtml(action.label || "继续")}</button>`
+    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}"${actionPath}${actionProblem}${actionProgress} title="${escapeHtml(actionTitle)}">${escapeHtml(action.label || "继续")}</button>`
     : "";
   const next = readiness.next_step || {};
   const phase = readiness.phase || {};
@@ -3519,6 +3532,8 @@ els.experienceGuide?.addEventListener("click", async (event) => {
   button.disabled = true;
   try {
     await runGuideAction(button.dataset.guideAction, { path: button.dataset.guidePath || "", problemId: button.dataset.guideProblemId || "", progress: button.dataset.guideProgress || "" });
+  } catch (error) {
+    reportGuideActionError(error);
   } finally {
     button.disabled = false;
   }
@@ -3532,6 +3547,8 @@ els.projectReadiness?.addEventListener("click", async (event) => {
   button.disabled = true;
   try {
     await runGuideAction(button.dataset.readinessAction, { path: button.dataset.readinessPath || "", problemId: button.dataset.readinessProblemId || "", progress: button.dataset.readinessProgress || "" });
+  } catch (error) {
+    reportGuideActionError(error);
   } finally {
     button.disabled = false;
   }
@@ -3800,6 +3817,8 @@ els.projectList?.addEventListener("click", async (event) => {
     guideButton.disabled = true;
     try {
       await runGuideAction(guideButton.dataset.guideAction, { progress: guideButton.dataset.guideProgress || "" });
+    } catch (error) {
+      reportGuideActionError(error);
     } finally {
       guideButton.disabled = false;
     }
@@ -3828,7 +3847,7 @@ els.projectList?.addEventListener("click", async (event) => {
     await openProject(projectId);
     await runGuideAction(action, { path: button.dataset.projectPath || "", problemId: button.dataset.projectProblemId || "", progress: button.dataset.projectProgress || "" });
   } catch (error) {
-    showToast(`执行下一步失败：${error.message}`, "error");
+    reportGuideActionError(error);
   } finally {
     button.disabled = false;
   }
@@ -3880,9 +3899,9 @@ if (els.projectNextAction) {
     }
     els.projectNextAction.disabled = true;
     try {
-      await runGuideAction(action, { path: els.projectNextAction.dataset.guidePath || "", problemId: els.projectNextAction.dataset.guideProblemId || "" });
+      await runGuideAction(action, { path: els.projectNextAction.dataset.guidePath || "", problemId: els.projectNextAction.dataset.guideProblemId || "", progress: els.projectNextAction.dataset.guideProgress || "" });
     } catch (error) {
-      showToast(`执行下一步失败：${error.message}`, "error");
+      reportGuideActionError(error);
     } finally {
       els.projectNextAction.disabled = false;
     }
