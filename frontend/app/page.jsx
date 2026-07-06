@@ -197,6 +197,12 @@ export default function WorkbenchPage() {
                 </div>
                 <div id="status-cards" className="status-grid"></div>
               </section>
+              <section className="panel wide">
+                <div className="section-title">
+                  <h2>当前准备度</h2>
+                </div>
+                <div id="project-readiness" className="readiness-panel" aria-live="polite"></div>
+              </section>
               <details className="advanced-fold">
                 <summary>高级状态：并发、修复、信任与交付</summary>
                 <section className="panel wide">

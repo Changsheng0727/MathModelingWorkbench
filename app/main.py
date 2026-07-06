@@ -68,6 +68,7 @@ from app.services.paper import write_artifacts
 from app.services.paper_fill import fill_paper_with_results
 from app.services.performance_health import write_performance_health_report
 from app.services.parsers import extract_all_document_text, inventory_files
+from app.services.project_readiness import build_project_readiness
 from app.services.repair_campaign import list_repair_campaigns, start_repair_campaign
 from app.services.repair_center import REPAIR_BRIEFING_JSON_RELATIVE, write_repair_briefing
 from app.services.reviewer import review_paper
@@ -875,12 +876,22 @@ def project_detail(project_id: str) -> dict:
     delivery = load_json(delivery_path) if delivery_path.exists() else None
     package_path = root / DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE
     package = load_json(package_path) if package_path.exists() else None
+    readiness = build_project_readiness(
+        root,
+        meta,
+        analysis,
+        llm_settings=get_llm_settings(),
+        repair=repair,
+        delivery=delivery,
+        package=package,
+    )
     return {
         "metadata": {k: v for k, v in meta.items() if k != "root"},
         "analysis": analysis,
         "repair": repair,
         "delivery": delivery,
         "package": package,
+        "readiness": readiness,
     }
 
 

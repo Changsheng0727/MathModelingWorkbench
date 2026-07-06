@@ -66,6 +66,7 @@ const els = {
   guideActions: document.querySelector("#guide-actions"),
   guideSteps: document.querySelector("#guide-steps"),
   statusCards: document.querySelector("#status-cards"),
+  projectReadiness: document.querySelector("#project-readiness"),
   growthCenter: document.querySelector("#growth-center"),
   refreshGrowthMetrics: document.querySelector("#refresh-growth-metrics"),
   growthCenterStatus: document.querySelector("#growth-center-status"),
@@ -723,6 +724,7 @@ function renderProject(detail) {
   renderWorkflow(analysis.workflow || [], rec);
   renderInventory(analysis.inventory || []);
   renderStatusCards(metadata, analysis);
+  renderProjectReadiness(detail.readiness || {});
   renderPaperOptions(metadata);
   renderModelAssistantOptions(analysis, rec);
   renderRepairCenter(metadata, analysis.project?.id || metadata.id, detail.repair || {});
@@ -872,6 +874,55 @@ function renderStatusCards(metadata, analysis) {
       `,
     )
     .join("");
+}
+
+function renderProjectReadiness(readiness = {}) {
+  if (!els.projectReadiness) {
+    return;
+  }
+  if (!readiness || !Array.isArray(readiness.checks)) {
+    els.projectReadiness.innerHTML = '<p class="status">暂无准备度信息。</p>';
+    return;
+  }
+  const status = statusTone(readiness.status);
+  const score = Number.isFinite(Number(readiness.score)) ? Number(readiness.score) : 0;
+  const checks = readiness.checks.slice(0, 7);
+  const action = readiness.primary_action || {};
+  const actionButton = action.id
+    ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}">${escapeHtml(action.label || "继续")}</button>`
+    : "";
+  els.projectReadiness.dataset.status = status;
+  els.projectReadiness.innerHTML = `
+    <section class="readiness-hero" data-status="${escapeHtml(status)}">
+      <div class="readiness-score" aria-label="当前准备度 ${escapeHtml(score)} 分">
+        <strong>${escapeHtml(score)}</strong>
+        <span>分</span>
+      </div>
+      <div class="readiness-copy">
+        <span>准备度</span>
+        <h3>${escapeHtml(readiness.label || "当前项目状态")}</h3>
+        <p>${escapeHtml(readiness.summary || "")}</p>
+      </div>
+      ${actionButton}
+    </section>
+    <div class="readiness-checks">
+      ${checks.map(renderReadinessCheck).join("")}
+    </div>
+  `;
+}
+
+function renderReadinessCheck(item = {}) {
+  const status = statusTone(item.status);
+  const required = item.required ? '<span class="readiness-required">必需</span>' : "";
+  return `
+    <article class="readiness-check" data-status="${escapeHtml(status)}">
+      <span class="readiness-dot" aria-hidden="true"></span>
+      <div>
+        <strong>${escapeHtml(item.label || "-")}${required}</strong>
+        <p>${escapeHtml(item.detail || statusLabel(item.status))}</p>
+      </div>
+    </article>
+  `;
 }
 
 function renderRepairCenter(metadata = {}, projectId = "", repair = {}) {
@@ -2628,6 +2679,19 @@ els.experienceGuide?.addEventListener("click", async (event) => {
   }
 });
 
+els.projectReadiness?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-readiness-action]");
+  if (!button) {
+    return;
+  }
+  button.disabled = true;
+  try {
+    await runGuideAction(button.dataset.readinessAction);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 async function runGuideAction(action) {
   const projectId = state.currentProject?.metadata?.id || "";
   if (action === "focus_upload") {
@@ -2693,6 +2757,21 @@ async function runGuideAction(action) {
   if (action === "refresh_delivery") {
     activateModuleTab("outputs");
     els.refreshDeliveryReadiness?.click();
+    return;
+  }
+  if (action === "refresh_repair") {
+    activateModuleTab("outputs");
+    els.refreshRepairCenter?.click();
+    return;
+  }
+  if (action === "build_delivery_package") {
+    activateModuleTab("outputs");
+    const deliveryButton = els.deliveryCenter?.querySelector("[data-delivery-action='package']");
+    if (deliveryButton) {
+      deliveryButton.click();
+    } else {
+      els.refreshDeliveryReadiness?.click();
+    }
     return;
   }
   if (action === "open_project_root") {
