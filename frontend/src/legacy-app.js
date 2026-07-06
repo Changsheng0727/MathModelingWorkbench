@@ -1001,6 +1001,7 @@ function projectSearchText(project = {}) {
     project.readiness_header_summary,
     project.readiness_header_detail,
     project.readiness_header_progress_label,
+    project.readiness_header_progress_tone,
     project.readiness_completion?.label,
     project.readiness_completion_label,
     project.readiness_todo_count ? `待办 ${project.readiness_todo_count}` : "",
@@ -1226,7 +1227,9 @@ function syncTopbarProjectProgress(metadata = {}) {
   const rawPercent = Number(metadata.readiness_header_progress_percent ?? fallbackProjectHeaderProgress(metadata));
   const percent = Number.isFinite(rawPercent) ? Math.max(0, Math.min(100, rawPercent)) : 0;
   const label = metadata.readiness_header_progress_label || `${percent}%`;
+  const tone = metadata.readiness_header_progress_tone || statusTone(metadata.readiness_status || metadata.auto_workflow_status || "");
   node.querySelector("span")?.style.setProperty("width", `${percent}%`);
+  node.dataset.tone = tone;
   node.setAttribute("aria-valuenow", String(percent));
   node.setAttribute("aria-label", label ? `${label}，${percent}%` : `项目进度 ${percent}%`);
   node.title = label ? `${label} · ${percent}%` : `项目进度 ${percent}%`;

@@ -1335,6 +1335,22 @@ p {
   transition: width 0.18s var(--ease);
 }
 
+.project-stage-progress[data-tone="success"] span {
+  background: linear-gradient(90deg, var(--teal), var(--primary));
+}
+
+.project-stage-progress[data-tone="warning"] span {
+  background: linear-gradient(90deg, var(--amber), var(--coral));
+}
+
+.project-stage-progress[data-tone="failed"] span {
+  background: linear-gradient(90deg, var(--red), var(--coral));
+}
+
+.project-stage-progress[data-tone="running"] span {
+  background: linear-gradient(90deg, var(--primary), var(--purple));
+}
+
 .health {
   display: inline-flex;
   align-items: center;

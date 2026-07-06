@@ -745,6 +745,7 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_header_detail"] = project_readiness_header_detail(project)
     project["readiness_header_progress_percent"] = project_readiness_header_progress_percent(project)
     project["readiness_header_progress_label"] = project_readiness_header_progress_label(project)
+    project["readiness_header_progress_tone"] = project_readiness_header_progress_tone(project)
     return project
 
 
@@ -854,6 +855,19 @@ def project_readiness_header_progress_label(project: dict) -> str:
     step = project.get("readiness_phase_step") or 0
     total = project.get("readiness_phase_total") or 0
     return f"阶段 {step}/{total}" if step and total else str(project.get("readiness_required_label") or "")
+
+
+def project_readiness_header_progress_tone(project: dict) -> str:
+    auto_status = str(project.get("auto_workflow_status") or "")
+    if auto_status in {"queued", "running", "between_steps", "cancel_requested"}:
+        return "running"
+    if project.get("metadata_error") or project.get("readiness_status") == "failed":
+        return "failed"
+    if project.get("readiness_gap_count") or project.get("readiness_status") == "warning":
+        return "warning"
+    if project.get("readiness_bucket") == "deliverable" or project.get("readiness_status") == "success":
+        return "success"
+    return "pending"
 
 
 def project_readiness_action_hint(action: dict, project: dict) -> str:
