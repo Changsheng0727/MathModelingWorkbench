@@ -62,8 +62,20 @@ def load_json(path: Path) -> Any:
 
 def attach_project_runtime_fields(meta: dict[str, Any], root: Path, meta_path: Path | None = None) -> dict[str, Any]:
     meta = dict(meta)
+    stored_root = str(meta.get("root") or "")
+    if stored_root and not same_path(Path(stored_root), root):
+        meta["root_was_repaired"] = True
+        meta["root_repair_notice"] = "项目路径已按当前目录自动校正。"
+    meta["root"] = str(root)
     meta["project_updated_at"] = project_timestamp(meta_path or root / "metadata.json", root) or meta.get("created_at", "")
     return meta
+
+
+def same_path(left: Path, right: Path) -> bool:
+    try:
+        return left.resolve() == right.resolve()
+    except OSError:
+        return left.absolute() == right.absolute()
 
 
 def project_timestamp(path: Path, fallback: Path) -> str:

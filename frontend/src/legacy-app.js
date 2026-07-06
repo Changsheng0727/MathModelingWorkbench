@@ -565,6 +565,9 @@ function renderProjectList() {
           ? `<span class="project-badge project-badge-error" title="${escapeHtml(project.metadata_error)}">元数据异常</span>`
           : "";
         const openBadge = project.can_open === false ? '<span class="project-badge project-badge-error">不可打开</span>' : "";
+        const rootRepairBadge = project.root_was_repaired
+          ? `<span class="project-badge project-badge-muted" title="${escapeHtml(project.root_repair_notice || "项目路径已自动校正")}">路径已校正</span>`
+          : "";
         const nextStep = renderProjectNextStep(project);
         const quickAction = renderProjectQuickAction(project);
         const deliveryBadge = renderProjectDeliveryBadge(project);
@@ -586,7 +589,7 @@ function renderProjectList() {
           <button class="project-button project-open${active}" type="button" data-project-id="${escapeHtml(project.id)}"${openDisabled}>
             <span class="project-name">${escapeHtml(project.name)}</span>
             <span class="project-meta">更新 ${escapeHtml(formatProjectTime(updatedAt))} · ${escapeHtml(status)}</span>
-            <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
+            <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${rootRepairBadge}${autoBadge}${deliveryBadge}${diagnosisBadge}</span>
             ${nextStep}
           </button>
           ${quickAction}
@@ -788,6 +791,8 @@ function projectSearchText(project = {}) {
     project.original_name,
     project.created_at,
     project.project_updated_at,
+    project.root_repair_notice,
+    project.root_was_repaired ? "路径已校正" : "",
     project.status,
     project.auto_workflow_status,
     project.performance_health_label,
