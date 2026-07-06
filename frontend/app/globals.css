@@ -9,6 +9,7 @@
   --surface: rgba(255, 255, 255, 0.82);
   --glass-line: rgba(255, 255, 255, 0.7);
   --text: oklch(24% 0.04 250);
+  --ink: var(--text);
   --muted: oklch(48% 0.035 248);
   --subtle: oklch(68% 0.032 248);
   --line: oklch(89% 0.022 238);
@@ -1621,26 +1622,25 @@ p {
   min-height: 106px;
   padding: 14px;
   border: 1px solid var(--clay-border);
-  border-left: 3px solid var(--subtle);
   border-radius: 8px;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(247, 249, 251, 0.76));
   box-shadow: var(--shadow-inset);
 }
 
 .status-card[data-status="success"] {
-  border-left-color: var(--teal);
+  border-color: var(--teal);
 }
 
 .status-card[data-status="warning"] {
-  border-left-color: var(--amber);
+  border-color: var(--amber);
 }
 
 .status-card[data-status="failed"] {
-  border-left-color: var(--red);
+  border-color: var(--red);
 }
 
 .status-card[data-status="running"] {
-  border-left-color: var(--primary);
+  border-color: var(--primary);
 }
 
 .status-card > div {
@@ -1737,7 +1737,6 @@ p {
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--clay-border);
-  border-left: 4px solid var(--subtle);
   border-radius: 8px;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(247, 249, 251, 0.74)),
@@ -1746,15 +1745,15 @@ p {
 }
 
 .readiness-hero[data-status="success"] {
-  border-left-color: var(--teal);
+  border-color: var(--teal);
 }
 
 .readiness-hero[data-status="warning"] {
-  border-left-color: var(--amber);
+  border-color: var(--amber);
 }
 
 .readiness-hero[data-status="failed"] {
-  border-left-color: var(--red);
+  border-color: var(--red);
 }
 
 .readiness-score {
@@ -1800,6 +1799,34 @@ p {
   font-size: 12px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.readiness-next {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 100%;
+  margin-top: 7px;
+  padding: 6px 8px;
+  border: 1px solid rgba(185, 200, 216, 0.58);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--text);
+  box-shadow: var(--shadow-inset);
+}
+
+.readiness-next b,
+.readiness-next span {
+  min-width: 0;
+  color: inherit;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.readiness-next b {
+  flex: 0 0 auto;
+  color: var(--primary-strong);
 }
 
 .readiness-checks {

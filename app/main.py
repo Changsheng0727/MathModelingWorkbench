@@ -685,6 +685,11 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_action_id"] = action.get("id", "")
     project["readiness_action_label"] = action.get("label", "")
     project["readiness_action_detail"] = action.get("detail", "")
+    next_step = readiness.get("next_step", {})
+    next_step = next_step if isinstance(next_step, dict) else {}
+    project["readiness_next_step"] = next_step
+    project["readiness_next_step_label"] = next_step.get("label", "")
+    project["readiness_next_step_detail"] = next_step.get("detail", "")
     project["readiness_required_passed"] = readiness.get("required_passed", 0)
     project["readiness_required_total"] = readiness.get("required_total", 0)
     required_total = int(project["readiness_required_total"] or 0)

@@ -30,11 +30,16 @@ def build_project_readiness(
     warnings = [item for item in checks if item.get("status") == "warning"]
     score = score_checks(checks)
     status = "failed" if blockers else "warning" if warnings or score < 86 else "success"
-    primary_action = next((action_with_detail(item) for item in checks if item.get("status") == "fail" and item.get("action")), None)
+    blocking_item = next((item for item in checks if item.get("status") == "fail" and item.get("action")), None)
+    warning_item = next((item for item in checks if item.get("status") == "warning" and item.get("action")), None)
+    action_item = blocking_item
+    primary_action = action_with_detail(blocking_item) if blocking_item else None
     if not primary_action and delivery_is_packaged(metadata, package or {}):
         primary_action = output_action(metadata, "打开交付包")
+        action_item = None
     if not primary_action:
-        primary_action = next((action_with_detail(item) for item in checks if item.get("status") == "warning" and item.get("action")), None)
+        primary_action = action_with_detail(warning_item) if warning_item else None
+        action_item = warning_item
     primary_action = primary_action or output_action(metadata, "打开最新输出")
     return {
         "status": status,
@@ -42,6 +47,7 @@ def build_project_readiness(
         "score": score,
         "summary": readiness_summary(status, score, blockers, warnings, metadata, repair or {}),
         "primary_action": primary_action,
+        "next_step": readiness_next_step(primary_action, action_item),
         "checks": checks,
         "blockers": blockers,
         "warning_count": len(warnings),
@@ -209,11 +215,33 @@ def readiness_check(
 
 
 def action_with_detail(item: dict[str, Any]) -> dict[str, str]:
+    if not item:
+        return {}
     action = dict(item.get("action") or {})
     detail = str(item.get("detail") or "").strip()
     if detail:
         action.setdefault("detail", detail)
     return action
+
+
+def readiness_next_step(action: dict[str, Any], item: dict[str, Any] | None) -> dict[str, str]:
+    action_id = str(action.get("id") or "").strip()
+    label = str(action.get("label") or "").strip()
+    if not action_id or not label:
+        return {}
+    detail = str(action.get("detail") or "").strip()
+    if not detail and item:
+        detail = str(item.get("detail") or "").strip()
+    if not detail and action.get("path"):
+        detail = f"打开 {Path(str(action.get('path'))).name or '输出文件'} 所在位置。"
+    return {
+        "id": action_id,
+        "label": label,
+        "detail": detail,
+        "check_id": str((item or {}).get("id") or ""),
+        "check_label": str((item or {}).get("label") or ""),
+        "path": str(action.get("path") or ""),
+    }
 
 
 def score_checks(checks: list[dict[str, Any]]) -> int:

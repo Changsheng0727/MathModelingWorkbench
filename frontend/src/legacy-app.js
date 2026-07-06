@@ -761,12 +761,13 @@ function renderProjectRequiredProgress(project = {}) {
 
 function renderProjectNextStep(project = {}) {
   const action = project.readiness_action || {};
-  const label = action.label || "";
-  const summary = project.readiness_summary || "";
-  if (!label && !summary) {
+  const next = project.readiness_next_step || {};
+  const label = project.readiness_next_step_label || next.label || action.label || "";
+  const detail = project.readiness_next_step_detail || next.detail || project.readiness_action_detail || action.detail || project.readiness_summary || "";
+  if (!label && !detail) {
     return "";
   }
-  const text = label ? `下一步：${label}${summary ? ` · ${summary}` : ""}` : summary;
+  const text = label ? `下一步：${label}${detail ? ` · ${detail}` : ""}` : detail;
   return `<span class="project-next">${escapeHtml(text)}</span>`;
 }
 
@@ -896,6 +897,10 @@ function projectSearchText(project = {}) {
     project.artifact_summary?.latest_modified_at ? `生成文件更新 ${formatProjectTime(project.artifact_summary.latest_modified_at)}` : "",
     project.readiness_label,
     project.readiness_summary,
+    project.readiness_next_step?.label,
+    project.readiness_next_step?.detail,
+    project.readiness_next_step_label,
+    project.readiness_next_step_detail,
     project.readiness_action?.label,
     project.readiness_action?.detail,
     project.readiness_action_id,
@@ -1239,6 +1244,10 @@ function renderProjectReadiness(readiness = {}) {
   const actionButton = action.id
     ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}"${actionPath} title="${escapeHtml(actionTitle)}">${escapeHtml(action.label || "继续")}</button>`
     : "";
+  const next = readiness.next_step || {};
+  const nextStep = next.label
+    ? `<p class="readiness-next"><b>下一步</b><span>${escapeHtml(next.label)}${next.detail ? ` · ${escapeHtml(next.detail)}` : ""}</span></p>`
+    : "";
   els.projectReadiness.dataset.status = status;
   els.projectReadiness.innerHTML = `
     <section class="readiness-hero" data-status="${escapeHtml(status)}">
@@ -1250,6 +1259,7 @@ function renderProjectReadiness(readiness = {}) {
         <span>准备度</span>
         <h3>${escapeHtml(readiness.label || "当前项目状态")}</h3>
         <p>${escapeHtml(readiness.summary || "")}</p>
+        ${nextStep}
       </div>
       ${actionButton}
     </section>
