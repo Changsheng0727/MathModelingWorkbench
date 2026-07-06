@@ -1222,6 +1222,26 @@ p {
   overflow-wrap: anywhere;
 }
 
+.topbar-next-action[data-tone="failed"] .topbar-next-action-reason {
+  color: var(--red);
+}
+
+.topbar-next-action[data-tone="warning"] .topbar-next-action-reason {
+  color: var(--amber);
+}
+
+.topbar-next-action[data-tone="running"] .topbar-next-action-reason {
+  color: var(--primary);
+}
+
+.topbar-next-action[data-tone="success"] .topbar-next-action-reason {
+  color: var(--teal);
+}
+
+.topbar-next-action[data-urgency="high"] .primary.compact {
+  border-color: var(--red);
+}
+
 .theme-toggle {
   display: inline-flex;
   align-items: center;

@@ -710,6 +710,8 @@ def attach_project_readiness_fields(project: dict, readiness: dict) -> dict:
     project["readiness_next_step_context"] = next_step.get("context", "")
     project["readiness_next_step_tone"] = next_step.get("tone", "")
     project["readiness_next_step_urgency"] = next_step.get("urgency", "")
+    project["readiness_top_action_tone"] = next_step.get("tone", "")
+    project["readiness_top_action_urgency"] = next_step.get("urgency", "")
     phase = readiness.get("phase", {})
     phase = phase if isinstance(phase, dict) else {}
     project["readiness_phase"] = phase

@@ -1018,6 +1018,8 @@ function projectSearchText(project = {}) {
     project.readiness_action_detail,
     project.readiness_action_hint,
     project.readiness_top_action_reason,
+    project.readiness_top_action_tone,
+    project.readiness_top_action_urgency,
     project.readiness_required_label,
     project.readiness_bucket_label || projectFilterLabel(project.readiness_bucket),
     project.metadata_error,
@@ -1180,12 +1182,18 @@ function syncTopbarProjectAction(metadata = {}) {
     button.disabled = true;
     button.dataset.guideAction = "";
     button.dataset.guidePath = "";
-    els.projectNextActionWrap?.classList.add("hidden");
+    if (els.projectNextActionWrap) {
+      els.projectNextActionWrap.dataset.tone = "";
+      els.projectNextActionWrap.dataset.urgency = "";
+      els.projectNextActionWrap.classList.add("hidden");
+    }
     els.projectNextActionReason?.classList.add("hidden");
     return;
   }
   const hint = metadata.readiness_top_action_hint || metadata.readiness_action_hint || metadata.readiness_top_action_detail || "";
   const reason = metadata.readiness_top_action_reason || hint;
+  const tone = metadata.readiness_top_action_tone || statusTone(metadata.readiness_next_step_tone || metadata.readiness_status || metadata.auto_workflow_status || "");
+  const urgency = metadata.readiness_top_action_urgency || metadata.readiness_next_step_urgency || "";
   const path = metadata.readiness_top_action_path || metadata.readiness_action?.path || metadata.primary_output_path || "";
   button.textContent = actionLabel;
   button.title = reason || actionLabel;
@@ -1193,7 +1201,11 @@ function syncTopbarProjectAction(metadata = {}) {
   button.dataset.guideAction = actionId;
   button.dataset.guidePath = path;
   button.disabled = false;
-  els.projectNextActionWrap?.classList.remove("hidden");
+  if (els.projectNextActionWrap) {
+    els.projectNextActionWrap.dataset.tone = tone;
+    els.projectNextActionWrap.dataset.urgency = urgency;
+    els.projectNextActionWrap.classList.remove("hidden");
+  }
   button.classList.remove("hidden");
   if (els.projectNextActionReason) {
     els.projectNextActionReason.textContent = reason;
