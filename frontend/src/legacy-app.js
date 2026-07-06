@@ -489,7 +489,13 @@ function llmTestSummary(lastTest = {}) {
   if (!lastTest || !lastTest.tested_at) {
     return "尚未测试连接";
   }
-  return lastTest.ok ? "最近测试成功" : "上次测试失败";
+  if (lastTest.ok) {
+    return "最近测试成功";
+  }
+  const diagnosis = lastTest.diagnosis || {};
+  const reason = diagnosis.label || lastTest.message || "连接失败";
+  const action = diagnosis.suggested_action || "请检查接口地址、模型名和 API Key。";
+  return `上次测试失败：${reason}，${action}`;
 }
 
 async function loadProjects({ restore = false } = {}) {

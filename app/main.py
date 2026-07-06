@@ -2015,12 +2015,13 @@ def build_auto_workflow_preflight(root: Path, meta: dict | None = None) -> dict:
         }
     last_test = llm_settings.get("last_test") if isinstance(llm_settings.get("last_test"), dict) else {}
     if not last_test.get("ok"):
+        label, detail = llm_test_preflight_text(last_test)
         return {
             "status": "warning",
             "can_start": True,
             "can_resume": False,
-            "label": "建议先测试大模型连接",
-            "detail": "当前配置还没有成功连接测试记录；仍可开始，但先测试能减少中途失败。",
+            "label": label,
+            "detail": detail,
         }
     return {
         "status": "success",
@@ -2029,6 +2030,15 @@ def build_auto_workflow_preflight(root: Path, meta: dict | None = None) -> dict:
         "label": "可以开始自动流程",
         "detail": "已具备大模型接口、赛题分析和最终选题，可生成代码、运行结果并撰写论文。",
     }
+
+
+def llm_test_preflight_text(last_test: dict) -> tuple[str, str]:
+    if not last_test.get("tested_at"):
+        return "建议先测试大模型连接", "当前配置还没有成功连接测试记录；仍可开始，但先测试能减少中途失败。"
+    diagnosis = last_test.get("diagnosis") if isinstance(last_test.get("diagnosis"), dict) else {}
+    reason = diagnosis.get("label") or last_test.get("message") or "连接测试失败"
+    action = diagnosis.get("suggested_action") or "请检查接口地址、模型名、API Key 权限和余额。"
+    return "上次大模型测试失败", f"{reason}；{action}"
 
 
 @app.get("/api/auto/jobs/{job_id}")
