@@ -2562,6 +2562,7 @@ function renderAutoJobCenter(snapshot = {}, deliverySnapshot = {}) {
     ${renderThroughputPanel(throughput)}
     ${renderCapacityAutotunePanel(state.capacityAutotune)}
     ${renderCapacitySettingsPanel(capacitySettings, snapshot, deliverySnapshot)}
+    <p class="capacity-status" aria-live="polite"></p>
     <div class="job-list">
       ${jobsHtml}
     </div>
@@ -2576,6 +2577,12 @@ function renderCapacitySettingsPanel(settings = {}, snapshot = {}, deliverySnaps
   const maxDeliveryJobs = Number(settings.max_delivery_batch_job_workers || 4);
   const maxPackage = Number(settings.max_delivery_package_workers || 8);
   const source = settings.source ? ` · ${settings.source}` : "";
+  const actionId = "save_capacity";
+  const buttonLabel = guideActionButtonLabel(actionId) || "应用";
+  const progress = guideActionProgress(actionId);
+  const success = guideActionSuccess(actionId);
+  const outcome = guideActionOutcome(actionId);
+  const titleText = outcome ? `点击后：${outcome}` : "";
   return `
     <form class="capacity-panel" data-capacity-form>
       <div>
@@ -2594,7 +2601,7 @@ function renderCapacitySettingsPanel(settings = {}, snapshot = {}, deliverySnaps
         <span>打包线程</span>
         <input class="text-input" name="delivery_package_workers" type="number" min="1" max="${escapeHtml(maxPackage)}" value="${escapeHtml(packageWorkers)}" />
       </label>
-      <button class="capacity-save" type="submit">应用</button>
+      <button class="capacity-save" type="submit" data-capacity-submit="${escapeHtml(actionId)}"${progress ? ` data-capacity-progress="${escapeHtml(progress)}"` : ""}${success ? ` data-capacity-success="${escapeHtml(success)}"` : ""}${titleText ? ` title="${escapeHtml(titleText)}"` : ""}>${escapeHtml(buttonLabel)}</button>
     </form>
   `;
 }
@@ -2665,6 +2672,11 @@ function renderThroughputPanel(throughput = {}) {
   );
   const canAutotune = throughput.runtime_configurable === true;
   const autotuneLabel = boundedRecommendation > currentCapacity ? `应用 ${boundedRecommendation} 个槽位` : "应用推荐";
+  const actionId = "autotune_capacity";
+  const progress = guideActionProgress(actionId);
+  const success = guideActionSuccess(actionId);
+  const outcome = guideActionOutcome(actionId);
+  const titleText = outcome ? `点击后：${outcome}` : "应用容量推荐";
   return `
     <section class="throughput-panel" data-status="${escapeHtml(statusTone(throughput.status))}">
       <div class="throughput-head">
@@ -2686,7 +2698,7 @@ function renderThroughputPanel(throughput = {}) {
       ${signals.length ? `<div class="throughput-signals">${signals.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
       ${canAutotune ? `
         <div class="throughput-tools">
-          <button class="throughput-apply" type="button" data-capacity-action="autotune" title="应用容量推荐">${escapeHtml(autotuneLabel)}</button>
+          <button class="throughput-apply" type="button" data-capacity-action="autotune" data-capacity-action-id="${escapeHtml(actionId)}"${progress ? ` data-capacity-progress="${escapeHtml(progress)}"` : ""}${success ? ` data-capacity-success="${escapeHtml(success)}"` : ""} title="${escapeHtml(titleText)}">${escapeHtml(autotuneLabel)}</button>
         </div>
       ` : ""}
     </section>
@@ -3972,10 +3984,23 @@ function scrollIntoViewIfPossible(node) {
   node.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
+function setAutoJobCenterStatus(message = "", tone = "") {
+  const statusNode = els.autoJobCenter?.querySelector(".capacity-status");
+  if (!statusNode || !message) {
+    return;
+  }
+  statusNode.textContent = message;
+  statusNode.dataset.status = tone || "";
+}
+
 els.autoJobCenter?.addEventListener("click", async (event) => {
   const capacityButton = event.target.closest("[data-capacity-action='autotune']");
   if (capacityButton) {
+    const actionId = capacityButton.dataset.capacityActionId || "autotune_capacity";
+    const progress = capacityButton.dataset.capacityProgress || guideActionProgress(actionId);
+    const success = capacityButton.dataset.capacitySuccess || guideActionSuccess(actionId);
     capacityButton.disabled = true;
+    setAutoJobCenterStatus(progress || "正在应用容量推荐。", "running");
     try {
       const response = await api("/api/product/capacity/autotune", { method: "POST" });
       state.capacitySettings = response.capacity_settings || state.capacitySettings;
@@ -3986,9 +4011,13 @@ els.autoJobCenter?.addEventListener("click", async (event) => {
       await loadGrowthMetrics();
       await loadTrustCenter();
       const plan = response.capacity_autotune || {};
-      showToast(plan.status === "already_optimal" ? "容量已经最优" : "容量推荐已应用", "success");
+      const message = plan.status === "already_optimal" ? "容量已经最优。" : success || "容量推荐已应用。";
+      setAutoJobCenterStatus(message, "success");
+      showToast(message, "success");
     } catch (error) {
-      showToast(`容量推荐失败：${error.message}`, "error");
+      const message = `容量推荐失败：${error.message}`;
+      setAutoJobCenterStatus(message, "failed");
+      showToast(message, "error");
     } finally {
       capacityButton.disabled = false;
     }
@@ -4017,9 +4046,13 @@ els.autoJobCenter?.addEventListener("submit", async (event) => {
   }
   event.preventDefault();
   const button = form.querySelector("button[type='submit']");
+  const actionId = button?.dataset.capacitySubmit || "save_capacity";
+  const progress = button?.dataset.capacityProgress || guideActionProgress(actionId);
+  const success = button?.dataset.capacitySuccess || guideActionSuccess(actionId);
   if (button) {
     button.disabled = true;
   }
+  setAutoJobCenterStatus(progress || "正在保存容量设置。", "running");
   try {
     const formData = new FormData(form);
     const payload = {
@@ -4038,9 +4071,13 @@ els.autoJobCenter?.addEventListener("submit", async (event) => {
     renderAutoJobCenter(state.autoJobs, state.deliveryBatchJobs);
     await loadGrowthMetrics();
     await loadTrustCenter();
-    showToast("容量设置已应用", "success");
+    const message = success || "容量设置已应用。";
+    setAutoJobCenterStatus(message, "success");
+    showToast(message, "success");
   } catch (error) {
-    showToast(`容量设置失败：${error.message}`, "error");
+    const message = `容量设置失败：${error.message}`;
+    setAutoJobCenterStatus(message, "failed");
+    showToast(message, "error");
   } finally {
     if (button) {
       button.disabled = false;

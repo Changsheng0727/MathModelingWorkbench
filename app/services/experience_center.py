@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from app.services.action_catalog import action_outcome, action_success
+from app.services.action_catalog import enrich_action
 from app.services.trust_center import needs_repair
 
 
@@ -192,15 +192,9 @@ def recommended_actions(
     return actions[:4]
 
 
-def action(id_: str, label: str, detail: str, tone: str) -> dict[str, str]:
+def action(id_: str, label: str, detail: str, tone: str) -> dict[str, Any]:
     row = {"id": id_, "label": label, "detail": detail, "tone": tone}
-    outcome = action_outcome(id_)
-    if outcome:
-        row["outcome"] = outcome
-    success = action_success(id_)
-    if success:
-        row["success"] = success
-    return row
+    return enrich_action(row)
 
 
 def onboarding_hint(total: int, configured: bool) -> dict[str, Any]:

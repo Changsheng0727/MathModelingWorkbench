@@ -25,6 +25,7 @@ ACTION_OUTCOMES: dict[str, str] = {
     "select_analyzed": "会批量勾选已分析项目，方便继续自动求解。",
     "batch_packages": "会为已就绪项目生成正式提交压缩包。",
     "autotune_capacity": "会按当前排队压力调整并发配置。",
+    "save_capacity": "会保存并应用后台自动流程、批量任务和打包线程的并发配置。",
     "repair_campaign": "会刷新失败诊断，并推动可续跑项目恢复生成。",
     "refresh_all": "会重新计算当前产品状态和后台任务。",
 }
@@ -52,6 +53,7 @@ ACTION_PROGRESS: dict[str, str] = {
     "select_analyzed": "正在选择已分析项目。",
     "batch_packages": "正在启动批量交付打包。",
     "autotune_capacity": "正在根据队列压力调整并发。",
+    "save_capacity": "正在保存并应用容量设置。",
     "repair_campaign": "正在刷新失败诊断并启动修复。",
     "refresh_all": "正在刷新项目、任务和交付状态。",
 }
@@ -79,6 +81,7 @@ ACTION_SUCCESS: dict[str, str] = {
     "select_analyzed": "已选择已分析项目，可批量入队。",
     "batch_packages": "已触发批量交付打包。",
     "autotune_capacity": "已触发并发调优。",
+    "save_capacity": "容量设置已应用。",
     "repair_campaign": "已触发修复行动。",
     "refresh_all": "已刷新项目、任务和交付状态。",
 }
@@ -106,6 +109,7 @@ ACTION_BUTTONS: dict[str, str] = {
     "select_analyzed": "选中项目",
     "batch_packages": "开始打包",
     "autotune_capacity": "调优并发",
+    "save_capacity": "应用设置",
     "repair_campaign": "开始修复",
     "refresh_all": "刷新状态",
 }

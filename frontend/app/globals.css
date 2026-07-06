@@ -3620,6 +3620,42 @@ p {
   cursor: wait;
 }
 
+.capacity-status {
+  min-height: 30px;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(185, 200, 216, 0.54);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.capacity-status:empty {
+  display: none;
+}
+
+.capacity-status[data-status="running"] {
+  border-color: rgba(37, 99, 235, 0.26);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.capacity-status[data-status="success"] {
+  border-color: rgba(15, 118, 110, 0.26);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.capacity-status[data-status="failed"] {
+  border-color: rgba(185, 28, 28, 0.22);
+  background: var(--red-soft);
+  color: var(--red);
+}
+
 .job-metric {
   min-width: 0;
   padding: 9px 10px;
