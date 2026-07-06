@@ -315,11 +315,37 @@ async function checkHealth() {
 }
 
 function renderEnvironments(env) {
-  const local = env.local_python?.available ? `Python ${env.local_python.version}` : "Python 不可用";
-  const pandoc = env.pandoc?.available ? "Pandoc 可用" : "Pandoc 缺失";
-  const xelatex = env.xelatex?.available ? "XeLaTeX 可用" : "XeLaTeX 缺失";
-  const depStatus = dependencyInstallLabel(env.dependency_install);
-  els.environment.textContent = `${local} · ${pandoc} · ${xelatex}${depStatus ? ` · ${depStatus}` : ""}`;
+  const summary = env.dependency_summary || fallbackDependencySummary(env);
+  const chips = [
+    {
+      label: env.local_python?.available ? `Python ${env.local_python.version || ""}`.trim() : "Python 不可用",
+      tone: env.local_python?.available ? "success" : "failed",
+      title: env.local_python?.executable || "",
+    },
+    {
+      label: env.pandoc?.available ? "Pandoc 可用" : "Pandoc 缺失",
+      tone: env.pandoc?.available ? "success" : "warning",
+      title: env.pandoc?.detail || env.pandoc?.reason || "",
+    },
+    {
+      label: env.xelatex?.available ? "XeLaTeX 可用" : "XeLaTeX 缺失",
+      tone: env.xelatex?.available ? "success" : "warning",
+      title: env.xelatex?.detail || env.xelatex?.reason || "",
+    },
+    {
+      label: summary.label || dependencyInstallLabel(env.dependency_install) || "依赖检测中",
+      tone: environmentTone(summary.status || env.dependency_install?.status),
+      title: summary.detail || "",
+    },
+  ];
+  const detail = summary.detail ? `<span class="environment-detail">${escapeHtml(summary.detail)}</span>` : "";
+  els.environment.dataset.status = environmentTone(summary.status);
+  els.environment.innerHTML = `
+    <span class="environment-chip-row">
+      ${chips.map((item) => environmentChip(item)).join("")}
+    </span>
+    ${detail}
+  `;
 }
 
 function dependencyInstallLabel(status = {}) {
@@ -333,6 +359,45 @@ function dependencyInstallLabel(status = {}) {
     unreadable: "依赖状态不可读",
   };
   return labels[value] || "";
+}
+
+function environmentChip(item) {
+  const title = item.title ? ` title="${escapeHtml(item.title)}"` : "";
+  return `<span class="environment-chip" data-tone="${escapeHtml(item.tone || "pending")}"${title}>${escapeHtml(item.label)}</span>`;
+}
+
+function environmentTone(value) {
+  if (value === "ready" || value === "success") {
+    return "success";
+  }
+  if (value === "checking" || value === "installing") {
+    return "running";
+  }
+  if (value === "missing" || value === "manual_required" || value === "failed") {
+    return "failed";
+  }
+  if (value === "partial" || value === "warning" || value === "unreadable") {
+    return "warning";
+  }
+  return "pending";
+}
+
+function fallbackDependencySummary(env) {
+  const missing = env.required_dependencies?.missing || [];
+  if (!missing.length) {
+    return {
+      status: "ready",
+      label: "导出依赖已就绪",
+      detail: "Word 导出和 LaTeX PDF 编译依赖均可用。",
+    };
+  }
+  const depStatus = env.dependency_install?.status || "";
+  const label = dependencyInstallLabel(env.dependency_install) || "缺少导出依赖";
+  return {
+    status: depStatus || "missing",
+    label,
+    detail: `缺少 ${missing.join("、")}，部分导出功能会受影响。`,
+  };
 }
 
 async function loadLlmSettings() {

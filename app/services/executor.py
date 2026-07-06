@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -19,7 +20,16 @@ def python_script_command(script_path: Path) -> list[str]:
 def detect_environments() -> dict[str, Any]:
     pandoc = detect_command(["pandoc", "--version"])
     xelatex = detect_command(["xelatex", "--version"])
-    winget = detect_command(["winget", "--version"])
+    winget = detect_winget()
+    dependency_install = load_dependency_install_status()
+    required_dependencies = {
+        "ready": bool(pandoc.get("available")) and bool(xelatex.get("available")),
+        "missing": [
+            name
+            for name, item in [("Pandoc", pandoc), ("XeLaTeX", xelatex)]
+            if not item.get("available")
+        ],
+    }
     return {
         "local_python": {
             "available": True,
@@ -29,24 +39,89 @@ def detect_environments() -> dict[str, Any]:
         "pandoc": pandoc,
         "xelatex": xelatex,
         "winget": winget,
-        "dependency_install": load_dependency_install_status(),
-        "required_dependencies": {
-            "ready": bool(pandoc.get("available")) and bool(xelatex.get("available")),
-            "missing": [
-                name
-                for name, item in [("Pandoc", pandoc), ("XeLaTeX", xelatex)]
-                if not item.get("available")
-            ],
-        },
+        "dependency_install": dependency_install,
+        "required_dependencies": required_dependencies,
+        "dependency_summary": summarize_dependencies(required_dependencies, winget, dependency_install),
         "docker": detect_command(["docker", "--version"], ["docker", "info"]),
         "wsl": detect_command(["wsl", "--version"]),
     }
 
 
+def summarize_dependencies(required: dict[str, Any], winget: dict[str, Any], install: dict[str, Any]) -> dict[str, Any]:
+    missing = [str(item) for item in required.get("missing", [])]
+    install_status = str(install.get("status") or "")
+    can_auto_install = bool(winget.get("available"))
+    summary = {
+        "status": "ready",
+        "label": "导出依赖已就绪",
+        "detail": "Word 导出和 LaTeX PDF 编译依赖均可用。",
+        "missing": missing,
+        "can_auto_install": can_auto_install,
+        "install_status": install_status,
+        "log": install.get("log", ""),
+    }
+    if not missing:
+        return summary
+
+    names = "、".join(missing)
+    if install_status in {"checking", "installing"}:
+        summary.update(
+            {
+                "status": "installing",
+                "label": "正在准备导出依赖",
+                "detail": f"正在处理 {names}，完成后可能需要重启软件再导出。",
+            }
+        )
+    elif install_status == "partial":
+        summary.update(
+            {
+                "status": "warning",
+                "label": "依赖安装需复核",
+                "detail": f"已尝试安装，但仍缺少 {names}；重启软件后若仍缺失，请手动安装。",
+            }
+        )
+    elif install_status == "unreadable":
+        summary.update(
+            {
+                "status": "warning",
+                "label": "依赖状态不可读",
+                "detail": f"缺少 {names}，且本地安装状态文件暂时不可读。",
+            }
+        )
+    elif install_status == "manual_required" or not can_auto_install:
+        summary.update(
+            {
+                "status": "manual_required",
+                "label": "需要手动安装依赖",
+                "detail": f"缺少 {names}，且未检测到 winget 自动安装能力。",
+            }
+        )
+    else:
+        summary.update(
+            {
+                "status": "missing",
+                "label": "缺少导出依赖",
+                "detail": f"缺少 {names}；客户端会尝试用 winget 自动下载，稍后可刷新状态。",
+            }
+        )
+    return summary
+
+
+def detect_winget() -> dict[str, Any]:
+    found = detect_command(["winget", "--version"])
+    if found.get("available") or os.name != "nt":
+        return found
+    candidate = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WindowsApps" / "winget.exe"
+    if candidate.exists():
+        return detect_command([str(candidate), "--version"])
+    return found
+
+
 def detect_command(version_cmd: list[str], health_cmd: list[str] | None = None) -> dict[str, Any]:
-    executable = find_external_command(version_cmd[0])
+    command_name = version_cmd[0]
+    executable = str(Path(command_name)) if Path(command_name).exists() else find_external_command(command_name)
     if not executable:
-        return {"available": False, "reason": f"{version_cmd[0]} not found"}
+        return {"available": False, "reason": f"{command_name} not found"}
     try:
         version = run_external_command(
             [executable, *version_cmd[1:]],
