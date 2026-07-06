@@ -4680,7 +4680,7 @@ els.modelAssistantForm.addEventListener("submit", async (event) => {
     els.modelAssistantStatus.textContent = `模型辅助失败：${error.message}`;
   } finally {
     stopProgressPolling();
-    await refreshModelAssistantProgress(projectId);
+    await refreshModelAssistantProgress(projectId, { includeOverview: true });
     button.disabled = false;
   }
 });
@@ -4699,18 +4699,27 @@ function startModelAssistantProgressPolling(projectId) {
   };
 }
 
-async function refreshModelAssistantProgress(projectId) {
+async function refreshModelAssistantProgress(projectId, { includeOverview = false } = {}) {
   if (!projectId || !els.modelAssistantProgress) {
-    return;
+    return false;
   }
   try {
-    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/model-assistant/progress`);
+    const suffix = includeOverview ? "?include_overview=true" : "";
+    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/model-assistant/progress${suffix}`);
+    if (payload.project) {
+      renderProject(payload.project);
+    }
+    if (payload.overview) {
+      applyProductOverviewPayload(payload.overview);
+    }
     renderModelAssistantProgress(payload.progress);
+    return Boolean(payload.overview);
   } catch (error) {
     renderModelAssistantProgress({
       status: "warning",
       detail: `模型辅助进度暂不可用：${error.message}`,
     });
+    return false;
   }
 }
 

@@ -2268,7 +2268,7 @@ def auto_progress_is_missing_or_stale(progress: object, seconds: int = 180) -> b
 
 
 @app.get("/api/projects/{project_id}/llm/model-assistant/progress")
-def project_model_assistant_progress(project_id: str) -> dict:
+def project_model_assistant_progress(project_id: str, include_overview: bool = False) -> dict:
     try:
         root = project_root(project_id)
     except FileNotFoundError as exc:
@@ -2291,13 +2291,17 @@ def project_model_assistant_progress(project_id: str) -> dict:
     live_stream = load_llm_live_stream(root)
     if live_stream.get("channel") == "model_assistant":
         progress["live_stream"] = live_stream
-    return {
+    response = {
         "project_id": project_id,
         "status": meta.get("model_assistant_status") or progress.get("status") or "idle",
         "progress": progress or {},
         "artifacts": meta.get("artifacts", {}),
         "error": meta.get("model_assistant_error", ""),
     }
+    if include_overview:
+        response["project"] = project_detail(project_id)
+        response["overview"] = build_product_overview_response()
+    return response
 
 
 @app.post("/api/projects/{project_id}/llm/analyze")
