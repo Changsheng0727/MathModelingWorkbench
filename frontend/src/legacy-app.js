@@ -304,14 +304,20 @@ async function checkHealth() {
     await api("/api/health");
     els.health.textContent = "已连接";
     els.health.dataset.status = "connected";
-    const env = await api("/api/environments");
-    renderEnvironments(env);
+    await loadEnvironments();
     await loadLlmSettings();
     await loadTemplates();
   } catch {
     els.health.textContent = "未连接";
     els.health.dataset.status = "disconnected";
   }
+}
+
+async function loadEnvironments({ refresh = false } = {}) {
+  const suffix = refresh ? "?refresh=true" : "";
+  const env = await api(`/api/environments${suffix}`);
+  renderEnvironments(env);
+  return env;
 }
 
 function renderEnvironments(env) {
@@ -340,6 +346,8 @@ function renderEnvironments(env) {
   ];
   const detail = summary.detail ? `<span class="environment-detail">${escapeHtml(summary.detail)}</span>` : "";
   const nextAction = renderEnvironmentNextAction(summary.next_action || {});
+  const checkedAt = env.checked_at ? `检测 ${formatProjectTime(env.checked_at)}${env.cached ? ` · 缓存 ${env.cache_age_seconds || 0}s` : ""}` : "";
+  const meta = checkedAt ? `<span class="environment-meta">${escapeHtml(checkedAt)}</span>` : "";
   els.environment.dataset.status = environmentTone(summary.status);
   els.environment.innerHTML = `
     <span class="environment-chip-row">
@@ -347,6 +355,8 @@ function renderEnvironments(env) {
     </span>
     ${detail}
     ${nextAction}
+    ${meta}
+    <button class="environment-refresh" type="button" data-environment-refresh>刷新环境</button>
   `;
 }
 
@@ -414,6 +424,21 @@ function fallbackDependencySummary(env) {
     detail: `缺少 ${missing.join("、")}，部分导出功能会受影响。`,
   };
 }
+
+els.environment?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-environment-refresh]");
+  if (!button) {
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "刷新中";
+  try {
+    await loadEnvironments({ refresh: true });
+    showToast("环境状态已刷新", "success");
+  } catch (error) {
+    showToast(`环境刷新失败：${error.message}`, "error");
+  }
+});
 
 async function loadLlmSettings() {
   const settings = await api("/api/settings/llm");

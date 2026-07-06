@@ -1514,6 +1514,38 @@ p {
   color: var(--primary-strong);
 }
 
+.environment-meta {
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.environment-refresh {
+  min-height: 26px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow: var(--shadow-inset);
+}
+
+.environment-refresh:hover {
+  border-color: var(--primary);
+}
+
+.environment-refresh:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus);
+}
+
+.environment-refresh:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .project-stage-summary {
   width: fit-content;
   max-width: min(72ch, 100%);

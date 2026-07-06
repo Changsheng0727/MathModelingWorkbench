@@ -167,8 +167,8 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/environments")
-def environments() -> dict:
-    return detect_environments()
+def environments(refresh: bool = False) -> dict:
+    return detect_environments(refresh=refresh)
 
 
 @app.get("/api/product/capacity")

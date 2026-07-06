@@ -11,13 +11,26 @@ from app.config import DATA_ROOT
 from app.services.process_utils import describe_returncode, find_external_command, run_external_command
 
 
+ENV_CACHE_SECONDS = 25
+_ENV_CACHE: dict[str, Any] | None = None
+_ENV_CACHE_AT = 0.0
+
+
 def python_script_command(script_path: Path) -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable, "--mw-run-script", str(script_path)]
     return [sys.executable, "-X", "utf8", str(script_path)]
 
 
-def detect_environments() -> dict[str, Any]:
+def detect_environments(refresh: bool = False) -> dict[str, Any]:
+    global _ENV_CACHE, _ENV_CACHE_AT
+    now = time.monotonic()
+    if not refresh and _ENV_CACHE and now - _ENV_CACHE_AT < ENV_CACHE_SECONDS:
+        cached = dict(_ENV_CACHE)
+        cached["cached"] = True
+        cached["cache_age_seconds"] = round(now - _ENV_CACHE_AT, 1)
+        return cached
+
     pandoc = detect_command(["pandoc", "--version"])
     xelatex = detect_command(["xelatex", "--version"])
     winget = detect_winget()
@@ -30,7 +43,7 @@ def detect_environments() -> dict[str, Any]:
             if not item.get("available")
         ],
     }
-    return {
+    payload = {
         "local_python": {
             "available": True,
             "executable": sys.executable,
@@ -44,7 +57,14 @@ def detect_environments() -> dict[str, Any]:
         "dependency_summary": summarize_dependencies(required_dependencies, winget, dependency_install),
         "docker": detect_command(["docker", "--version"], ["docker", "info"]),
         "wsl": detect_command(["wsl", "--version"]),
+        "cached": False,
+        "cache_age_seconds": 0,
+        "cache_ttl_seconds": ENV_CACHE_SECONDS,
+        "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
+    _ENV_CACHE = dict(payload)
+    _ENV_CACHE_AT = now
+    return payload
 
 
 def summarize_dependencies(required: dict[str, Any], winget: dict[str, Any], install: dict[str, Any]) -> dict[str, Any]:
