@@ -4863,6 +4863,12 @@ ul.problem-meta {
   color: var(--amber);
 }
 
+.artifact-summary[data-status="failed"] {
+  border-color: color-mix(in oklch, var(--red) 24%, transparent);
+  background: var(--red-soft);
+  color: var(--red);
+}
+
 .artifact-folder {
   min-width: 0;
   border: 1px solid var(--clay-border);

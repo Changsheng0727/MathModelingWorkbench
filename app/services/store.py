@@ -116,6 +116,7 @@ def build_artifact_status(root: Path, artifacts: object) -> dict[str, dict[str, 
         "path": "support.zip",
         "exists": True,
         "is_file": True,
+        "available": True,
         "generated_on_demand": True,
         "missing_reason": "",
     }
@@ -124,7 +125,14 @@ def build_artifact_status(root: Path, artifacts: object) -> dict[str, dict[str, 
 
 def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[str, object]:
     total = len(statuses)
-    available = sum(1 for item in statuses.values() if item.get("exists") is not False and item.get("is_file") is not False)
+    available = sum(
+        1
+        for item in statuses.values()
+        if item.get("available") is not False
+        and item.get("exists") is not False
+        and item.get("is_file") is not False
+        and item.get("unsafe_path") is not True
+    )
     unsafe = sum(1 for item in statuses.values() if item.get("unsafe_path"))
     size_bytes = sum(int(item.get("size_bytes") or 0) for item in statuses.values())
     modified = [
@@ -147,7 +155,8 @@ def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[st
 
 def is_available_artifact(item: dict[str, object]) -> bool:
     return (
-        item.get("exists") is not False
+        item.get("available") is not False
+        and item.get("exists") is not False
         and item.get("is_file") is not False
         and not item.get("unsafe_path")
         and not item.get("generated_on_demand")
@@ -225,6 +234,7 @@ def inspect_project_artifact(root: Path, relative_path: str) -> dict[str, object
         "path": relative_path,
         "exists": False,
         "is_file": False,
+        "available": False,
         "missing_reason": "文件尚未生成或已被移动",
     }
     try:
@@ -241,6 +251,7 @@ def inspect_project_artifact(root: Path, relative_path: str) -> dict[str, object
         return status
     status["exists"] = True
     status["is_file"] = target.is_file()
+    status["available"] = bool(target.is_file())
     status["missing_reason"] = "" if target.is_file() else "目标不是文件"
     try:
         stat = target.stat()

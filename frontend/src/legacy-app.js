@@ -3195,7 +3195,7 @@ function renderArtifactSummary(summary = {}) {
     size ? `总大小 ${formatBytes(size)}` : "",
     summary.latest_modified_at ? `最近更新 ${formatProjectTime(summary.latest_modified_at)}` : "",
   ].filter(Boolean).join(" · ");
-  const status = missing || unsafe ? "warning" : "success";
+  const status = unsafe ? "failed" : missing ? "warning" : "success";
   const text = missing
     ? `可打开 ${available}/${total} 个文件，${missing} 个文件尚未生成或已移动。`
     : `可打开 ${available}/${total} 个文件。`;
@@ -3239,11 +3239,17 @@ function renderArtifactItem(projectId, key, label, path, status = {}) {
   const encodedPath = encodeRelativePath(path);
   const safeLabel = escapeHtml(label);
   const safePath = escapeHtml(path);
-  const available = !status || (status.exists !== false && status.is_file !== false);
+  const available = !status || (
+    status.available !== false
+    && status.exists !== false
+    && status.is_file !== false
+    && status.unsafe_path !== true
+  );
   const meta = artifactStatusMeta(status);
   const metaHtml = meta ? `<small class="artifact-file-meta">${escapeHtml(meta)}</small>` : "";
   const reason = status?.missing_reason || "文件尚未生成或已被移动";
   const safeReason = escapeHtml(reason);
+  const unavailableLabel = status?.unsafe_path ? "路径异常" : "未生成";
   if (!available) {
     return `
       <div class="artifact-row is-missing">
@@ -3253,7 +3259,7 @@ function renderArtifactItem(projectId, key, label, path, status = {}) {
             <small class="artifact-missing-reason">${safeReason}</small>
           </span>
         </span>
-        <button class="artifact-open" type="button" data-missing="true" disabled title="${safeReason}" aria-label="${safeLabel}尚未生成">未生成</button>
+        <button class="artifact-open" type="button" data-missing="true" disabled title="${safeReason}" aria-label="${safeLabel}${escapeHtml(unavailableLabel)}">${escapeHtml(unavailableLabel)}</button>
       </div>
     `;
   }
