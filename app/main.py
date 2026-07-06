@@ -652,7 +652,11 @@ def format_bytes(value: int) -> str:
 @app.get("/api/projects")
 def projects() -> list[dict]:
     llm_settings = get_llm_settings()
-    return [attach_project_readiness_summary(project, llm_settings) for project in list_projects()]
+    items = [attach_project_readiness_summary(project, llm_settings) for project in list_projects()]
+    if items:
+        items[0]["default_open"] = True
+        items[0]["default_open_reason"] = "最近更新"
+    return items
 
 
 def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:

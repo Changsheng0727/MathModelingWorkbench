@@ -19,6 +19,7 @@ const state = {
   deliveryPackage: null,
   experience: null,
   uploadProgressStop: null,
+  projectRestoreTried: false,
 };
 
 const els = {
@@ -407,7 +408,7 @@ function renderLlmSettings(settings) {
   }
 }
 
-async function loadProjects() {
+async function loadProjects({ restore = false } = {}) {
   if (els.projectCount) {
     els.projectCount.textContent = "正在刷新项目状态…";
   }
@@ -415,6 +416,22 @@ async function loadProjects() {
   pruneSelectedProjects();
   renderProjectList();
   renderExperienceGuide(state.experience || {});
+  if (restore) {
+    await restoreInitialProject();
+  }
+}
+
+async function restoreInitialProject() {
+  if (state.projectRestoreTried || state.currentProject) {
+    return;
+  }
+  state.projectRestoreTried = true;
+  const projects = state.projects || [];
+  const savedId = readPreference("mmw-last-project-id", "");
+  const candidate = projects.find((project) => project.id === savedId) || projects.find((project) => project.default_open) || projects[0];
+  if (candidate?.id) {
+    await openProject(candidate.id, { silent: true });
+  }
 }
 
 async function loadAutoJobs() {
@@ -796,13 +813,18 @@ function formatBytes(value) {
   return `${size.toFixed(1)} GB`;
 }
 
-async function openProject(projectId) {
+async function openProject(projectId, { silent = false } = {}) {
   const detail = await api(`/api/projects/${projectId}`);
   renderProject(detail);
-  if (detail.metadata?.metadata_error) {
-    showToast("项目元数据读取失败，已打开可恢复视图。", "warning");
-  } else {
-    showToast("已打开项目", "success");
+  if (detail.metadata?.id) {
+    writePreference("mmw-last-project-id", detail.metadata.id);
+  }
+  if (!silent) {
+    if (detail.metadata?.metadata_error) {
+      showToast("项目元数据读取失败，已打开可恢复视图。", "warning");
+    } else {
+      showToast("已打开项目", "success");
+    }
   }
 }
 
@@ -4188,7 +4210,7 @@ els.runLlmAnalysis.addEventListener("click", async () => {
 initThemeToggle();
 initModuleTabs();
 checkHealth();
-loadProjects();
+loadProjects({ restore: true });
 loadExperienceCenter();
 loadAutoJobs();
 loadGrowthMetrics();
