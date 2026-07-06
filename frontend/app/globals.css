@@ -1004,6 +1004,22 @@ p {
   white-space: nowrap;
 }
 
+.project-phase {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 2px;
+  padding: 2px 7px;
+  border: 1px solid rgba(185, 200, 216, 0.58);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--primary-strong);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .project-output-meta {
   display: block;
   color: var(--muted);
@@ -1779,6 +1795,22 @@ p {
   font-size: 11px;
   font-weight: 800;
   line-height: 1.2;
+}
+
+.readiness-copy > .readiness-phase {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border: 1px solid rgba(185, 200, 216, 0.58);
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .readiness-copy {
@@ -4817,9 +4849,11 @@ ul.problem-meta {
 :root[data-theme="dark"] .ghost,
 :root[data-theme="dark"] .project-button,
 :root[data-theme="dark"] .project-quick-action,
+:root[data-theme="dark"] .project-phase,
 :root[data-theme="dark"] .project-filter,
 :root[data-theme="dark"] .project-select-input,
 :root[data-theme="dark"] .status-card,
+:root[data-theme="dark"] .readiness-phase,
 :root[data-theme="dark"] .readiness-completion span,
 :root[data-theme="dark"] .readiness-next,
 :root[data-theme="dark"] .readiness-score,

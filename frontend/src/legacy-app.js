@@ -568,6 +568,7 @@ function renderProjectList() {
         const rootRepairBadge = project.root_was_repaired
           ? `<span class="project-badge project-badge-muted" title="${escapeHtml(project.root_repair_notice || "项目路径已自动校正")}">路径已校正</span>`
           : "";
+        const phase = renderProjectPhase(project);
         const nextStep = renderProjectNextStep(project);
         const requiredProgress = renderProjectRequiredProgress(project);
         const quickAction = renderProjectQuickAction(project);
@@ -594,6 +595,7 @@ function renderProjectList() {
             <span class="project-meta">更新 ${escapeHtml(formatProjectTime(updatedAt))} · ${escapeHtml(status)}</span>
             <span class="project-badges">${analysisBadge}${readinessBadge}${metadataErrorBadge}${openBadge}${rootRepairBadge}${autoBadge}${deliveryBadge}${artifactBadge}${diagnosisBadge}</span>
             ${artifactMeta}
+            ${phase}
             ${requiredProgress}
             ${nextStep}
           </button>
@@ -759,6 +761,16 @@ function renderProjectRequiredProgress(project = {}) {
   `;
 }
 
+function renderProjectPhase(project = {}) {
+  const phase = project.readiness_phase || {};
+  const label = project.readiness_phase_label || phase.label || "";
+  if (!label) {
+    return "";
+  }
+  const detail = project.readiness_phase_detail || phase.detail || "";
+  return `<span class="project-phase" title="${escapeHtml(detail || label)}">阶段：${escapeHtml(label)}</span>`;
+}
+
 function renderProjectNextStep(project = {}) {
   const action = project.readiness_action || {};
   const next = project.readiness_next_step || {};
@@ -903,6 +915,10 @@ function projectSearchText(project = {}) {
     project.readiness_next_step?.detail,
     project.readiness_next_step_label,
     project.readiness_next_step_detail,
+    project.readiness_phase?.label,
+    project.readiness_phase?.detail,
+    project.readiness_phase_label,
+    project.readiness_phase_detail,
     project.readiness_completion?.label,
     project.readiness_completion_label,
     project.readiness_todo_count ? `待办 ${project.readiness_todo_count}` : "",
@@ -1251,6 +1267,10 @@ function renderProjectReadiness(readiness = {}) {
     ? `<button class="primary compact" type="button" data-readiness-action="${escapeHtml(action.id)}"${actionPath} title="${escapeHtml(actionTitle)}">${escapeHtml(action.label || "继续")}</button>`
     : "";
   const next = readiness.next_step || {};
+  const phase = readiness.phase || {};
+  const phaseLabel = phase.label
+    ? `<span class="readiness-phase" title="${escapeHtml(phase.detail || phase.label)}">阶段：${escapeHtml(phase.label)}</span>`
+    : "";
   const nextStep = next.label
     ? `<p class="readiness-next"><b>下一步</b><span>${escapeHtml(next.label)}${next.detail ? ` · ${escapeHtml(next.detail)}` : ""}</span></p>`
     : "";
@@ -1266,6 +1286,7 @@ function renderProjectReadiness(readiness = {}) {
       </div>
       <div class="readiness-copy">
         <span>准备度</span>
+        ${phaseLabel}
         <h3>${escapeHtml(readiness.label || "当前项目状态")}</h3>
         <p>${escapeHtml(readiness.summary || "")}</p>
         ${completion}

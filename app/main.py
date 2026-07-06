@@ -690,6 +690,11 @@ def attach_project_readiness_summary(project: dict, llm_settings: dict) -> dict:
     project["readiness_next_step"] = next_step
     project["readiness_next_step_label"] = next_step.get("label", "")
     project["readiness_next_step_detail"] = next_step.get("detail", "")
+    phase = readiness.get("phase", {})
+    phase = phase if isinstance(phase, dict) else {}
+    project["readiness_phase"] = phase
+    project["readiness_phase_label"] = phase.get("label", "")
+    project["readiness_phase_detail"] = phase.get("detail", "")
     completion = readiness.get("completion", {})
     completion = completion if isinstance(completion, dict) else {}
     project["readiness_completion"] = completion
