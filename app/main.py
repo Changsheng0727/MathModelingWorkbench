@@ -1365,7 +1365,7 @@ def analyze_project_materials(root: Path, meta: dict, progress: AnalysisProgress
 
 
 @app.get("/api/projects/{project_id}")
-def project_detail(project_id: str) -> dict:
+def project_detail(project_id: str, include_overview: bool = False) -> dict:
     try:
         root = project_root(project_id)
     except FileNotFoundError as exc:
@@ -1406,7 +1406,7 @@ def project_detail(project_id: str) -> dict:
         package=package,
     )
     meta = attach_project_readiness_fields(meta, readiness)
-    return {
+    detail = {
         "metadata": {k: v for k, v in meta.items() if k != "root"},
         "analysis": analysis,
         "repair": repair,
@@ -1414,6 +1414,9 @@ def project_detail(project_id: str) -> dict:
         "package": package,
         "readiness": readiness,
     }
+    if include_overview:
+        detail["overview"] = build_product_overview_response()
+    return detail
 
 
 def load_optional_project_json(root: Path, path: Path, meta: dict, label: str) -> dict | None:

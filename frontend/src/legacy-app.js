@@ -1396,8 +1396,9 @@ async function openProject(projectId, { silent = false } = {}) {
   if (state.currentProject?.metadata?.id === normalizedProjectId) {
     return state.currentProject;
   }
-  const detail = await api(`/api/projects/${encodeURIComponent(normalizedProjectId)}`);
+  const detail = await api(`/api/projects/${encodeURIComponent(normalizedProjectId)}?include_overview=true`);
   renderProject(detail);
+  await syncOverviewAfterAction(detail);
   if (detail.metadata?.id) {
     writePreference("mmw-last-project-id", detail.metadata.id);
   }
