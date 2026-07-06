@@ -3739,7 +3739,9 @@ async function runGuideAction(action, options = {}) {
   if (action === "refresh_all") {
     await Promise.all([loadProjects(), loadExperienceCenter(), loadAutoJobs(), loadGrowthMetrics(), loadTrustCenter()]);
     showToast("产品状态已刷新", "success");
+    return;
   }
+  throw new Error(`暂不支持的操作：${action || "未指定"}`);
 }
 
 function scrollIntoViewIfPossible(node) {
