@@ -4411,6 +4411,14 @@ els.testLlmSettings?.addEventListener("click", async () => {
     const label = diagnosis.label ? `${diagnosis.label}：` : "";
     const hint = diagnosis.suggested_action || result.message || "请检查接口地址、模型名和 API Key。";
     els.llmSettingsStatus.textContent = `大模型连接测试失败：${label}${hint}`;
+    if (state.currentProject?.metadata?.id) {
+      try {
+        const detail = await api(`/api/projects/${encodeURIComponent(state.currentProject.metadata.id)}`);
+        renderProject(detail);
+      } catch {
+        // Keep the connection-test diagnosis visible if project refresh fails.
+      }
+    }
     showToast("大模型连接测试失败，请查看设置提示", "error");
   } catch (error) {
     els.llmSettingsStatus.textContent = `大模型连接测试失败：${error.message}`;

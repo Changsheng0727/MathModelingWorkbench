@@ -1356,7 +1356,7 @@ def project_detail(project_id: str) -> dict:
     package = load_optional_project_json(root, package_path, meta, "交付包清单")
     meta = attach_project_artifact_fields(meta, root)
     llm_settings = get_llm_settings()
-    meta["auto_workflow_preflight"] = build_auto_workflow_preflight(root, meta)
+    meta["auto_workflow_preflight"] = build_auto_workflow_preflight(root, meta, llm_settings=llm_settings)
     readiness = build_project_readiness(
         root,
         meta,
@@ -1982,9 +1982,9 @@ def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resum
     return "尚未确认最终选题。"
 
 
-def build_auto_workflow_preflight(root: Path, meta: dict | None = None) -> dict:
+def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_settings: dict | None = None) -> dict:
     metadata = meta if isinstance(meta, dict) else load_json(root / "metadata.json")
-    llm_settings = get_llm_settings()
+    llm_settings = llm_settings if isinstance(llm_settings, dict) else get_llm_settings()
     start_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=False)
     resume_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=True)
     can_resume = should_resume_batch_project(metadata, "auto") and not resume_issue
