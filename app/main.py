@@ -112,6 +112,16 @@ MAX_FOLDER_UPLOAD_FILES = 1200
 MAX_FOLDER_UPLOAD_BYTES = 500 * 1024 * 1024
 
 
+def redact_public_payload(value):
+    if isinstance(value, str):
+        return redact_sensitive_text(value)
+    if isinstance(value, list):
+        return [redact_public_payload(item) for item in value]
+    if isinstance(value, dict):
+        return {key: redact_public_payload(item) for key, item in value.items()}
+    return value
+
+
 class LLMSettingsPayload(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
@@ -2201,7 +2211,7 @@ def project_progress(project_id: str, include_overview: bool = False, include_jo
         progress = load_json(progress_path) if progress_path.exists() else meta.get("auto_workflow_progress", {})
     except Exception as exc:
         progress = {}
-        progress_error = f"{type(exc).__name__}: {exc}"
+        progress_error = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
     active_job = get_project_auto_workflow_job(project_id)
     response_status = meta.get("auto_workflow_status") or "idle"
     if active_job.get("status") in {"queued", "running"}:
@@ -2267,9 +2277,9 @@ def project_progress(project_id: str, include_overview: bool = False, include_jo
     response = {
         "project_id": project_id,
         "status": response_status,
-        "progress": progress or {},
+        "progress": redact_public_payload(progress or {}),
         "artifacts": meta.get("artifacts", {}),
-        "error": meta.get("auto_workflow_error", ""),
+        "error": redact_sensitive_text(str(meta.get("auto_workflow_error", ""))),
     }
     overview = None
     if include_overview:
@@ -2323,7 +2333,7 @@ def project_model_assistant_progress(project_id: str, include_overview: bool = F
         progress = load_json(progress_path) if progress_path.exists() else {}
     except Exception as exc:
         progress = {}
-        progress_error = f"{type(exc).__name__}: {exc}"
+        progress_error = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
     if not isinstance(progress, dict):
         progress = {}
     progress = dict(progress)
@@ -2348,13 +2358,13 @@ def project_model_assistant_progress(project_id: str, include_overview: bool = F
         progress["detail"] = "正在启动模型辅助直播，稍后会显示实时输出。"
     if meta.get("model_assistant_error"):
         progress["status"] = "failed"
-        progress["error"] = meta.get("model_assistant_error")
+        progress["error"] = redact_sensitive_text(str(meta.get("model_assistant_error")))
     response = {
         "project_id": project_id,
         "status": progress.get("status") or status,
-        "progress": progress or {},
+        "progress": redact_public_payload(progress or {}),
         "artifacts": meta.get("artifacts", {}),
-        "error": meta.get("model_assistant_error", ""),
+        "error": redact_sensitive_text(str(meta.get("model_assistant_error", ""))),
     }
     if include_overview:
         response["project"] = project_detail(project_id)
@@ -2380,13 +2390,13 @@ def project_llm_analysis_progress(project_id: str, include_overview: bool = Fals
         progress["detail"] = "正在启动大模型分析直播，稍后会显示实时输出。"
     if meta.get("llm_analysis_error"):
         progress["status"] = "failed"
-        progress["error"] = meta.get("llm_analysis_error")
+        progress["error"] = redact_sensitive_text(str(meta.get("llm_analysis_error")))
     response = {
         "project_id": project_id,
         "status": progress.get("status") or status,
-        "progress": progress,
+        "progress": redact_public_payload(progress),
         "artifacts": meta.get("artifacts", {}),
-        "error": meta.get("llm_analysis_error", ""),
+        "error": redact_sensitive_text(str(meta.get("llm_analysis_error", ""))),
     }
     if include_overview:
         response["project"] = project_detail(project_id)

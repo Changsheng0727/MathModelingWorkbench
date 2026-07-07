@@ -5055,15 +5055,18 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
   const currentTitle = current?.title || statusLabel(progress.status) || "等待更新";
   const notice = progress.detail || progress.error || progress.resume_hint || "";
   const noticeTitle = progress.progress_error || notice;
+  const safeCurrentTitle = redactSensitiveText(currentTitle);
+  const safeNotice = redactSensitiveText(notice);
+  const safeNoticeTitle = redactSensitiveText(noticeTitle);
   element.innerHTML = `
     <div class="progress-head">
       <div>
-        <strong>${escapeHtml(currentTitle)}</strong>
+        <strong>${escapeHtml(safeCurrentTitle)}</strong>
         <span>${escapeHtml(progress.completed_steps ?? 0)} / ${escapeHtml(progress.total_steps || allSteps.length || fallbackTotal)} 阶段</span>
       </div>
       <b>${escapeHtml(percent)}%</b>
     </div>
-    ${notice ? `<p class="progress-notice" data-status="${escapeHtml(progress.status || "")}" title="${escapeHtml(noticeTitle)}">${escapeHtml(notice)}</p>` : ""}
+    ${safeNotice ? `<p class="progress-notice" data-status="${escapeHtml(progress.status || "")}" title="${escapeHtml(safeNoticeTitle)}">${escapeHtml(safeNotice)}</p>` : ""}
     <div class="progress-bar"><i style="width: ${percent}%"></i></div>
     <div class="progress-steps">
       ${allSteps.map((step) => renderProgressStep(step, progress)).join("")}
@@ -5181,7 +5184,8 @@ async function handleLiveStreamAction(event) {
 function renderProgressStep(step, progress = {}) {
   const status = step.status || "pending";
   const duration = step.duration_seconds ? ` · ${step.duration_seconds}s` : "";
-  const detail = step.detail ? `<p>${escapeHtml(step.detail)}</p>` : "";
+  const title = redactSensitiveText(step.title || step.id || "阶段");
+  const detail = step.detail ? `<p>${escapeHtml(redactSensitiveText(step.detail))}</p>` : "";
   const diagnosis = renderFailureDiagnosis(step.failure_diagnosis, {
     canResume: Boolean(progress.can_resume),
     resumeHint: progress.resume_hint,
@@ -5194,7 +5198,7 @@ function renderProgressStep(step, progress = {}) {
     <div class="progress-step" data-status="${escapeHtml(status)}">
       <span></span>
       <div>
-        <strong>${escapeHtml(step.title || step.id || "阶段")}</strong>
+        <strong>${escapeHtml(title)}</strong>
         <small>${escapeHtml(statusLabel(status))}${escapeHtml(duration)}</small>
         ${detail}
         ${diagnosis}
@@ -5208,10 +5212,10 @@ function renderFailureDiagnosis(diagnosis = {}, options = {}) {
   if (!diagnosis || typeof diagnosis !== "object" || !diagnosis.category) {
     return "";
   }
-  const label = diagnosis.label || diagnosis.category || "失败诊断";
-  const focus = diagnosis.repair_focus || diagnosis.evidence || "";
-  const category = diagnosis.category ? `<b>${escapeHtml(diagnosis.category)}</b>` : "";
-  const action = diagnosis.suggested_action || options.resumeHint || (options.canResume ? "点击继续生成，系统会带着本次诊断继续自动修复。" : "");
+  const label = redactSensitiveText(diagnosis.label || diagnosis.category || "失败诊断");
+  const focus = redactSensitiveText(diagnosis.repair_focus || diagnosis.evidence || "");
+  const category = diagnosis.category ? `<b>${escapeHtml(redactSensitiveText(diagnosis.category))}</b>` : "";
+  const action = redactSensitiveText(diagnosis.suggested_action || options.resumeHint || (options.canResume ? "点击继续生成，系统会带着本次诊断继续自动修复。" : ""));
   const resumeButton = options.canResume && state.currentProject?.metadata?.id
     ? '<button class="diagnosis-resume" type="button" data-auto-action="resume">继续生成</button>'
     : "";

@@ -75,8 +75,27 @@ def test_llm_test_endpoint_returns_redacted_error() -> None:
     assert jwt not in str(payload.get("diagnosis", {}))
 
 
+def test_public_progress_payload_redacts_nested_strings() -> None:
+    api_key = "sk" + "-test_" + "abcdefghijklmnopqrstuvwxyz"
+    jwt = "eyJ" + "abc.def.ghi"
+    github_token = "github" + "_pat_" + "ABC123_secret"
+    payload = {
+        "detail": f"solver failed with {api_key}",
+        "steps": [{"title": f"retry Bearer {jwt}", "failure_diagnosis": {"evidence": f"access{'_token'}={github_token}"}}],
+    }
+
+    redacted = main.redact_public_payload(payload)
+    text = str(redacted)
+
+    assert api_key not in text
+    assert jwt not in text
+    assert github_token not in text
+    assert "[REDACTED]" in text
+
+
 if __name__ == "__main__":
     test_redact_sensitive_text_masks_common_tokens()
     test_record_llm_test_result_persists_redacted_message()
     test_llm_test_endpoint_returns_redacted_error()
+    test_public_progress_payload_redacts_nested_strings()
     print("llm_settings_redaction_tests_ok")
