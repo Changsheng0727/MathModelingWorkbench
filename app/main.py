@@ -2288,22 +2288,28 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
         try:
             root = project_root(project_id)
         except FileNotFoundError:
-            skipped.append({"project_id": project_id, "reason": "项目不存在。"})
+            skipped.append(build_auto_batch_skip(project_id, "项目不存在。"))
+            continue
+        try:
+            meta = load_json(root / "metadata.json")
+            if not isinstance(meta, dict):
+                raise ValueError("metadata.json must contain a JSON object")
+        except Exception as exc:
+            skipped.append(build_auto_batch_skip(project_id, f"项目元数据无法读取：{type(exc).__name__}: {exc}"))
             continue
         analysis_path = root / "artifacts" / "analysis.json"
         if not analysis_path.exists():
-            skipped.append({"project_id": project_id, "reason": "项目尚未完成赛题分析。"})
+            skipped.append(build_auto_batch_skip(project_id, "项目尚未完成赛题分析。", meta))
             continue
-        meta = load_json(root / "metadata.json")
         resume = should_resume_batch_project(meta, mode)
         issue = auto_workflow_preflight_issue(root, meta=meta, resume=resume, llm_settings=llm_settings)
         if issue:
-            skipped.append({"project_id": project_id, "reason": issue})
+            skipped.append(build_auto_batch_skip(project_id, issue, meta))
             continue
         try:
             job = start_auto_workflow_job(project_id, root, resume=resume)
         except Exception as exc:
-            skipped.append({"project_id": project_id, "reason": f"{type(exc).__name__}: {exc}"})
+            skipped.append(build_auto_batch_skip(project_id, f"{type(exc).__name__}: {exc}", meta))
             continue
         submitted.append(job)
     overview = build_product_overview_response()
@@ -2312,6 +2318,15 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
         "auto_jobs": overview.get("auto_jobs") or list_auto_workflow_jobs(),
         "overview": overview,
     }
+
+
+def build_auto_batch_skip(project_id: str, reason: str, meta: dict | None = None) -> dict:
+    item = {"project_id": project_id, "reason": reason}
+    if isinstance(meta, dict):
+        name = str(meta.get("name") or meta.get("original_name") or "").strip()
+        if name:
+            item["project_name"] = name
+    return item
 
 
 def build_auto_batch_result(requested_count: int, submitted: list[dict], skipped: list[dict], mode: str) -> dict:

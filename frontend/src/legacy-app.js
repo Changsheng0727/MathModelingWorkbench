@@ -1499,21 +1499,10 @@ async function startSelectedProjectsBatch() {
     showToast("请先测试大模型连接，再批量入队", "warning");
     return;
   }
-  const projectById = new Map((state.projects || []).map((project) => [project.id, project]));
-  const unconfirmed = projectIds.filter((projectId) => {
-    const project = projectById.get(projectId) || {};
-    return !projectShouldResumeAuto(project) && !selectedProblemId(project);
-  });
-  if (unconfirmed.length) {
-    const first = projectById.get(unconfirmed[0]) || {};
-    els.batchProjectStatus.textContent = `${unconfirmed.length} 个项目尚未确认最终选题，请先打开${first.name ? `“${first.name}”` : "对应项目"}确认选题。`;
-    showToast("存在未确认选题的项目，已停止批量入队", "warning");
-    return;
-  }
   els.batchStartProjects.disabled = true;
   els.selectAnalyzedProjects.disabled = true;
   els.clearProjectSelection.disabled = true;
-  els.batchProjectStatus.textContent = `正在将 ${projectIds.length} 个项目加入后台任务池。`;
+  els.batchProjectStatus.textContent = `正在逐个预检 ${projectIds.length} 个项目，可运行的项目会先进入任务池。`;
   try {
     const payload = await api("/api/auto/batch/start", {
       method: "POST",
@@ -1530,14 +1519,14 @@ async function startSelectedProjectsBatch() {
     await syncOverviewAfterAction(payload);
     const skipped = Array.isArray(batch.skipped) ? batch.skipped : [];
     const skippedReasonText = skipped.length
-      ? ` 跳过原因：${skipped.slice(0, 2).map((item) => item.reason || item.project_id).join("；")}${skipped.length > 2 ? "…" : ""}`
+      ? ` 跳过原因：${skipped.slice(0, 2).map((item) => `${item.project_name || item.project_id || "项目"}：${item.reason || "未通过预检"}`).join("；")}${skipped.length > 2 ? "…" : ""}`
       : "";
     const batchStatus = batch.status || (submitted.length ? "success" : "failed");
     const batchSummary = batch.summary || `批量入队完成：${batch.submitted_count || submitted.length} 个进入任务池。`;
     els.batchProjectStatus.textContent = `${batchSummary}${skippedReasonText}`;
     showToast(
       batchStatus === "failed" ? "批量入队未提交任何项目" : batchSummary,
-      batchStatus === "success" ? "success" : "warning",
+      batchStatus === "failed" ? "error" : batchStatus === "success" ? "success" : "warning",
     );
   } catch (error) {
     els.batchProjectStatus.textContent = `批量入队失败：${error.message}`;
