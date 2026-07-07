@@ -241,6 +241,7 @@ def test_auto_workflow_preflight_blocks_untested_llm_connection() -> None:
     assert preflight["guide_action"] == "test_llm"
     assert preflight["action_label"] == "测试连接"
     assert "成功连接测试记录" in preflight["detail"]
+    assert preflight["checked_at"]
 
 
 def test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm() -> None:

@@ -2427,6 +2427,7 @@ def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_sett
         "start_detail": start_issue,
         "resume_detail": resume_issue,
         "primary_mode": "resume" if resume_candidate else "start",
+        "checked_at": datetime.now().isoformat(timespec="seconds"),
     }
     if status == "success":
         return {

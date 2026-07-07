@@ -5210,7 +5210,9 @@ async function runAutoWorkflow(
     await refreshCurrentProjectDetail().catch(() => {});
     return;
   }
-  const metadata = state.currentProject?.metadata || {};
+  els.autoWorkflowStatus.textContent = "正在确认项目准备状态。";
+  const refreshed = await refreshCurrentProjectDetail({ includeOverview: false }).catch(() => null);
+  const metadata = refreshed?.metadata || state.currentProject?.metadata || {};
   const preflight = metadata.auto_workflow_preflight || {};
   const preflightBlocker = resume
     ? preflight.primary_mode === "resume" && preflight.can_resume === false
@@ -5413,6 +5415,7 @@ function renderAutoWorkflowPreflight(metadata = {}) {
   const actionLabel = String(preflight.action_label || "").trim();
   const actionTone = statusTone(preflight.action_tone || preflight.status || "");
   els.autoWorkflowStatus.dataset.status = actionTone;
+  els.autoWorkflowStatus.title = preflight.checked_at ? `预检时间：${formatProgressTime(preflight.checked_at)}` : "";
   els.autoWorkflowStatus.innerHTML = `
     <span>${escapeHtml(preflight.label || "自动流程状态")}：${escapeHtml(preflight.detail || "")}</span>
     ${guideAction ? `<button class="status-inline-action" type="button" data-auto-preflight-action="${escapeHtml(guideAction)}" data-tone="${escapeHtml(actionTone)}">${escapeHtml(actionLabel || "去处理")}</button>` : ""}
