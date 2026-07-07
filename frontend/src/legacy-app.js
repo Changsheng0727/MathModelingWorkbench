@@ -1518,12 +1518,9 @@ async function startSelectedProjectsBatch() {
     });
     await syncOverviewAfterAction(payload);
     const skipped = Array.isArray(batch.skipped) ? batch.skipped : [];
-    const skippedReasonText = skipped.length
-      ? ` 跳过原因：${skipped.slice(0, 2).map(batchSkipText).join("；")}${skipped.length > 2 ? "…" : ""}`
-      : "";
     const batchStatus = batch.status || (submitted.length ? "success" : "failed");
     const batchSummary = batch.summary || `批量入队完成：${batch.submitted_count || submitted.length} 个进入任务池。`;
-    els.batchProjectStatus.textContent = `${batchSummary}${skippedReasonText}`;
+    els.batchProjectStatus.innerHTML = `${escapeHtml(batchSummary)}${renderBatchSkippedItems(skipped)}`;
     showToast(
       batchStatus === "failed" ? "批量入队未提交任何项目" : batchSummary,
       batchStatus === "failed" ? "error" : batchStatus === "success" ? "success" : "warning",
@@ -1539,6 +1536,20 @@ async function startSelectedProjectsBatch() {
 function batchSkipText(item = {}) {
   const action = item.action_label ? `，下一步：${item.action_label}` : "";
   return `${item.project_name || item.project_id || "项目"}：${item.reason || "未通过预检"}${action}`;
+}
+
+function renderBatchSkippedItems(skipped = []) {
+  if (!skipped.length) {
+    return "";
+  }
+  const visible = skipped.slice(0, 2).map((item) => {
+    const action = item.project_id && item.guide_action
+      ? `<button class="batch-skip-action" type="button" data-batch-project-id="${escapeHtml(item.project_id)}" data-batch-guide-action="${escapeHtml(item.guide_action)}">${escapeHtml(item.action_label || "处理")}</button>`
+      : "";
+    return `<span class="batch-skip-item" data-tone="${escapeHtml(item.tone || "warning")}"><span>${escapeHtml(batchSkipText({ ...item, action_label: "" }))}</span>${action}</span>`;
+  }).join("");
+  const more = skipped.length > 2 ? `<span class="batch-skip-more">还有 ${escapeHtml(skipped.length - 2)} 个项目被跳过，请在项目列表继续处理。</span>` : "";
+  return `<span class="batch-skip-list" aria-label="跳过项目原因">${visible}${more}</span>`;
 }
 
 function projectSearchText(project = {}) {
@@ -4703,6 +4714,29 @@ function setProjectFilter(filter = "all") {
 
 els.projectBatchDetails?.addEventListener("toggle", () => {
   renderProjectList();
+});
+
+els.batchProjectStatus?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-batch-guide-action]");
+  if (!button) {
+    return;
+  }
+  const projectId = button.dataset.batchProjectId || "";
+  const action = button.dataset.batchGuideAction || "";
+  button.disabled = true;
+  try {
+    if (projectId) {
+      await openProject(projectId, { silent: true });
+    }
+    const completed = await runGuideAction(action);
+    if (completed !== false) {
+      showToast(button.textContent ? `已进入：${button.textContent}` : "已打开处理入口", "success");
+    }
+  } catch (error) {
+    showToast(`处理跳过项目失败：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+  }
 });
 
 els.projectList?.addEventListener("click", async (event) => {

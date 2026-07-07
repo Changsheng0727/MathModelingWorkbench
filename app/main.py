@@ -2345,6 +2345,7 @@ def build_auto_batch_skip(project_id: str, reason: str, meta: dict | None = None
 def build_auto_batch_result(requested_count: int, submitted: list[dict], skipped: list[dict], mode: str) -> dict:
     submitted_count = len(submitted)
     skipped_count = len(skipped)
+    actionable_skipped_count = sum(1 for item in skipped if item.get("project_id") and item.get("guide_action"))
     if submitted_count and skipped_count:
         status = "warning"
         summary = f"批量入队部分完成：{submitted_count} 个进入任务池，{skipped_count} 个被跳过。"
@@ -2358,6 +2359,7 @@ def build_auto_batch_result(requested_count: int, submitted: list[dict], skipped
         "requested_count": int(requested_count or 0),
         "submitted_count": submitted_count,
         "skipped_count": skipped_count,
+        "actionable_skipped_count": actionable_skipped_count,
         "status": status,
         "summary": summary,
         "mode": mode,

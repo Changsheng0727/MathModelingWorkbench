@@ -345,6 +345,7 @@ def test_auto_batch_result_reports_all_skipped_as_failed() -> None:
     assert batch["status"] == "failed"
     assert batch["submitted_count"] == 0
     assert batch["skipped_count"] == 2
+    assert batch["actionable_skipped_count"] == 0
     assert "未提交任何项目" in batch["summary"]
 
 
@@ -352,13 +353,14 @@ def test_auto_batch_result_reports_partial_submission_as_warning() -> None:
     batch = main.build_auto_batch_result(
         2,
         [{"project_id": "p1"}],
-        [{"project_id": "p2", "reason": "缺少分析"}],
+        [{"project_id": "p2", "reason": "缺少分析", "guide_action": "analyze_project"}],
         "auto",
     )
 
     assert batch["status"] == "warning"
     assert batch["submitted_count"] == 1
     assert batch["skipped_count"] == 1
+    assert batch["actionable_skipped_count"] == 1
 
 
 def test_auto_batch_skip_includes_project_name() -> None:
@@ -414,6 +416,7 @@ def test_auto_batch_skips_bad_metadata_and_submits_valid_project() -> None:
     assert batch["status"] == "warning"
     assert batch["submitted_count"] == 1
     assert batch["skipped_count"] == 2
+    assert batch["actionable_skipped_count"] == 1
     assert batch["skipped"][0]["project_id"] == "bad"
     assert "项目元数据无法读取" in batch["skipped"][0]["reason"]
     assert batch["skipped"][1]["project_name"] == "待确认项目"

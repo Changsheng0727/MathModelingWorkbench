@@ -1125,6 +1125,43 @@ p {
   font-size: 12px;
 }
 
+.batch-skip-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.batch-skip-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.batch-skip-item > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.batch-skip-action {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.batch-skip-more {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .project-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
