@@ -26,6 +26,7 @@ const state = {
   overviewGeneratedAt: "",
   projectSummary: {},
   projectSummaryFocus: {},
+  batchPreflight: null,
   uploadProgressStop: null,
   uploadProgressTotalSteps: 8,
   projectRestoreTried: false,
@@ -1449,9 +1450,13 @@ function updateProjectBatchControls(filteredProjects = null) {
   const selectedCount = state.selectedProjectIds.size;
   const visible = Array.isArray(filteredProjects) ? filteredProjects : currentFilteredProjects();
   const analyzedVisibleCount = visible.filter((project) => project.analysis_available).length;
+  const activePreflight = currentBatchPreflight();
   if (els.batchStartProjects) {
-    els.batchStartProjects.disabled = selectedCount === 0;
-    els.batchStartProjects.textContent = selectedCount ? `批量入队 ${selectedCount}` : "批量入队";
+    const readyCount = Number(activePreflight?.ready_count || 0);
+    els.batchStartProjects.disabled = selectedCount === 0 || activePreflight?.can_submit === false;
+    els.batchStartProjects.textContent = activePreflight
+      ? readyCount ? `入队可运行 ${readyCount}` : "无可入队项目"
+      : selectedCount ? `批量入队 ${selectedCount}` : "批量入队";
   }
   if (els.batchPreviewProjects) {
     els.batchPreviewProjects.disabled = selectedCount === 0;
@@ -1464,6 +1469,18 @@ function updateProjectBatchControls(filteredProjects = null) {
     els.selectAnalyzedProjects.disabled = analyzedVisibleCount === 0;
     els.selectAnalyzedProjects.textContent = analyzedVisibleCount ? `选择已分析 ${analyzedVisibleCount}` : "选择已分析";
   }
+}
+
+function batchSelectionKey() {
+  return Array.from(state.selectedProjectIds).sort().join("|");
+}
+
+function currentBatchPreflight() {
+  return state.batchPreflight?.selection_key === batchSelectionKey() ? state.batchPreflight : null;
+}
+
+function clearBatchPreflight() {
+  state.batchPreflight = null;
 }
 
 function currentFilteredProjects() {
@@ -1479,6 +1496,13 @@ async function startSelectedProjectsBatch() {
   const projectIds = Array.from(state.selectedProjectIds);
   if (!projectIds.length) {
     els.batchProjectStatus.textContent = "请先选择已分析项目。";
+    return;
+  }
+  const preflight = currentBatchPreflight();
+  if (preflight?.can_submit === false) {
+    els.batchProjectStatus.innerHTML = `${escapeHtml(preflight.summary || "没有可入队项目。")}${renderBatchSkippedItems(preflight.skipped || [])}`;
+    showToast("预检显示没有可入队项目，请先处理跳过项", "warning");
+    updateProjectBatchControls();
     return;
   }
   let settings;
@@ -1524,6 +1548,7 @@ async function startSelectedProjectsBatch() {
         state.selectedProjectIds.delete(job.project_id);
       }
     });
+    clearBatchPreflight();
     await syncOverviewAfterAction(payload);
     const skipped = Array.isArray(batch.skipped) ? batch.skipped : [];
     const batchStatus = batch.status || (submitted.length ? "success" : "failed");
@@ -1558,6 +1583,7 @@ async function previewSelectedProjectsBatch() {
       body: JSON.stringify({ project_ids: projectIds, mode: "auto" }),
     });
     const preflight = payload.batch_preflight || {};
+    state.batchPreflight = { ...preflight, selection_key: batchSelectionKey() };
     const skipped = Array.isArray(preflight.skipped) ? preflight.skipped : [];
     const readyText = preflight.ready_count ? ` 可点击“批量入队”提交 ${preflight.ready_count} 个项目。` : "";
     els.batchProjectStatus.innerHTML = `${escapeHtml(preflight.summary || "预检完成。")}${escapeHtml(readyText)}${renderBatchModeChips(preflight)}${renderBatchSkippedItems(skipped)}`;
@@ -4870,10 +4896,12 @@ els.projectList?.addEventListener("change", (event) => {
   } else {
     state.selectedProjectIds.delete(projectId);
   }
+  clearBatchPreflight();
   renderProjectList();
 });
 
 els.selectAnalyzedProjects?.addEventListener("click", () => {
+  clearBatchPreflight();
   currentFilteredProjects().forEach((project) => {
     if (project.analysis_available && project.id) {
       state.selectedProjectIds.add(project.id);
@@ -4884,6 +4912,7 @@ els.selectAnalyzedProjects?.addEventListener("click", () => {
 });
 
 els.clearProjectSelection?.addEventListener("click", () => {
+  clearBatchPreflight();
   state.selectedProjectIds.clear();
   renderProjectList();
   els.batchProjectStatus.textContent = "已清空批量选择。";
