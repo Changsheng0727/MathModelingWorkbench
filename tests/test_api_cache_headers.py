@@ -146,6 +146,19 @@ def test_project_summary_focus_prioritizes_missing_llm_settings() -> None:
     assert focus["filter"] == "all"
 
 
+def test_project_summary_focus_prioritizes_stale_llm_test() -> None:
+    focus = main.build_project_summary_focus(
+        {"total": 2, "failed": 1},
+        [{"id": "p1", "auto_workflow_status": "failed"}],
+        llm_settings={"configured": True, "connection_stale": True, "last_test_age_label": "2 天前"},
+    )
+
+    assert focus["guide_action"] == "test_llm"
+    assert focus["action_label"] == "测试连接"
+    assert focus["tone"] == "warning"
+    assert focus["filter"] == "all"
+
+
 def test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm() -> None:
     with TemporaryDirectory() as tmp:
         preflight = main.build_auto_workflow_preflight(
@@ -157,6 +170,30 @@ def test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm() -> No
     assert preflight["can_start"] is False
     assert preflight["guide_action"] == "focus_llm"
     assert preflight["action_label"] == "填写接口"
+
+
+def test_auto_workflow_preflight_warns_for_stale_llm_test() -> None:
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        artifacts = root / "artifacts"
+        artifacts.mkdir()
+        main.save_json(artifacts / "analysis.json", {"recommended_problem": {"id": "A"}})
+
+        preflight = main.build_auto_workflow_preflight(
+            root,
+            meta={"final_problem": {"id": "A"}},
+            llm_settings={
+                "configured": True,
+                "connection_stale": True,
+                "last_test_age_label": "2 天前",
+                "last_test": {"ok": True, "tested_at": "2026-01-01T00:00:00"},
+            },
+        )
+
+    assert preflight["can_start"] is True
+    assert preflight["status"] == "warning"
+    assert preflight["guide_action"] == "test_llm"
+    assert preflight["action_label"] == "测试连接"
 
 
 def test_auto_workflow_preflight_exposes_problem_selection_action() -> None:
@@ -208,7 +245,9 @@ if __name__ == "__main__":
     test_project_summary_focus_prioritizes_failures()
     test_project_summary_focus_flags_artifact_issues_before_urgent()
     test_project_summary_focus_prioritizes_missing_llm_settings()
+    test_project_summary_focus_prioritizes_stale_llm_test()
     test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm()
+    test_auto_workflow_preflight_warns_for_stale_llm_test()
     test_auto_workflow_preflight_exposes_problem_selection_action()
     test_progress_polling_hint_is_fast_only_while_active()
     test_progress_live_quiet_seconds_reads_stream_status()

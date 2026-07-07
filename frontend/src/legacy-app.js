@@ -4279,6 +4279,8 @@ async function runGuideAction(action, options = {}) {
     return;
   }
   if (action === "test_llm") {
+    scrollIntoViewIfPossible(els.llmSettingsForm);
+    els.testLlmSettings?.focus();
     els.testLlmSettings?.click();
     return;
   }

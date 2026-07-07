@@ -555,6 +555,17 @@ def build_project_summary_focus(
             "action_label": "测试连接",
             "guide_action": "test_llm",
         }
+    if llm_settings is not None and llm_settings.get("connection_stale"):
+        age = str(llm_settings.get("last_test_age_label") or "较早").strip()
+        return {
+            "filter": "all",
+            "count": total,
+            "label": "建议重测大模型连接",
+            "detail": f"最近一次成功连接测试在 {age}；先重测可以减少自动求解中途失败。",
+            "tone": "warning",
+            "action_label": "测试连接",
+            "guide_action": "test_llm",
+        }
     projects = projects or []
     priorities = [
         ("failed", "先修失败项目", "失败项目最影响生成成功率，建议先从这里继续或查看诊断。", "failed"),
@@ -2423,6 +2434,21 @@ def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_sett
             "can_resume": False,
             "label": label,
             "detail": detail,
+            "guide_action": "test_llm",
+            "action_label": "测试连接",
+            "action_tone": "warning",
+        }
+    if llm_settings.get("connection_stale"):
+        age = str(llm_settings.get("last_test_age_label") or "较早").strip()
+        return {
+            "status": "warning",
+            "can_start": True,
+            "can_resume": False,
+            "label": "建议重新测试大模型连接",
+            "detail": f"最近一次成功连接测试在 {age}；仍可开始，但先重测能减少中途失败。",
+            "guide_action": "test_llm",
+            "action_label": "测试连接",
+            "action_tone": "warning",
         }
     return {
         "status": "success",
