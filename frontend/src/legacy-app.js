@@ -4773,11 +4773,8 @@ els.runModeling.addEventListener("click", async () => {
   try {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/model/run`, { method: "POST" });
     renderProject(payload.project);
-    const out = payload.modeling?.outputs || {};
-    const tables = out.tables?.length ?? 0;
-    const figures = out.figures?.length ?? 0;
     els.modelingStatus.textContent = payload.modeling.success
-      ? `建模完成：生成 ${tables} 个结果表、${figures} 张图。`
+      ? "建模完成：结果文件已更新，可在“生成文件”中查看或打开位置。"
       : "建模失败，请查看日志。";
     await syncOverviewAfterAction(payload);
   } catch (error) {
@@ -4800,10 +4797,8 @@ els.runSpecialized.addEventListener("click", async () => {
     renderProject(payload.project);
     const out = payload.specialized?.outputs || {};
     const models = out.specialized_models?.length ?? 0;
-    const tables = out.tables?.length ?? 0;
-    const figures = out.figures?.length ?? 0;
     els.specializedStatus.textContent = payload.specialized.success
-      ? `专项建模完成：${models} 个模型、${tables} 个结果表、${figures} 张图。`
+      ? `专项建模完成：${models} 个模型已运行，结果文件可在“生成文件”中查看。`
       : "专项建模失败，请查看日志。";
     await syncOverviewAfterAction(payload);
   } catch (error) {

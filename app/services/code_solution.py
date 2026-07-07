@@ -331,7 +331,7 @@ def fallback_solver_spec_from_analysis(analysis: dict[str, Any]) -> dict[str, An
     rec = analysis.get("recommended_problem", {}) or {}
     tasks = rec.get("tasks") or []
     if not tasks:
-        tasks = ["读取赛题附件并形成可追溯计算结果"]
+        tasks = ["读取赛题附件并形成可核对的计算结果"]
     return {
         "final_problem_id": rec.get("id") or "",
         "final_problem_title": rec.get("title") or "",
@@ -348,7 +348,7 @@ def fallback_solver_spec_from_analysis(analysis: dict[str, Any]) -> dict[str, An
                 "baseline_model": "先读取真实附件字段并生成最小可行统计或可行性检查",
                 "candidate_models": ["可解释基线", "任务适配的优化或统计模型"],
                 "poc_validation": "用真实附件数据检查字段映射、单位换算、目标函数或约束是否能计算。",
-                "expected_outputs": ["结果表", "结果图", "关键指标", "可追溯日志"],
+                "expected_outputs": ["结果表", "结果图", "关键指标", "运行日志"],
                 "frozen_outputs": ["最终目标值", "关键方案表", "模型检验指标"],
             }
             for index, task in enumerate(tasks, 1)
@@ -2481,7 +2481,7 @@ def generate_result_prose(
       "result": "可放入摘要固定句式“得到……”后面的简洁结果；必须包含该问题最关键的数值或结论，不要出现具体文件名、Sheet名或题号字母"
     }}
   ],
-  "solving_intro": "模型求解结果总述，说明读取了哪些附件、形成了哪些可追溯结果",
+  "solving_intro": "模型求解结果总述，说明读取了哪些附件、形成了哪些可定位到结果文件的结论",
   "per_problem_commentary": [
     {{
       "problem_index": 1,
@@ -2532,7 +2532,7 @@ def build_computed_result_tex(manifest: dict[str, Any], prose: dict[str, Any]) -
     lines = [
         "% BEGIN AUTO COMPUTED RESULTS",
         r"\subsection{模型计算结果}",
-        latex_paragraph(prose.get("solving_intro") or "本节汇总由附件数据得到的可追溯结果。所有数值均来自项目 results 目录下的结果清单、结果表和图形文件。"),
+        latex_paragraph(prose.get("solving_intro") or "本节汇总由附件数据得到的计算结果。所有数值均来自项目 results 目录下的结果清单、结果表和图形文件。"),
         "",
     ]
     by_problem = group_problem_results(manifest)
@@ -2953,7 +2953,7 @@ def preview_table_commentary(
             f"{title}给出了装配方案的约束满足状态和惩罚来源。结果显示配置切换为{format_metric(config_switches)}次、"
             f"颜色切换为{format_metric(color_switches)}次，最大柴油连续段为{format_metric(diesel_run)}，最大四驱连续段为{format_metric(four_run)}；"
             f"若按当前权重合成，综合目标值为{format_metric(objective)}。由此可见，方案在需求守恒基础上仍存在连续段和切换代价，"
-            f"切换差异和连续段影响决定了该排序方案应被表述为可追溯的启发式可行方案，而不是未经证明的全局最优方案。"
+            f"切换差异和连续段影响决定了该排序方案应被表述为可核对的启发式可行方案，而不是未经证明的全局最优方案。"
         )
 
     if any(token in title for token in ["装配顺序", "排产", "排序"]):
@@ -3810,7 +3810,7 @@ def validation_conclusion_phrase(problem_index: int, item: dict[str, Any], metri
         return "覆盖、路径或续航等核心硬约束具有正裕度，模型输出可作为可行调度方案使用。"
     if any(key in metrics for key in ["mae", "rmse", "sMAPE", "mape", "accuracy", "macro_f1"]):
         return "误差或分类评价指标已由代码输出，可用于判断模型精度和稳定性。"
-    return "检验指标已随结果清单同步生成，可支撑本问结果的可追溯复核。"
+    return "检验指标已随结果清单同步生成，可支撑本问结果的来源核对。"
 
 
 def numeric_metric_value(value: Any) -> float | None:
@@ -4478,7 +4478,7 @@ def rebuild_computed_abstract(existing_abstract: str, manifest: dict[str, Any], 
         method = abstract_problem_method_phrase(problem_index, item, manifest)
         result = sanitize_abstract_result(results.get(problem_index) or abstract_result_from_problem_item(problem_index, item))
         if not result:
-            result = "由附件数据计算得到可追溯结果"
+            result = "由附件数据计算得到关键指标和可用方案"
         sentences.append(f"针对问题{problem_index}，{method}，得到{result}。")
     reliability = abstract_reliability_sentence(manifest)
     if reliability:
@@ -4505,7 +4505,7 @@ def abstract_intro_sentence(title: str, manifest: dict[str, Any]) -> str:
         return (
             f"针对{title}中首末流向货量预测、路径集包规则和设备扩容配置的联合优化问题，"
             "本文以历史包裹量、唯一走货路由、现有分拣能力和候选设备参数为依据，"
-            "构建预测--路由约束--容量扩容的可追溯建模流程。"
+            "构建预测--路由约束--容量扩容的建模流程，并在结果清单中保留关键输入与输出。"
         )
     return f"针对{title}中的数据预测、约束优化和决策评价问题，本文依据题目数据建立可复现的模型求解流程。"
 
@@ -5298,7 +5298,7 @@ def local_result_prose(manifest: dict[str, Any], error: str) -> dict[str, Any]:
             {
                 "problem_index": index,
                 "description": item.get("description") or f"问题{index}已形成计算结果。",
-                "analysis": item.get("analysis") or "结果表和图形来自求解输出，可用于替换原论文中待计算的占位说明。",
+                "analysis": item.get("analysis") or "结果文件来自本次求解输出，可用于替换原论文中待计算的占位说明。",
                 "conclusion": item.get("conclusion") or "该子问题的精确结论以结果清单和对应结果文件为准。",
             }
         )

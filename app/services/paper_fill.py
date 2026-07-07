@@ -612,9 +612,9 @@ def render_validation_section(best_metrics: pd.DataFrame, specialized: dict[str,
         lines.append(
             f"预测模型采用时间后验验证，而非随机打乱验证，以减少未来信息泄漏。各目标变量最优模型的平均 MAPE 为 {avg_mape:.2f}\\%，说明模型在短期预测任务中具有可接受的误差水平。"
         )
-    if specialized.get("figures"):
+    if specialized.get("figures") or specialized.get("tables"):
         lines.append(
-            f"专项建模共生成 {len(specialized.get('tables', []))} 个结果表和 {len(specialized.get('figures', []))} 张图，均记录在附录所列的专项结果清单中。"
+            "专项建模结果已写入附录所列的结果清单；正文检验只引用上文已回填的误差表、预测表、备菜表、套餐表和对应图形结论，不再用文件数量作为可靠性依据。"
         )
     if baseline.get("tables_overview"):
         table_count = baseline.get("table_count", len(baseline.get("tables_overview", [])))
