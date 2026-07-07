@@ -1,9 +1,13 @@
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from fastapi.testclient import TestClient
+
+import app.main as main
 from app.services import llm_settings
 
 
@@ -48,7 +52,31 @@ def test_record_llm_test_result_persists_redacted_message() -> None:
     assert github_token not in last_test["diagnosis"]["suggested_action"]
 
 
+def test_llm_test_endpoint_returns_redacted_error() -> None:
+    original_path = llm_settings.SETTINGS_PATH
+    api_key = "sk" + "-test_" + "abcdefghijklmnopqrstuvwxyz"
+    jwt = "eyJ" + "abc.def.ghi"
+    with TemporaryDirectory() as temp_dir:
+        try:
+            llm_settings.SETTINGS_PATH = Path(temp_dir) / "llm.json"
+            with (
+                patch.object(main, "get_llm_settings", return_value={"configured": True}),
+                patch.object(main, "call_chat_completion", side_effect=RuntimeError(f"bad key {api_key}; Bearer {jwt}")),
+            ):
+                response = TestClient(main.app).post("/api/settings/llm/test")
+        finally:
+            llm_settings.SETTINGS_PATH = original_path
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert api_key not in payload["message"]
+    assert jwt not in payload["message"]
+    assert api_key not in str(payload.get("diagnosis", {}))
+    assert jwt not in str(payload.get("diagnosis", {}))
+
+
 if __name__ == "__main__":
     test_redact_sensitive_text_masks_common_tokens()
     test_record_llm_test_result_persists_redacted_message()
+    test_llm_test_endpoint_returns_redacted_error()
     print("llm_settings_redaction_tests_ok")

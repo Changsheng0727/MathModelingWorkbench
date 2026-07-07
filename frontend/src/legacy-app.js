@@ -574,7 +574,9 @@ function setLlmSettingsStatus(message, tone = "") {
   if (!els.llmSettingsStatus) {
     return;
   }
-  els.llmSettingsStatus.textContent = redactSensitiveText(message || "");
+  const safeMessage = redactSensitiveText(message || "");
+  els.llmSettingsStatus.textContent = safeMessage;
+  els.llmSettingsStatus.title = safeMessage.includes("[REDACTED]") ? "错误信息中可能包含密钥，界面已自动隐藏。" : "";
   if (tone) {
     els.llmSettingsStatus.dataset.status = tone;
   } else {

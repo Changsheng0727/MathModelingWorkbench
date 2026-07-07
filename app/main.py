@@ -63,7 +63,7 @@ from app.services.llm_assistant import (
     write_material_passport,
 )
 from app.services.llm_stream import bind_llm_stream, load_llm_live_stream
-from app.services.llm_settings import clear_llm_settings, get_llm_settings, record_llm_test_result, save_llm_settings
+from app.services.llm_settings import clear_llm_settings, get_llm_settings, record_llm_test_result, redact_sensitive_text, save_llm_settings
 from app.services.modeling import generate_modeling_script, run_modeling_script
 from app.services.paper import write_artifacts
 from app.services.paper_fill import fill_paper_with_results
@@ -663,12 +663,17 @@ def test_llm_settings(project_id: str | None = None) -> dict:
         )
     except Exception as exc:
         diagnosis = diagnose_auto_workflow_exception(exc, "llm_settings_test")
-        updated_settings = record_llm_test_result(False, "failed", f"{type(exc).__name__}: {exc}", diagnosis)
+        message = redact_sensitive_text(f"{type(exc).__name__}: {exc}")
+        safe_diagnosis = {
+            key: redact_sensitive_text(str(value)) if isinstance(value, str) else value
+            for key, value in diagnosis.items()
+        }
+        updated_settings = record_llm_test_result(False, "failed", message, safe_diagnosis)
         return attach_optional_project({
             "ok": False,
             "status": "failed",
-            "message": f"{type(exc).__name__}: {exc}",
-            "diagnosis": diagnosis,
+            "message": message,
+            "diagnosis": safe_diagnosis,
             "settings": updated_settings,
             "overview": build_product_overview_response(),
         }, project_id)
