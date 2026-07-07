@@ -5224,8 +5224,30 @@ function renderAutoWorkflowPreflight(metadata = {}) {
   if (!preflight.label && !preflight.detail) {
     return;
   }
-  els.autoWorkflowStatus.textContent = `${preflight.label || "自动流程状态"}：${preflight.detail || ""}`;
+  const guideAction = String(preflight.guide_action || "").trim();
+  const actionLabel = String(preflight.action_label || "").trim();
+  const actionTone = statusTone(preflight.action_tone || preflight.status || "");
+  els.autoWorkflowStatus.dataset.status = actionTone;
+  els.autoWorkflowStatus.innerHTML = `
+    <span>${escapeHtml(preflight.label || "自动流程状态")}：${escapeHtml(preflight.detail || "")}</span>
+    ${guideAction ? `<button class="status-inline-action" type="button" data-auto-preflight-action="${escapeHtml(guideAction)}" data-tone="${escapeHtml(actionTone)}">${escapeHtml(actionLabel || "去处理")}</button>` : ""}
+  `;
 }
+
+els.autoWorkflowStatus?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-auto-preflight-action]");
+  if (!button) {
+    return;
+  }
+  button.disabled = true;
+  try {
+    await runGuideAction(button.dataset.autoPreflightAction || "");
+  } catch (error) {
+    showToast(`操作失败：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+  }
+});
 
 function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
   if (!element) {

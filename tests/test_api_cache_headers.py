@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -131,6 +132,37 @@ def test_project_summary_focus_prioritizes_missing_llm_settings() -> None:
     assert focus["filter"] == "all"
 
 
+def test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm() -> None:
+    with TemporaryDirectory() as tmp:
+        preflight = main.build_auto_workflow_preflight(
+            Path(tmp),
+            meta={},
+            llm_settings={"configured": False},
+        )
+
+    assert preflight["can_start"] is False
+    assert preflight["guide_action"] == "focus_llm"
+    assert preflight["action_label"] == "填写接口"
+
+
+def test_auto_workflow_preflight_exposes_problem_selection_action() -> None:
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        artifacts = root / "artifacts"
+        artifacts.mkdir()
+        main.save_json(artifacts / "analysis.json", {"recommended_problem": {"id": "A"}})
+
+        preflight = main.build_auto_workflow_preflight(
+            root,
+            meta={},
+            llm_settings={"configured": True, "last_test": {"ok": True, "tested_at": "2026-01-01T00:00:00"}},
+        )
+
+    assert preflight["can_start"] is False
+    assert preflight["guide_action"] == "open_problems"
+    assert "A" in preflight["detail"]
+
+
 def test_progress_polling_hint_is_fast_only_while_active() -> None:
     assert main.progress_poll_after_ms("running") < main.progress_poll_after_ms("success")
     assert main.progress_poll_after_ms("queued") == 700
@@ -161,6 +193,8 @@ if __name__ == "__main__":
     test_project_summary_focus_prioritizes_failures()
     test_project_summary_focus_flags_artifact_issues_before_urgent()
     test_project_summary_focus_prioritizes_missing_llm_settings()
+    test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm()
+    test_auto_workflow_preflight_exposes_problem_selection_action()
     test_progress_polling_hint_is_fast_only_while_active()
     test_progress_live_quiet_seconds_reads_stream_status()
     test_progress_payload_gets_refresh_timestamp()

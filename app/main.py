@@ -2293,23 +2293,38 @@ def should_resume_batch_project(meta: dict, mode: str) -> bool:
     )
 
 
-def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resume: bool = False, llm_settings: dict | None = None) -> str:
+def auto_workflow_preflight_blocker(root: Path, *, meta: dict | None = None, resume: bool = False, llm_settings: dict | None = None) -> dict[str, object]:
     llm_settings = llm_settings if isinstance(llm_settings, dict) else get_llm_settings()
     if not llm_settings.get("configured"):
-        return "尚未配置大模型接口密钥。"
+        return {
+            "detail": "尚未配置大模型接口密钥。",
+            "guide_action": "focus_llm",
+            "action_label": "填写接口",
+            "tone": "warning",
+        }
     test_issue = llm_test_blocking_issue(llm_settings)
     if test_issue:
-        return test_issue
+        return {
+            "detail": test_issue,
+            "guide_action": "test_llm",
+            "action_label": "测试连接",
+            "tone": "failed",
+        }
     analysis_path = root / "artifacts" / "analysis.json"
     if not analysis_path.exists():
-        return "项目尚未完成赛题分析。"
+        return {
+            "detail": "项目尚未完成赛题分析。",
+            "guide_action": "analyze_project",
+            "action_label": "重新分析",
+            "tone": "warning",
+        }
     if resume:
-        return ""
+        return {}
     metadata = meta if isinstance(meta, dict) else load_json(root / "metadata.json")
     final_problem = metadata.get("final_problem") if isinstance(metadata.get("final_problem"), dict) else {}
     final_id = str(final_problem.get("id") or final_problem.get("final_problem_id") or "").strip()
     if final_id:
-        return ""
+        return {}
     try:
         analysis = load_json(analysis_path)
     except Exception:
@@ -2317,8 +2332,22 @@ def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resum
     recommended = analysis.get("recommended_problem") if isinstance(analysis.get("recommended_problem"), dict) else {}
     recommended_id = str(recommended.get("id") or recommended.get("final_problem_id") or "").strip()
     if recommended_id:
-        return f"请先确认 {recommended_id} 题为最终选题。"
-    return "尚未确认最终选题。"
+        return {
+            "detail": f"请先确认 {recommended_id} 题为最终选题。",
+            "guide_action": "open_problems",
+            "action_label": "去确认选题",
+            "tone": "warning",
+        }
+    return {
+        "detail": "尚未确认最终选题。",
+        "guide_action": "open_problems",
+        "action_label": "去确认选题",
+        "tone": "warning",
+    }
+
+
+def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resume: bool = False, llm_settings: dict | None = None) -> str:
+    return str(auto_workflow_preflight_blocker(root, meta=meta, resume=resume, llm_settings=llm_settings).get("detail") or "")
 
 
 def llm_test_blocking_issue(llm_settings: dict) -> str:
@@ -2337,8 +2366,10 @@ def llm_test_blocking_issue(llm_settings: dict) -> str:
 def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_settings: dict | None = None) -> dict:
     metadata = meta if isinstance(meta, dict) else load_json(root / "metadata.json")
     llm_settings = llm_settings if isinstance(llm_settings, dict) else get_llm_settings()
-    start_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=False, llm_settings=llm_settings)
-    resume_issue = auto_workflow_preflight_issue(root, meta=metadata, resume=True, llm_settings=llm_settings)
+    start_blocker = auto_workflow_preflight_blocker(root, meta=metadata, resume=False, llm_settings=llm_settings)
+    resume_blocker = auto_workflow_preflight_blocker(root, meta=metadata, resume=True, llm_settings=llm_settings)
+    start_issue = str(start_blocker.get("detail") or "")
+    resume_issue = str(resume_blocker.get("detail") or "")
     can_resume = should_resume_batch_project(metadata, "auto") and not resume_issue
     status = str(metadata.get("auto_workflow_status") or "")
     if status == "success":
@@ -2364,6 +2395,9 @@ def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_sett
             "can_resume": False,
             "label": "暂不能开始自动流程",
             "detail": start_issue,
+            "guide_action": start_blocker.get("guide_action") or "",
+            "action_label": start_blocker.get("action_label") or "",
+            "action_tone": start_blocker.get("tone") or "warning",
         }
     last_test = llm_settings.get("last_test") if isinstance(llm_settings.get("last_test"), dict) else {}
     if not last_test.get("ok"):
