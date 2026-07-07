@@ -5360,7 +5360,9 @@ function updateAutoWorkflowButtons(status = "", progress = {}, metadata = state.
   const preflight = metadata.auto_workflow_preflight || {};
   const hasPreflight = Object.keys(preflight).length > 0;
   const canStart = !hasPreflight || preflight.can_start !== false;
-  const canResume = Boolean(progress.can_resume || preflight.can_resume) || ["failed", "cancelled", "completed_with_warnings", "cancel_requested", "interrupted"].includes(status);
+  const fallbackCanResume = Boolean(progress.can_resume) || ["failed", "cancelled", "completed_with_warnings", "cancel_requested", "interrupted"].includes(status);
+  const canResume = hasPreflight ? Boolean(preflight.can_resume) : fallbackCanResume;
+  const resumeBlocker = preflight.resume_detail || (preflight.primary_mode === "resume" ? preflight.detail : "");
   if (els.runAutoWorkflow) {
     els.runAutoWorkflow.disabled = running || !canStart;
     els.runAutoWorkflow.title = running
@@ -5373,7 +5375,7 @@ function updateAutoWorkflowButtons(status = "", progress = {}, metadata = state.
     els.resumeAutoWorkflow.disabled = running || !canResume;
     els.resumeAutoWorkflow.title = canResume
       ? progress.resume_hint || progress.last_failure_diagnosis?.suggested_action || preflight.detail || "从上次成功阶段继续生成"
-      : "当前没有可继续的自动流程";
+      : resumeBlocker || "当前没有可继续的自动流程";
   }
   if (els.cancelAutoWorkflow) {
     els.cancelAutoWorkflow.disabled = !running || Boolean(progress.cancel_requested);

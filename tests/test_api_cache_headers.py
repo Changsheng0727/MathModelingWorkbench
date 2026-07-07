@@ -256,6 +256,26 @@ def test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm() -> No
     assert preflight["action_label"] == "填写接口"
 
 
+def test_auto_workflow_preflight_blocks_resume_when_llm_missing() -> None:
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        artifacts = root / "artifacts"
+        artifacts.mkdir()
+        main.save_json(artifacts / "analysis.json", {"recommended_problem": {"id": "A"}})
+
+        preflight = main.build_auto_workflow_preflight(
+            root,
+            meta={"auto_workflow_status": "failed", "final_problem": {"id": "A"}},
+            llm_settings={"configured": False},
+        )
+
+    assert preflight["primary_mode"] == "resume"
+    assert preflight["can_resume"] is False
+    assert preflight["label"] == "暂不能继续生成"
+    assert preflight["guide_action"] == "focus_llm"
+    assert "大模型" in preflight["resume_detail"]
+
+
 def test_auto_workflow_preflight_blocks_stale_llm_test() -> None:
     with TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -336,6 +356,7 @@ if __name__ == "__main__":
     test_batch_llm_preflight_requires_recent_successful_test()
     test_auto_workflow_preflight_blocks_untested_llm_connection()
     test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm()
+    test_auto_workflow_preflight_blocks_resume_when_llm_missing()
     test_auto_workflow_preflight_blocks_stale_llm_test()
     test_auto_workflow_preflight_exposes_problem_selection_action()
     test_progress_polling_hint_is_fast_only_while_active()

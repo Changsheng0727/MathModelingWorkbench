@@ -2418,29 +2418,46 @@ def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_sett
     resume_blocker = auto_workflow_preflight_blocker(root, meta=metadata, resume=True, llm_settings=llm_settings)
     start_issue = str(start_blocker.get("detail") or "")
     resume_issue = str(resume_blocker.get("detail") or "")
-    can_resume = should_resume_batch_project(metadata, "auto") and not resume_issue
+    resume_candidate = should_resume_batch_project(metadata, "auto")
+    can_resume = resume_candidate and not resume_issue
     status = str(metadata.get("auto_workflow_status") or "")
+    base = {
+        "can_start": not start_issue,
+        "can_resume": can_resume,
+        "start_detail": start_issue,
+        "resume_detail": resume_issue,
+        "primary_mode": "resume" if resume_candidate else "start",
+    }
     if status == "success":
         return {
+            **base,
             "status": "success",
             "can_start": not start_issue,
             "can_resume": False,
             "label": "自动流程已完成",
             "detail": "可以查看生成文件；若题目或设置有变化，也可重新开始。",
         }
+    if resume_candidate and resume_issue:
+        return {
+            **base,
+            "status": "failed",
+            "label": "暂不能继续生成",
+            "detail": resume_issue,
+            "guide_action": resume_blocker.get("guide_action") or start_blocker.get("guide_action") or "",
+            "action_label": resume_blocker.get("action_label") or start_blocker.get("action_label") or "",
+            "action_tone": resume_blocker.get("tone") or start_blocker.get("tone") or "warning",
+        }
     if can_resume:
         return {
+            **base,
             "status": "warning",
-            "can_start": not start_issue,
-            "can_resume": True,
             "label": "可从断点继续",
             "detail": resume_issue or metadata.get("auto_workflow_repair_hint") or "系统会复用已完成阶段并继续修复。",
         }
     if start_issue:
         return {
+            **base,
             "status": "failed",
-            "can_start": False,
-            "can_resume": False,
             "label": "暂不能开始自动流程",
             "detail": start_issue,
             "guide_action": start_blocker.get("guide_action") or "",
@@ -2448,9 +2465,8 @@ def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_sett
             "action_tone": start_blocker.get("tone") or "warning",
         }
     return {
+        **base,
         "status": "success",
-        "can_start": True,
-        "can_resume": False,
         "label": "可以开始自动流程",
         "detail": "已具备大模型接口、赛题分析和最终选题，可生成代码、运行结果并撰写论文。",
     }
