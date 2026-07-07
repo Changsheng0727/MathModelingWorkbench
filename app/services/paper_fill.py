@@ -489,7 +489,7 @@ def render_abstract(
             f"{row['price_level']}价格 {float(row['portion_price']):.2f} 元" for _, row in totals.iterrows()
         )
         parts.append(f"在套餐设计中，通过价格偏差和历史偏好综合评分得到 {summary} 的候选方案。")
-    parts.append("模型结果均由程序自动生成并回填至论文，保证图表、指标和文字结论具有可追溯性。")
+    parts.append("模型结果均由程序自动生成并回填至论文，保证图表、指标和文字结论与结果文件一致。")
     return "".join(parts)
 
 

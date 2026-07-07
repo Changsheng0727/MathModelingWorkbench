@@ -54,8 +54,8 @@ STANDARD_PAPER_WORKFLOW: list[dict[str, Any]] = [
         "rules": [
             "编译 LaTeX 后检查 PDF 页数、A4、未加密、目录、参考文献、附录、匿名要求和交叉引用。",
             "审查摘要是否严格包含背景目标、首先/随后/再/最后的方法链、逐问题固定句式、可靠性检验和最终结论。",
-            "审查模型建立与模型求解边界、分问题结构、图表自然判读、引用与附录、AI 工具披露和数值可追溯性。",
-            "最终输出前执行学术诚信门禁：核对引用真实性、主张-证据对齐、数值来源、过程记录和支撑材料完整性。",
+            "审查模型建立与模型求解边界、分问题结构、图表自然判读、引用与附录、AI 工具披露和数值来源。",
+            "最终输出前执行规范检查：核对引用真实性、主张-证据对齐、数值来源、过程记录和支撑材料完整性。",
             "审稿应包含方法论审查、领域合理性审查和最强反方挑战，避免只做格式检查或无条件接受生成内容。",
             "审稿器应额外检查 G1-G6 建模关卡：题面解析、PoC 可行性、代码运行、结果冻结、论文回填和终稿审查是否留下证据。",
         ],
@@ -338,7 +338,7 @@ MODELING_PROCESS_GATES: list[dict[str, Any]] = [
     {
         "id": "G6_final_review",
         "name": "终稿审查关",
-        "purpose": "在导出前检查格式、公式、图表、摘要、引用、可追溯性和支撑材料。",
+        "purpose": "在导出前检查格式、公式、图表、摘要、引用、数值来源和支撑材料。",
         "pass_criteria": [
             "LaTeX 编译无致命错误，PDF、Word 和支撑材料包生成成功。",
             "审稿报告没有高严重失败项；警告项给出可执行修订建议。",
@@ -404,7 +404,7 @@ BACKEND_SKILLS: list[dict[str, Any]] = [
         "backend_guidance": [
             "在单模型 LLM 流程中模拟多角色检查：先提想法，再检查数据，再给模型和代码求解规范，再写报告，最后审查。",
             "指定模型辅助模块检索资料时，应产出原理、适配性、伪代码、图表和论文落点。",
-            "审查阶段像 Critic 一样检查结果边界、页数、图表说明、引用和可追溯性。",
+            "审查阶段像 Critic 一样检查结果边界、页数、图表说明、引用和数值来源。",
         ],
     },
     {
@@ -516,7 +516,7 @@ BACKEND_SKILLS: list[dict[str, Any]] = [
         "license_note": "资源合集包含论文、模板、算法和资料；后端不复制原文、代码或论文，只吸收优秀论文阅读与评阅维度。",
         "why_selected": "这些仓库覆盖国赛、美赛、研究生数模、论文模板、优秀论文和常见算法，适合转化为审稿清单。",
         "backend_guidance": [
-            "审稿器关注摘要完整性、模型创新性、结果可追溯性、图表表达、灵敏度分析和推广价值。",
+            "审稿器关注摘要完整性、模型创新性、结果来源、图表表达、灵敏度分析和推广价值。",
             "优秀论文只作为结构和评价维度参考，不把其中结果、公式或段落迁移到用户论文。",
             "参考文献列表必须来自用户题包、检索结果或通用真实资料，不生成不存在的论文条目。",
         ],
@@ -537,15 +537,15 @@ BACKEND_SKILLS: list[dict[str, Any]] = [
     },
     {
         "id": "academic-research-skills-integrity-pipeline",
-        "name": "Academic Research Skills 人机协作与诚信门禁",
+        "name": "Academic Research Skills 人机协作与规范检查",
         "category": "academic_research_pipeline",
         "source": "Imbad0202/academic-research-skills",
         "source_url": "https://github.com/Imbad0202/academic-research-skills",
-        "license_note": "CC BY-NC 4.0；后端仅总结人机协作、研究流程、诚信门禁和审稿思想，不复制第三方代码、模板、agent 文件或 prompt 原文。",
+        "license_note": "CC BY-NC 4.0；后端仅总结人机协作、研究流程、引用核查和审稿思想，不复制第三方代码、模板、agent 文件或 prompt 原文。",
         "why_selected": "该仓库把深度研究、论文写作、多视角审稿和完整学术 pipeline 组织成带人工确认、引用核查、主张对齐、材料护照和最终诚信检查的闭环，适合增强数学建模自动论文的可信度。",
         "backend_guidance": [
             "目标或模型意图不清时先进入引导澄清，确认研究问题、输出、约束、证据来源和不可自动判断的人工复核点。",
-            "自动论文流程采用研究/建模、写作、诚信检查、审稿、修订、最终诚信检查和过程记录的阶段意识；关键边界不把草稿直接当成最终答案。",
+            "自动论文流程采用研究/建模、写作、引用核查、审稿、修订和过程记录的阶段意识；关键边界不把草稿直接当成最终答案。",
             "在论文生成和结果回填中执行主张-证据对齐：摘要数值、结论判断、引用支撑和图表解释都必须能追溯到真实来源或程序输出。",
             "审查阶段模拟多视角评审，包括方法论、领域解释、跨视角影响和 Devil's Advocate 反方挑战；严重逻辑或证据问题不能被格式通过掩盖。",
             "支撑材料包保留材料护照式记录：输入材料、清洗与计算脚本、manifest、图表、日志、审查报告、AI 工具披露和人工复核清单。",
@@ -741,9 +741,9 @@ def render_backend_skill_context(max_chars: int = 12000) -> str:
         "后端已集成的数学建模与科研写作技能库要求如下：",
         "1. 仅吸收公开项目的方法论与流程，不复制第三方代码、模板、论文或大段文本。",
         "2. 所有精确数值必须来自上传附件、程序运行结果、检索到的真实资料或审查报告；不能由 LLM 编造。",
-        "3. 自动流程默认采用 LLM 当场分析、代码求解执行和论文结果整合，必须保留可追溯输出、LaTeX 编译、论文审查和支撑材料包。",
+        "3. 自动流程默认采用 LLM 当场分析、代码求解执行和论文结果整合，必须保留结果清单、LaTeX 编译、论文审查和支撑材料包。",
         "4. 自动求解采用 G1-G6 关卡：题面解析、方法 PoC、代码执行、结果冻结、论文回填、终稿审查；每关都要留下证据。",
-        "5. 最终论文要通过学术诚信门禁：主张-证据对齐、引用真实可核、数值来源明确、过程记录完整、人工复核点清楚。",
+        "5. 最终论文要通过规范检查：主张-证据对齐、引用真实可核、数值来源明确、过程记录完整、人工复核点清楚。",
         "",
         render_modeling_process_gates(max_chars=3500),
         "",
@@ -774,7 +774,7 @@ def render_backend_skill_context(max_chars: int = 12000) -> str:
 def write_backend_skill_report(root: Path) -> dict[str, str]:
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "source_policy": "Summarize workflow ideas from public GitHub and official contest sources; do not vendor third-party code, templates, papers, prompts, agents, UI assets, scripts, or long text into the backend. Academic-research-skills, MathModeling-skills, taste-skill, and impeccable are integrated as methodology, process-gate, UX-quality, hardening, and integrity-review guidance only.",
+        "source_policy": "Summarize workflow ideas from public GitHub and official contest sources; do not vendor third-party code, templates, papers, prompts, agents, UI assets, scripts, or long text into the backend. Academic-research-skills, MathModeling-skills, taste-skill, and impeccable are integrated as methodology, process-gate, UX-quality, hardening, and review guidance only.",
         "standard_paper_workflow": list_standard_paper_workflow(),
         "standard_paper_checklist": list_standard_paper_checklist(),
         "model_method_routes": list_model_method_routes(),
@@ -796,7 +796,7 @@ def write_backend_skill_report(root: Path) -> dict[str, str]:
 
 def render_backend_skill_report(payload: dict[str, Any]) -> str:
     lines = [
-        "# GitHub 数学建模、科研写作与诚信门禁 Skill 集成报告",
+        "# GitHub 数学建模、科研写作与规范检查 Skill 集成报告",
         "",
         f"- 生成时间：{payload.get('generated_at')}",
         f"- 集成策略：{payload.get('source_policy')}",

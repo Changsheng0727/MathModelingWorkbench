@@ -287,7 +287,7 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
     def skill_context_step() -> dict[str, Any]:
         artifacts = write_backend_skill_report(root)
         update_artifacts(meta, artifacts)
-        return {"success": True, "detail": "GitHub 数学建模、科研写作与学术诚信技能库已注入后端上下文。", "artifacts": artifacts}
+        return {"success": True, "detail": "GitHub 数学建模、科研写作与规范检查规则已注入后端上下文。", "artifacts": artifacts}
 
     def attachment_profile_step() -> dict[str, Any]:
         artifacts = build_attachment_profile(root, analysis)
@@ -307,7 +307,7 @@ def _run_auto_workflow(root: Path, meta: dict[str, Any], resume: bool = False) -
         }
 
     steps: list[tuple[str, str, StepFn, bool]] = [
-        ("backend_skills", "GitHub 技能库与诚信门禁上下文注入", skill_context_step, False),
+        ("backend_skills", "GitHub 技能库与规范检查上下文注入", skill_context_step, False),
         ("attachment_profile", "并发附件画像与字段缓存", attachment_profile_step, False),
         ("llm_planning", "大模型当场分析、选题与代码求解规划", llm_planning_step, True),
         ("computed_solution", "LLM 规划代码求解、运行结果、分问题与图表完整性校验", computed_solution_step, True),

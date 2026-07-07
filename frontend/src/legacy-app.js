@@ -3366,8 +3366,8 @@ function renderArtifacts(metadata, projectId) {
     ["paper_result_filled", "结果整合论文 LaTeX"],
     ["auto_workflow_report", "自动解题报告"],
     ["auto_workflow_report_json", "自动解题 JSON"],
-    ["backend_skill_research", "GitHub 技能库与诚信门禁报告"],
-    ["backend_skill_research_json", "GitHub 技能库与诚信门禁 JSON"],
+    ["backend_skill_research", "GitHub 技能库与规范检查报告"],
+    ["backend_skill_research_json", "GitHub 技能库与规范检查 JSON"],
     ["code_graph_report", "代码图谱报告"],
     ["code_graph_json", "代码图谱 JSON"],
     ["paper_autofilled", "回填论文 LaTeX"],
@@ -5484,7 +5484,7 @@ els.deliveryCenter?.addEventListener("click", async (event) => {
       return;
     }
     if (command === "review") {
-      els.paperReviewStatus.textContent = "正在审查论文结构、图表、编译日志和结果可追溯性。";
+      els.paperReviewStatus.textContent = "正在审查论文结构、图表、编译日志和结果一致性。";
       const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/paper/review`, { method: "POST" });
       renderProject(payload.project);
       els.paperReviewStatus.textContent = "论文审查完成，可查看审查报告。";
@@ -5513,14 +5513,14 @@ els.generateSkillReport.addEventListener("click", async () => {
     return;
   }
   els.generateSkillReport.disabled = true;
-  els.skillReportStatus.textContent = "正在整理 GitHub 数学建模、科研写作、模型路由和学术诚信门禁规则。";
+  els.skillReportStatus.textContent = "正在整理 GitHub 数学建模、科研写作、模型路由和规范检查规则。";
   try {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/skills/report`, { method: "POST" });
     renderProject(payload.project);
-    els.skillReportStatus.textContent = "技能库与诚信门禁报告已生成，可在生成文件中查看。";
+    els.skillReportStatus.textContent = "技能库与规范检查报告已生成，可在生成文件中查看。";
     await syncOverviewAfterAction(payload);
   } catch (error) {
-    els.skillReportStatus.textContent = `技能库与诚信门禁报告生成失败：${error.message}`;
+    els.skillReportStatus.textContent = `技能库与规范检查报告生成失败：${error.message}`;
   } finally {
     els.generateSkillReport.disabled = false;
   }
@@ -5595,7 +5595,7 @@ els.reviewPaper.addEventListener("click", async () => {
     return;
   }
   els.reviewPaper.disabled = true;
-  els.paperReviewStatus.textContent = "正在审查论文结构、图表、编译日志和结果可追溯性。";
+  els.paperReviewStatus.textContent = "正在审查论文结构、图表、编译日志和结果一致性。";
   try {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/paper/review`, { method: "POST" });
     renderProject(payload.project);

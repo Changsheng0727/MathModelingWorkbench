@@ -860,16 +860,16 @@ def check_academic_integrity_gate(
             make_check(
                 "numeric_claim_traceability",
                 "warning",
-                "数值主张可追溯性",
+                "数值来源检查",
                 f"摘要、求解或结论区域检测到约 {numeric_claims} 个精确数字，但未检测到结果 manifest 或运行日志；请避免把 LLM 草稿数值当作计算结果。",
                 "high",
             )
         )
     elif numeric_claims > 0:
         source_note = "已检测到结果清单或运行日志。" if evidence_available else "数字数量不高，但仍建议人工核对来源。"
-        checks.append(make_check("numeric_claim_traceability", "pass", "数值主张可追溯性", f"检测到约 {numeric_claims} 个关键数字；{source_note}"))
+        checks.append(make_check("numeric_claim_traceability", "pass", "数值来源检查", f"检测到约 {numeric_claims} 个关键数字；{source_note}"))
     else:
-        checks.append(make_check("numeric_claim_traceability", "pass", "数值主张可追溯性", "摘要、求解和结论区域未检测到大量精确数值。"))
+        checks.append(make_check("numeric_claim_traceability", "pass", "数值来源检查", "摘要、求解和结论区域未检测到大量精确数值。"))
 
     appendix_plain = strip_latex(section_body(tex, "附录"))
     material_terms = ["支撑材料", "manifest", "运行日志", "代码", "程序", "复现", "人工复核", "AI 工具"]
@@ -1064,8 +1064,8 @@ def check_traceability(
             make_check(
                 "llm_only_traceability",
                 "pass",
-                "LLM-only 可追溯性",
-                "当前项目使用 LLM-only 自动流程，审查器不要求基线或专项模型 manifest；题解、LaTeX、审查报告和支撑包作为主要可追溯文件。",
+                "LLM-only 输出完整性",
+                "当前项目使用 LLM-only 自动流程，审查器不要求基线或专项模型 manifest；题解、LaTeX、审查报告和支撑包作为主要输出文件。",
             )
         )
         return checks
@@ -1103,9 +1103,9 @@ def check_traceability(
         if summary and not (root / summary).exists():
             missing_outputs.append(summary)
         if missing_outputs:
-            checks.append(make_check("computed_manifest_outputs", "fail", "代码结果文件可追溯性", "清单中缺少实际文件：" + "、".join(missing_outputs[:12]), "high"))
+            checks.append(make_check("computed_manifest_outputs", "fail", "代码结果文件完整性", "清单中缺少实际文件：" + "、".join(missing_outputs[:12]), "high"))
         else:
-            checks.append(make_check("computed_manifest_outputs", "pass", "代码结果文件可追溯性", f"清单记录的 {table_count} 个表格文件和 {figure_count} 个图片文件均存在。"))
+            checks.append(make_check("computed_manifest_outputs", "pass", "代码结果文件完整性", f"清单记录的 {table_count} 个表格文件和 {figure_count} 个图片文件均存在。"))
 
         per_problem = computed.get("per_problem_results", []) or []
         solved = [item for item in per_problem if item.get("tables") or item.get("figures") or item.get("metrics")]
@@ -1135,11 +1135,11 @@ def check_traceability(
             missing_outputs.append(summary)
 
     if missing_outputs:
-        checks.append(make_check("manifest_outputs", "fail", "结果文件可追溯性", "清单中缺少实际文件：" + "、".join(missing_outputs[:12]), "high"))
+        checks.append(make_check("manifest_outputs", "fail", "结果文件完整性", "清单中缺少实际文件：" + "、".join(missing_outputs[:12]), "high"))
     elif specialized or baseline:
         table_count = sum(len((manifest.get("tables") or [])) for manifest in [specialized, baseline])
         figure_count = sum(len((manifest.get("figures") or [])) for manifest in [specialized, baseline])
-        checks.append(make_check("manifest_outputs", "pass", "结果文件可追溯性", f"清单记录的 {table_count} 个表格文件和 {figure_count} 个图片文件均存在。"))
+        checks.append(make_check("manifest_outputs", "pass", "结果文件完整性", f"清单记录的 {table_count} 个表格文件和 {figure_count} 个图片文件均存在。"))
     return checks
 
 
@@ -1351,7 +1351,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         lines.append("- 当前静态审查未发现必须修订的问题，可进入人工通读和格式核对。")
     lines.append("")
 
-    lines.append("## 可追溯文件")
+    lines.append("## 相关文件")
     for label, relative in report["traceability_files"].items():
         if relative:
             lines.append(f"- {label}: `{relative}`")

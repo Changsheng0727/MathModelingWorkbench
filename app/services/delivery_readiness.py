@@ -116,7 +116,7 @@ def build_checks(
             if computed_ready
             else "自动流程已完成但结果 manifest 不完整。"
             if auto_success
-            else "缺少代码求解结果，论文结论可追溯性不足。",
+            else "缺少代码求解结果，论文结论缺少结果文件支撑。",
             required=True,
             action="run_auto_workflow" if analysis else "analyze_project",
         )

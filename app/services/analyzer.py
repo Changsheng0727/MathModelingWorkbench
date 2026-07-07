@@ -557,7 +557,7 @@ def build_workflow(recommended: dict[str, Any], problems: list[dict[str, Any]]) 
         {"stage": "02 数据盘点", "owner": "DataInspector", "output": "字段说明、缺失值、异常值、时间范围和附件映射表"},
         {"stage": "03 模型方案", "owner": "ModelPlanner", "output": "每个子问题的模型、变量、目标函数、约束和验证指标"},
         {"stage": "04 代码实现", "owner": "CodeRunner", "output": "可复现脚本、结果表、图片和运行日志"},
-        {"stage": "05 结果检验", "owner": "ResultValidator", "output": "误差指标、敏感性分析、稳定性分析和可追溯性检查"},
+        {"stage": "05 结果检验", "owner": "ResultValidator", "output": "误差指标、敏感性分析、稳定性分析和结果来源检查"},
         {"stage": "06 论文撰写", "owner": "PaperWriter", "output": "符合竞赛格式的 LaTeX 初稿"},
         {"stage": "07 论文审查", "owner": "PaperReviewer", "output": "摘要、图表说明、引用、页码和身份信息检查"},
         {"stage": "08 提交打包", "owner": "Packager", "output": "论文 PDF、结果表、支撑材料和 AI 工具说明"},

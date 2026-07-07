@@ -348,7 +348,7 @@ export default function WorkbenchPage() {
                     <button id="run-specialized" className="ghost hidden" type="button">运行专项建模</button>
                     <button id="cancel-auto-workflow" className="ghost" type="button">中断流程</button>
                     <button id="refresh-diagnostics" className="ghost" type="button">刷新诊断/性能</button>
-                    <button id="generate-skill-report" className="ghost" type="button">生成技能库/诚信门禁</button>
+                    <button id="generate-skill-report" className="ghost" type="button">生成技能库/规范检查</button>
                     <button id="generate-code-graph" className="ghost" type="button">生成代码图谱</button>
                     <button id="fill-paper" className="ghost hidden" type="button">回填论文</button>
                     <button id="compile-latex" className="ghost" type="button">编译 LaTeX</button>
