@@ -1662,6 +1662,7 @@ p {
 .environment-next {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
   max-width: min(68ch, 100%);
   padding: 5px 9px;
@@ -1708,6 +1709,7 @@ p {
   font-size: 12px;
 }
 
+.environment-next-action,
 .environment-refresh {
   min-height: 26px;
   padding: 3px 9px;
@@ -1721,15 +1723,18 @@ p {
   box-shadow: var(--shadow-inset);
 }
 
+.environment-next-action:hover,
 .environment-refresh:hover {
   border-color: var(--primary);
 }
 
+.environment-next-action:focus-visible,
 .environment-refresh:focus-visible {
   outline: 0;
   box-shadow: var(--focus);
 }
 
+.environment-next-action:disabled,
 .environment-refresh:disabled {
   cursor: wait;
   opacity: 0.65;

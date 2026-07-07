@@ -446,10 +446,13 @@ function renderEnvironmentNextAction(action = {}) {
     return "";
   }
   const tone = environmentTone(action.tone || "");
+  const actionId = String(action.action || "").trim();
+  const buttonLabel = String(action.button_label || "").trim();
   return `
     <span class="environment-next" data-tone="${escapeHtml(tone)}">
       <b>${escapeHtml(action.label || "下一步")}</b>
       ${action.detail ? `<span>${escapeHtml(action.detail)}</span>` : ""}
+      ${actionId ? `<button class="environment-next-action" type="button" data-environment-action="${escapeHtml(actionId)}">${escapeHtml(buttonLabel || "执行")}</button>` : ""}
     </span>
   `;
 }
@@ -489,10 +492,41 @@ function fallbackDependencySummary(env) {
 }
 
 els.environment?.addEventListener("click", async (event) => {
+  const actionButton = event.target.closest("[data-environment-action]");
+  if (actionButton) {
+    const action = actionButton.dataset.environmentAction || "";
+    const originalText = actionButton.textContent;
+    actionButton.disabled = true;
+    try {
+      if (action === "install_dependencies") {
+        actionButton.textContent = "已启动";
+        const payload = await api("/api/environments/dependencies/install?include_overview=true", { method: "POST" });
+        if (payload.environment?.overview) {
+          applyProductOverviewPayload(payload.environment.overview);
+        }
+        renderEnvironments(payload.environment || {});
+        showToast(payload.install?.started ? "依赖安装已启动，稍后刷新状态。" : (payload.install?.message || "依赖需要手动处理。"), payload.install?.started ? "success" : "warning");
+        return;
+      }
+      if (action === "refresh_environment") {
+        await loadEnvironments({ refresh: true, includeOverview: true });
+        showToast("环境状态已刷新", "success");
+        return;
+      }
+      showToast("暂不支持这个环境操作。", "warning");
+    } catch (error) {
+      showToast(`环境操作失败：${error.message}`, "error");
+    } finally {
+      actionButton.disabled = false;
+      actionButton.textContent = originalText;
+    }
+    return;
+  }
   const button = event.target.closest("[data-environment-refresh]");
   if (!button) {
     return;
   }
+  const originalText = button.textContent;
   button.disabled = true;
   button.textContent = "刷新中";
   try {
@@ -500,6 +534,9 @@ els.environment?.addEventListener("click", async (event) => {
     showToast("环境状态已刷新", "success");
   } catch (error) {
     showToast(`环境刷新失败：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
   }
 });
 

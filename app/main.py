@@ -46,7 +46,7 @@ from app.services.delivery_batch_jobs import (
 from app.services.delivery_package import DELIVERY_PACKAGE_MANIFEST_JSON_RELATIVE, write_delivery_package
 from app.services.delivery_readiness import DELIVERY_READINESS_JSON_RELATIVE, write_delivery_readiness_report
 from app.services.diagnostic_refresh import refresh_diagnostic_assets
-from app.services.executor import detect_environments
+from app.services.executor import detect_environments, start_dependency_install
 from app.services.experience_center import build_experience_center
 from app.services.extractors import save_upload, unpack_upload, validate_upload_name
 from app.services.extractors import safe_folder_target
@@ -224,6 +224,21 @@ def environments(response: Response, refresh: bool = False, include_overview: bo
     if include_overview:
         payload["overview"] = build_product_overview_response(refresh=refresh)
     return payload
+
+
+@app.post("/api/environments/dependencies/install")
+def install_environment_dependencies(response: Response, include_overview: bool = False) -> dict:
+    no_store(response)
+    try:
+        install = start_dependency_install()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="内置依赖安装脚本不存在。") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"无法启动依赖安装：{type(exc).__name__}: {exc}") from exc
+    environment = detect_environments(refresh=True)
+    if include_overview:
+        environment["overview"] = build_product_overview_response(refresh=True)
+    return {"install": install, "environment": environment}
 
 
 @app.get("/api/product/capacity")

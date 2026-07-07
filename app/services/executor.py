@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -134,12 +135,50 @@ def dependency_next_action(status: str, missing: list[str], can_auto_install: bo
     if status == "ready":
         return {"label": "无需处理", "detail": "可以直接导出 Word 或编译 PDF。", "tone": "success"}
     if status == "installing":
-        return {"label": "稍后刷新", "detail": "等待下载完成；若仍缺失，重启客户端后再试。", "tone": "running"}
+        return {"label": "正在安装", "detail": "等待下载完成；若仍缺失，重启客户端后再试。", "tone": "running", "action": "refresh_environment", "button_label": "刷新状态"}
     if status == "warning":
-        return {"label": "重启后复查", "detail": f"重启软件后刷新依赖状态，仍缺少 {names} 时手动安装。", "tone": "warning"}
+        return {"label": "重启后复查", "detail": f"重启软件后刷新依赖状态，仍缺少 {names} 时可重试安装。", "tone": "warning", "action": "install_dependencies", "button_label": "重试安装"}
     if status == "manual_required" or not can_auto_install:
-        return {"label": "手动安装", "detail": f"请先安装 {names}，再回到软件刷新状态。", "tone": "failed"}
-    return {"label": "等待自动安装", "detail": "保持客户端打开，稍后刷新状态；失败时再手动安装。", "tone": "warning"}
+        return {"label": "手动安装", "detail": f"请先安装 {names}，再回到软件刷新状态。", "tone": "failed", "action": "refresh_environment", "button_label": "刷新状态"}
+    return {"label": "可自动安装", "detail": f"可尝试自动安装 {names}，安装后刷新状态。", "tone": "warning", "action": "install_dependencies", "button_label": "安装/重试"}
+
+
+def start_dependency_install() -> dict[str, Any]:
+    if os.name != "nt":
+        return {"started": False, "status": "manual_required", "message": "自动安装依赖仅支持 Windows。"}
+    script = (Path(__file__).resolve().parents[1] / "resources" / "install_dependencies.ps1").resolve()
+    if not script.exists():
+        raise FileNotFoundError("install_dependencies.ps1")
+    log_dir = DATA_ROOT / "client"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "dependency_install.log"
+    status_path = log_dir / "dependency_status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "status": "checking",
+                "message": "Dependency installer was started from the app.",
+                "log": str(log_path),
+                "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(script),
+        "-LogPath",
+        str(log_path),
+    ]
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    process = subprocess.Popen(command, cwd=script.parents[2], creationflags=creationflags)
+    return {"started": True, "pid": process.pid, "status": "checking", "log": str(log_path)}
 
 
 def detect_winget() -> dict[str, Any]:

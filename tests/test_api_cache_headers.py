@@ -26,6 +26,20 @@ def test_environment_status_is_not_browser_cached() -> None:
     assert response.headers["cache-control"] == "no-store"
 
 
+def test_dependency_install_endpoint_starts_bootstrap_and_refreshes_environment() -> None:
+    with (
+        patch.object(main, "start_dependency_install", return_value={"started": True, "status": "checking"}),
+        patch.object(main, "detect_environments", return_value={"dependency_summary": {"status": "installing"}}),
+    ):
+        response = TestClient(main.app).post("/api/environments/dependencies/install")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["install"]["started"] is True
+    assert payload["environment"]["dependency_summary"]["status"] == "installing"
+
+
 def test_product_overview_payload_has_freshness_timestamp() -> None:
     with (
         patch.object(main, "get_llm_settings", return_value={}),
@@ -188,6 +202,7 @@ def test_progress_payload_gets_refresh_timestamp() -> None:
 if __name__ == "__main__":
     test_product_overview_is_not_browser_cached()
     test_environment_status_is_not_browser_cached()
+    test_dependency_install_endpoint_starts_bootstrap_and_refreshes_environment()
     test_product_overview_payload_has_freshness_timestamp()
     test_project_summary_counts_workflow_signals()
     test_project_summary_focus_prioritizes_failures()
