@@ -41,6 +41,7 @@ const els = {
   folder: document.querySelector("#folder-input"),
   folderLabel: document.querySelector("#folder-label"),
   autoRunAfterUpload: document.querySelector("#auto-run-after-upload"),
+  autoRunHint: document.querySelector("#auto-run-hint"),
   status: document.querySelector("#upload-status"),
   uploadProgress: document.querySelector("#upload-analysis-progress"),
   refresh: document.querySelector("#refresh-projects"),
@@ -628,15 +629,38 @@ function renderAutoRunAfterUploadGate(settings = {}) {
   }
   const ready = Boolean(settings.auto_run_ready);
   const blocker = settings.auto_run_blocker || "请先保存并测试大模型连接。";
+  const label = settings.auto_run_label || (ready ? "自动运行可用" : "自动运行未就绪");
+  const detail = ready ? "上传分析完成后会自动确认推荐题并开始一键生成。" : blocker;
   els.autoRunAfterUpload.disabled = !ready;
   const row = els.autoRunAfterUpload.closest(".check-row");
   row?.classList.toggle("is-disabled", !ready);
   if (row) {
-    row.title = ready ? "上传分析完成后会自动确认推荐题并开始一键生成。" : blocker;
+    row.title = detail;
+  }
+  const hint = ensureAutoRunHint(row);
+  if (hint) {
+    hint.textContent = `${label}：${detail}`;
+    hint.dataset.status = settings.auto_run_tone || (ready ? "success" : "warning");
   }
   if (!ready && els.autoRunAfterUpload.checked) {
     els.autoRunAfterUpload.checked = false;
   }
+}
+
+function ensureAutoRunHint(row) {
+  if (els.autoRunHint) {
+    return els.autoRunHint;
+  }
+  if (!row) {
+    return null;
+  }
+  const hint = document.createElement("p");
+  hint.id = "auto-run-hint";
+  hint.className = "field-hint auto-run-hint";
+  hint.setAttribute("aria-live", "polite");
+  row.insertAdjacentElement("afterend", hint);
+  els.autoRunHint = hint;
+  return hint;
 }
 
 function llmSettingsTestMeta(settings = {}) {

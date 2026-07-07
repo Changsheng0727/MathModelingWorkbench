@@ -454,6 +454,32 @@ p {
   cursor: not-allowed;
 }
 
+.auto-run-hint {
+  margin-top: -2px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+}
+
+.auto-run-hint[data-status="success"] {
+  border-color: color-mix(in oklch, var(--teal) 28%, var(--line));
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.auto-run-hint[data-status="warning"] {
+  border-color: color-mix(in oklch, var(--amber) 32%, var(--line));
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.auto-run-hint[data-status="failed"] {
+  border-color: color-mix(in oklch, var(--red) 30%, var(--line));
+  background: var(--red-soft);
+  color: var(--red);
+}
+
 .settings-form {
   display: grid;
   gap: 10px;

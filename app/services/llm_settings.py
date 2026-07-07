@@ -79,6 +79,8 @@ def get_llm_settings() -> dict[str, Any]:
         "connection_action": llm_connection_action(bool(api_key), last_test),
         "auto_run_ready": auto_run_ready,
         "auto_run_blocker": "" if auto_run_ready else llm_auto_run_blocker(bool(api_key), last_test),
+        "auto_run_label": llm_auto_run_label(bool(api_key), last_test),
+        "auto_run_tone": "success" if auto_run_ready else llm_connection_tone(bool(api_key), last_test),
     }
 
 
@@ -294,6 +296,19 @@ def llm_auto_run_blocker(configured: bool, last_test: dict[str, Any]) -> str:
     if status == "untested":
         return "接口已保存，但还没有成功连接测试记录；请先测试连接。"
     return ""
+
+
+def llm_auto_run_label(configured: bool, last_test: dict[str, Any]) -> str:
+    if not configured:
+        return "自动运行未就绪"
+    status = llm_connection_status(last_test)
+    if status == "passed" and not llm_connection_stale(last_test):
+        return "自动运行可用"
+    if status == "failed":
+        return "自动运行需重测"
+    if status == "passed":
+        return "自动运行需重测"
+    return "自动运行需测试"
 
 
 def normalize_api_key(value: str | None) -> str:

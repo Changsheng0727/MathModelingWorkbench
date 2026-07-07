@@ -105,6 +105,8 @@ def test_llm_settings_marks_stale_successful_test() -> None:
     assert settings["connection_action"]["id"] == "test_llm"
     assert settings["auto_run_ready"] is False
     assert "重新测试" in settings["auto_run_blocker"]
+    assert settings["auto_run_label"] == "自动运行需重测"
+    assert settings["auto_run_tone"] == "warning"
     assert settings["last_test_age_seconds"] >= 24 * 3600
 
 
@@ -123,13 +125,19 @@ def test_llm_settings_connection_actions_cover_setup_states() -> None:
 
     assert missing["connection_action"]["id"] == "focus_llm"
     assert missing["auto_run_ready"] is False
+    assert missing["auto_run_label"] == "自动运行未就绪"
     assert untested["connection_action"]["id"] == "test_llm"
     assert untested["auto_run_ready"] is False
+    assert untested["auto_run_label"] == "自动运行需测试"
     assert passed["connection_action"] == {}
     assert passed["auto_run_ready"] is True
     assert passed["auto_run_blocker"] == ""
+    assert passed["auto_run_label"] == "自动运行可用"
+    assert passed["auto_run_tone"] == "success"
     assert failed["connection_action"]["id"] == "test_llm"
     assert failed["auto_run_ready"] is False
+    assert failed["auto_run_label"] == "自动运行需重测"
+    assert failed["auto_run_tone"] == "failed"
 
 
 def test_save_llm_settings_invalidates_test_when_endpoint_or_model_changes() -> None:
@@ -155,6 +163,7 @@ def test_save_llm_settings_invalidates_test_when_endpoint_or_model_changes() -> 
     assert settings["connection_test_required"] is True
     assert settings["connection_action"]["id"] == "test_llm"
     assert settings["auto_run_ready"] is False
+    assert settings["auto_run_label"] == "自动运行需测试"
     assert settings["base_url"] == "https://api.deepseek.com/v1"
     assert settings["model"] == "deepseek-chat"
 
