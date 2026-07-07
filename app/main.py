@@ -2196,6 +2196,14 @@ def project_progress(project_id: str, include_overview: bool = False, include_jo
     if not isinstance(progress, dict):
         progress = {}
     progress = dict(progress)
+    if active_job.get("status") in {"queued", "running"} and progress.get("status") not in {"queued", "running", "between_steps"}:
+        progress = {
+            "status": response_status,
+            "detail": "后台自动流程任务已接管，正在等待新的阶段进度写入。",
+            "completed_steps": 0,
+            "total_steps": 7,
+            "percent": 3 if response_status == "queued" else 8,
+        }
     status = response_status or progress.get("status") or "idle"
     stale_running = (
         status in {"queued", "running", "between_steps", "cancel_requested"}
@@ -2236,8 +2244,13 @@ def project_progress(project_id: str, include_overview: bool = False, include_jo
             progress["resume_hint"] = progress.get("resume_hint") or "点击继续生成，系统会重新读取项目上下文。"
             response_status = "interrupted"
     live_stream = load_llm_live_stream(root)
-    if live_stream.get("channel") == "auto_workflow":
+    live_status = str(live_stream.get("status") or "")
+    if live_stream.get("channel") == "auto_workflow" and (
+        response_status not in {"queued", "running"} or (response_status == "running" and live_status == "running")
+    ):
         progress["live_stream"] = live_stream
+    if response_status == "running" and not progress.get("live_stream") and not progress.get("detail"):
+        progress["detail"] = "正在启动自动流程直播，稍后会显示实时输出。"
     response = {
         "project_id": project_id,
         "status": response_status,

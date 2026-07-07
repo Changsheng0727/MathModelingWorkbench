@@ -4847,6 +4847,13 @@ async function runAutoWorkflow(
   if (els.resumeAutoWorkflow) els.resumeAutoWorkflow.disabled = true;
   if (els.cancelAutoWorkflow) els.cancelAutoWorkflow.disabled = false;
   els.autoWorkflowStatus.textContent = resume ? "正在提交后台继续生成任务。" : "正在提交后台自动流程任务。";
+  renderAutoWorkflowProgress({
+    status: "queued",
+    detail: resume ? "正在提交继续生成请求，后台任务接管后会刷新阶段进度。" : "正在提交一键生成请求，后台任务接管后会刷新阶段进度。",
+    completed_steps: 0,
+    total_steps: 7,
+    percent: 3,
+  });
   let syncedAfterCompletion = false;
   try {
     const endpoint = resume ? "resume/start" : "start";
