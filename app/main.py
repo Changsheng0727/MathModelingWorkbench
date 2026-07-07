@@ -112,6 +112,7 @@ MAX_FOLDER_UPLOAD_FILES = 1200
 MAX_FOLDER_UPLOAD_BYTES = 500 * 1024 * 1024
 ACTIVE_PROJECT_STATUSES = {"queued", "running", "between_steps", "cancel_requested"}
 READY_DELIVERY_STATUSES = {"deliverable", "review", "ready", "success"}
+AUTO_BATCH_PREFLIGHT_MAX_AGE_SECONDS = 5 * 60
 
 
 def redact_public_payload(value):
@@ -2406,6 +2407,7 @@ def build_auto_batch_preflight_result(requested_count: int, ready: list[dict], s
         "actionable_skipped_count": actionable_skipped_count,
         "can_submit": ready_count > 0,
         "checked_at": datetime.now().isoformat(timespec="seconds"),
+        "max_age_seconds": AUTO_BATCH_PREFLIGHT_MAX_AGE_SECONDS,
         **mode_counts,
         "status": status,
         "summary": summary,

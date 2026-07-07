@@ -461,6 +461,7 @@ def test_auto_batch_preflight_does_not_start_jobs() -> None:
     assert batch["can_submit"] is True
     assert batch["start_count"] == 1
     assert batch["resume_count"] == 0
+    assert batch["max_age_seconds"] == main.AUTO_BATCH_PREFLIGHT_MAX_AGE_SECONDS
     assert batch["ready"][0]["project_name"] == "可运行项目"
     assert batch["skipped"][0]["action_label"] == "去确认选题"
 

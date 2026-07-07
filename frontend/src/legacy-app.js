@@ -34,6 +34,7 @@ const state = {
 
 const UPLOAD_FILE_ANALYSIS_STEPS = 8;
 const UPLOAD_FOLDER_ANALYSIS_STEPS = 7;
+const DEFAULT_BATCH_PREFLIGHT_MAX_AGE_SECONDS = 5 * 60;
 
 const els = {
   form: document.querySelector("#upload-form"),
@@ -1451,16 +1452,23 @@ function updateProjectBatchControls(filteredProjects = null) {
   const visible = Array.isArray(filteredProjects) ? filteredProjects : currentFilteredProjects();
   const analyzedVisibleCount = visible.filter((project) => project.analysis_available).length;
   const activePreflight = currentBatchPreflight();
+  const stalePreflight = staleBatchPreflight();
   if (els.batchStartProjects) {
     const readyCount = Number(activePreflight?.ready_count || 0);
-    els.batchStartProjects.disabled = selectedCount === 0 || activePreflight?.can_submit === false;
-    els.batchStartProjects.textContent = activePreflight
+    els.batchStartProjects.disabled = selectedCount === 0 || activePreflight?.can_submit === false || Boolean(stalePreflight);
+    els.batchStartProjects.title = stalePreflight ? `上次预检已超过 ${formatBatchPreflightMaxAge(stalePreflight)}。` : "";
+    els.batchStartProjects.textContent = stalePreflight
+      ? "先重新预检"
+      : activePreflight
       ? readyCount ? `入队可运行 ${readyCount}` : "无可入队项目"
       : selectedCount ? `批量入队 ${selectedCount}` : "批量入队";
   }
   if (els.batchPreviewProjects) {
     els.batchPreviewProjects.disabled = selectedCount === 0;
-    els.batchPreviewProjects.textContent = selectedCount ? `预检 ${selectedCount}` : "预检";
+    els.batchPreviewProjects.title = stalePreflight ? "项目状态可能已变化，请重新预检。" : "";
+    els.batchPreviewProjects.textContent = stalePreflight
+      ? `重新预检 ${selectedCount}`
+      : selectedCount ? `预检 ${selectedCount}` : "预检";
   }
   if (els.clearProjectSelection) {
     els.clearProjectSelection.disabled = selectedCount === 0;
@@ -1476,7 +1484,37 @@ function batchSelectionKey() {
 }
 
 function currentBatchPreflight() {
-  return state.batchPreflight?.selection_key === batchSelectionKey() ? state.batchPreflight : null;
+  if (state.batchPreflight?.selection_key !== batchSelectionKey()) {
+    return null;
+  }
+  return isBatchPreflightStale(state.batchPreflight) ? null : state.batchPreflight;
+}
+
+function staleBatchPreflight() {
+  return state.batchPreflight?.selection_key === batchSelectionKey() && isBatchPreflightStale(state.batchPreflight)
+    ? state.batchPreflight
+    : null;
+}
+
+function batchPreflightMaxAgeSeconds(preflight = {}) {
+  const maxAge = Number(preflight.max_age_seconds || DEFAULT_BATCH_PREFLIGHT_MAX_AGE_SECONDS);
+  return Number.isFinite(maxAge) && maxAge > 0 ? maxAge : DEFAULT_BATCH_PREFLIGHT_MAX_AGE_SECONDS;
+}
+
+function isBatchPreflightStale(preflight = {}) {
+  if (!preflight.checked_at) {
+    return false;
+  }
+  const checkedAt = Date.parse(preflight.checked_at);
+  if (!Number.isFinite(checkedAt)) {
+    return true;
+  }
+  return (Date.now() - checkedAt) / 1000 > batchPreflightMaxAgeSeconds(preflight);
+}
+
+function formatBatchPreflightMaxAge(preflight = {}) {
+  const seconds = batchPreflightMaxAgeSeconds(preflight);
+  return seconds >= 60 ? `${Math.round(seconds / 60)} 分钟` : `${Math.round(seconds)} 秒`;
 }
 
 function clearBatchPreflight() {
@@ -1504,6 +1542,12 @@ async function startSelectedProjectsBatch() {
   const projectIds = Array.from(state.selectedProjectIds);
   if (!projectIds.length) {
     els.batchProjectStatus.textContent = "请先选择已分析项目。";
+    return;
+  }
+  const stalePreflight = staleBatchPreflight();
+  if (stalePreflight) {
+    invalidateBatchPreflight(`上次预检已超过 ${formatBatchPreflightMaxAge(stalePreflight)}，请重新预检后再批量入队。`);
+    updateProjectBatchControls();
     return;
   }
   const preflight = currentBatchPreflight();
@@ -1627,7 +1671,8 @@ function renderBatchCheckedAt(batch = {}, label = "预检") {
   if (!batch.checked_at) {
     return "";
   }
-  return `<span class="batch-checked-at">${escapeHtml(label)} ${escapeHtml(formatProgressTime(batch.checked_at))}</span>`;
+  const freshness = label === "预检" ? ` · ${formatBatchPreflightMaxAge(batch)}内有效` : "";
+  return `<span class="batch-checked-at">${escapeHtml(label)} ${escapeHtml(formatProgressTime(batch.checked_at))}${escapeHtml(freshness)}</span>`;
 }
 
 function renderBatchSkippedItems(skipped = []) {
