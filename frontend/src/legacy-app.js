@@ -694,6 +694,22 @@ function llmConnectionBlocker(settings = {}) {
   return "";
 }
 
+function llmBatchPreflightIssue(settings = {}) {
+  const blocker = llmConnectionBlocker(settings);
+  if (blocker) {
+    return blocker;
+  }
+  const lastTest = settings.last_test || {};
+  if (settings.connection_status === "untested" || !lastTest.tested_at) {
+    return "接口已保存但还没有成功连接测试记录，请先点击“测试连接”。";
+  }
+  if (settings.connection_stale) {
+    const age = settings.last_test_age_label || "较早";
+    return `最近一次成功连接测试在 ${age}，请先重新测试后再批量入队。`;
+  }
+  return "";
+}
+
 async function restoreInitialProject() {
   if (state.projectRestoreTried || state.currentProject) {
     return;
@@ -1424,12 +1440,12 @@ async function startSelectedProjectsBatch() {
     showToast("缺少大模型接口密钥，已停止批量入队", "warning");
     return;
   }
-  const llmBlocker = llmConnectionBlocker(settings);
+  const llmBlocker = llmBatchPreflightIssue(settings);
   if (llmBlocker) {
-    els.batchProjectStatus.textContent = `大模型连接未通过：${llmBlocker}`;
+    els.batchProjectStatus.textContent = `批量入队前需要先通过大模型连接测试：${llmBlocker}`;
     scrollIntoViewIfPossible(els.llmSettingsForm);
     els.testLlmSettings?.focus();
-    showToast("请先重新测试大模型连接，再批量入队", "warning");
+    showToast("请先测试大模型连接，再批量入队", "warning");
     return;
   }
   const projectById = new Map((state.projects || []).map((project) => [project.id, project]));

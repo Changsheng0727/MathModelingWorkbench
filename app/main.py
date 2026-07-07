@@ -2251,6 +2251,21 @@ def build_auto_jobs_response(*, include_overview: bool = False) -> dict:
     return response
 
 
+def llm_batch_preflight_issue(llm_settings: dict) -> str:
+    if not llm_settings.get("configured"):
+        return "请先配置并测试大模型接口。"
+    if llm_settings.get("connection_blocked"):
+        issue = str(llm_settings.get("connection_issue") or "").strip()
+        return f"上次大模型连接测试失败：{issue}" if issue else "上次大模型连接测试失败，请重新测试连接。"
+    last_test = llm_settings.get("last_test") if isinstance(llm_settings.get("last_test"), dict) else {}
+    if not last_test.get("ok"):
+        return llm_test_preflight_text(last_test)[1]
+    if llm_settings.get("connection_stale"):
+        age = str(llm_settings.get("last_test_age_label") or "较早").strip()
+        return f"最近一次成功连接测试在 {age}，请先重新测试后再批量入队。"
+    return ""
+
+
 @app.post("/api/auto/batch/start")
 def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
     project_ids = dedupe_project_ids(payload.project_ids)
@@ -2260,6 +2275,9 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
         raise HTTPException(status_code=400, detail="单次最多批量提交 40 个项目。")
     mode = normalize_batch_mode(payload.mode)
     llm_settings = get_llm_settings()
+    llm_issue = llm_batch_preflight_issue(llm_settings)
+    if llm_issue:
+        raise HTTPException(status_code=400, detail=f"批量入队前需要先通过大模型连接测试：{llm_issue}")
     submitted: list[dict] = []
     skipped: list[dict] = []
     for project_id in project_ids:

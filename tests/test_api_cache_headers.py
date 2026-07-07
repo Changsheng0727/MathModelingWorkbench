@@ -186,6 +186,24 @@ def test_project_readiness_guides_untested_llm_before_auto_start() -> None:
     assert readiness["next_step"]["tone"] == "warning"
 
 
+def test_batch_llm_preflight_requires_recent_successful_test() -> None:
+    assert "先配置" in main.llm_batch_preflight_issue({"configured": False})
+    assert "还没有成功连接测试记录" in main.llm_batch_preflight_issue(
+        {"configured": True, "connection_status": "untested", "last_test": {}}
+    )
+    assert "重新测试" in main.llm_batch_preflight_issue(
+        {
+            "configured": True,
+            "connection_stale": True,
+            "last_test_age_label": "2 天前",
+            "last_test": {"ok": True, "tested_at": "2026-01-01T00:00:00"},
+        }
+    )
+    assert main.llm_batch_preflight_issue(
+        {"configured": True, "last_test": {"ok": True, "tested_at": "2026-01-01T00:00:00"}}
+    ) == ""
+
+
 def test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm() -> None:
     with TemporaryDirectory() as tmp:
         preflight = main.build_auto_workflow_preflight(
@@ -275,6 +293,7 @@ if __name__ == "__main__":
     test_project_summary_focus_prioritizes_stale_llm_test()
     test_project_summary_focus_prioritizes_untested_llm_connection()
     test_project_readiness_guides_untested_llm_before_auto_start()
+    test_batch_llm_preflight_requires_recent_successful_test()
     test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm()
     test_auto_workflow_preflight_warns_for_stale_llm_test()
     test_auto_workflow_preflight_exposes_problem_selection_action()
