@@ -131,6 +131,16 @@ def check_llm(settings: dict[str, Any]) -> dict[str, Any]:
             action={"id": "focus_llm", "label": "填写接口"},
         )
     if last_test.get("ok"):
+        if settings.get("connection_stale"):
+            age = str(settings.get("last_test_age_label") or "较早").strip()
+            return readiness_check(
+                "llm",
+                "大模型接口",
+                "warning",
+                f"最近一次连接测试成功在 {age}，建议重新测试后再启动自动求解。",
+                required=True,
+                action={"id": "test_llm", "label": "重新测试"},
+            )
         return readiness_check(
             "llm",
             "大模型接口",
