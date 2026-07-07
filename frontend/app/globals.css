@@ -839,6 +839,10 @@ p {
 }
 
 .project-count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin: 7px 0 9px;
   color: var(--muted);
   font-size: 12px;
@@ -847,6 +851,49 @@ p {
 
 .project-count.is-loading {
   color: var(--primary);
+}
+
+.project-count-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.project-count-chip,
+.project-count-freshness {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.project-count-chip[data-tone="failed"] {
+  border-color: color-mix(in oklch, var(--red) 28%, var(--line));
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.project-count-chip[data-tone="warning"] {
+  border-color: color-mix(in oklch, var(--amber) 28%, var(--line));
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.project-count-chip[data-tone="running"] {
+  border-color: color-mix(in oklch, var(--primary) 28%, var(--line));
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.project-count-chip[data-tone="success"] {
+  border-color: color-mix(in oklch, var(--teal) 28%, var(--line));
+  background: var(--teal-soft);
+  color: var(--teal);
 }
 
 .project-empty-card {

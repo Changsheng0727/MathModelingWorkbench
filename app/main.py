@@ -458,6 +458,7 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
     return redact_public_payload({
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "projects": projects_snapshot,
+        "project_summary": build_project_summary(projects_snapshot),
         "action_alias_catalog": ACTION_ALIASES,
         "action_catalog": ACTION_OUTCOMES,
         "action_progress_catalog": ACTION_PROGRESS,
@@ -481,6 +482,48 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
         "templates": list_templates(),
         "llm_settings": llm_settings,
     })
+
+
+def build_project_summary(projects: list[dict]) -> dict[str, int]:
+    active_statuses = {"queued", "running", "between_steps", "cancel_requested"}
+    ready_statuses = {"deliverable", "review", "ready", "success"}
+    return {
+        "total": len(projects),
+        "analyzed": sum(1 for item in projects if item.get("analysis_available")),
+        "urgent": sum(1 for item in projects if str(item.get("readiness_next_step_urgency") or "") == "high"),
+        "needs_action": sum(1 for item in projects if str(item.get("readiness_bucket") or "") == "needs_action"),
+        "running": sum(1 for item in projects if str(item.get("auto_workflow_status") or "") in active_statuses),
+        "failed": sum(
+            1
+            for item in projects
+            if str(item.get("auto_workflow_status") or "") == "failed"
+            or str(item.get("computed_solution_status") or "") == "failed"
+        ),
+        "deliverable": sum(
+            1
+            for item in projects
+            if str(item.get("readiness_bucket") or "") == "deliverable"
+            or str(item.get("delivery_readiness_status") or "") in ready_statuses
+        ),
+        "artifact_issue": sum(1 for item in projects if project_has_artifact_issue(item)),
+    }
+
+
+def project_has_artifact_issue(project: dict) -> bool:
+    summary = project.get("artifact_summary") if isinstance(project.get("artifact_summary"), dict) else {}
+    return bool(
+        project.get("metadata_error")
+        or project.get("artifact_health_status") in {"warning", "error"}
+        or project_summary_int(summary.get("missing")) > 0
+        or project_summary_int(summary.get("unsafe")) > 0
+    )
+
+
+def project_summary_int(value: object) -> int:
+    try:
+        return int(float(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 @app.post("/api/product/trust/export")

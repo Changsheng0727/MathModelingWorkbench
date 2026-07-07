@@ -45,6 +45,34 @@ def test_product_overview_payload_has_freshness_timestamp() -> None:
 
     assert payload["generated_at"]
     assert payload["projects"] == []
+    assert payload["project_summary"]["total"] == 0
+
+
+def test_project_summary_counts_workflow_signals() -> None:
+    summary = main.build_project_summary(
+        [
+            {
+                "analysis_available": True,
+                "readiness_next_step_urgency": "high",
+                "readiness_bucket": "needs_action",
+                "auto_workflow_status": "running",
+            },
+            {
+                "readiness_bucket": "deliverable",
+                "auto_workflow_status": "failed",
+                "artifact_summary": {"missing": "1"},
+            },
+        ]
+    )
+
+    assert summary["total"] == 2
+    assert summary["analyzed"] == 1
+    assert summary["urgent"] == 1
+    assert summary["needs_action"] == 1
+    assert summary["running"] == 1
+    assert summary["failed"] == 1
+    assert summary["deliverable"] == 1
+    assert summary["artifact_issue"] == 1
 
 
 def test_progress_polling_hint_is_fast_only_while_active() -> None:
@@ -73,6 +101,7 @@ if __name__ == "__main__":
     test_product_overview_is_not_browser_cached()
     test_environment_status_is_not_browser_cached()
     test_product_overview_payload_has_freshness_timestamp()
+    test_project_summary_counts_workflow_signals()
     test_progress_polling_hint_is_fast_only_while_active()
     test_progress_live_quiet_seconds_reads_stream_status()
     test_progress_payload_gets_refresh_timestamp()

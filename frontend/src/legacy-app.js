@@ -24,6 +24,7 @@ const state = {
   actionSuccessCatalog: {},
   actionButtonCatalog: {},
   overviewGeneratedAt: "",
+  projectSummary: {},
   uploadProgressStop: null,
   uploadProgressTotalSteps: 8,
   projectRestoreTried: false,
@@ -690,6 +691,7 @@ function applyProductOverviewPayload(payload = {}) {
     pruneSelectedProjects();
   }
   state.overviewGeneratedAt = payload.generated_at || state.overviewGeneratedAt || "";
+  state.projectSummary = payload.project_summary || state.projectSummary || {};
   state.actionAliasCatalog = payload.action_alias_catalog || state.actionAliasCatalog || {};
   state.actionCatalog = payload.action_catalog || state.actionCatalog || {};
   state.actionProgressCatalog = payload.action_progress_catalog || state.actionProgressCatalog || {};
@@ -821,12 +823,15 @@ function renderProjectList() {
 
   if (els.projectCount) {
     const filterText = projectFilterLabel(filter);
-    const freshness = state.overviewGeneratedAt ? ` · 刷新 ${formatProgressTime(state.overviewGeneratedAt)}` : "";
-    els.projectCount.textContent = projects.length
+    const freshness = state.overviewGeneratedAt
+      ? `<span class="project-count-freshness">刷新 ${escapeHtml(formatProgressTime(state.overviewGeneratedAt))}</span>`
+      : "";
+    const baseText = projects.length
       ? query || filter !== "all"
-        ? `${filterText}：${filtered.length} / ${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}${freshness}`
-        : `${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}${freshness}`
-      : `暂无项目${freshness}`;
+        ? `${filterText}：${filtered.length} / ${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}`
+        : `${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}`
+      : "暂无项目";
+    els.projectCount.innerHTML = `${escapeHtml(baseText)}${renderProjectSummaryChips(state.projectSummary)}${freshness}`;
   }
 
   if (!projects.length) {
@@ -891,6 +896,26 @@ function renderProjectList() {
     )
     .join("");
   updateProjectBatchControls(filtered);
+}
+
+function renderProjectSummaryChips(summary = {}) {
+  const chips = [
+    ["failed", "失败", "failed"],
+    ["urgent", "优先", "warning"],
+    ["needs_action", "需处理", "warning"],
+    ["running", "运行", "running"],
+    ["deliverable", "可交付", "success"],
+    ["artifact_issue", "文件异常", "failed"],
+  ]
+    .map(([key, label, tone]) => [Number(summary?.[key] || 0), label, tone])
+    .filter(([count]) => count > 0)
+    .slice(0, 4);
+  if (!chips.length) {
+    return "";
+  }
+  return `<span class="project-count-chips">${chips.map(([count, label, tone]) => (
+    `<span class="project-count-chip" data-tone="${escapeHtml(tone)}">${escapeHtml(label)} ${escapeHtml(count)}</span>`
+  )).join("")}</span>`;
 }
 
 function renderProjectEmptyState(onboarding = {}) {
