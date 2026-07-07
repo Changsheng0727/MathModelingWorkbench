@@ -23,7 +23,15 @@ def test_progress_polling_hint_is_fast_only_while_active() -> None:
     assert main.progress_poll_after_ms("failed") == 1600
 
 
+def test_progress_payload_gets_refresh_timestamp() -> None:
+    payload = main.mark_progress_refreshed({"status": "running"})
+
+    assert payload["status"] == "running"
+    assert payload["refreshed_at"]
+
+
 if __name__ == "__main__":
     test_product_overview_is_not_browser_cached()
     test_progress_polling_hint_is_fast_only_while_active()
+    test_progress_payload_gets_refresh_timestamp()
     print("api_cache_headers_tests_ok")

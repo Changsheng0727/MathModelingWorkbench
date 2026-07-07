@@ -1416,6 +1416,13 @@ function formatProjectTime(value) {
   return String(value).replace("T", " ").slice(0, 16);
 }
 
+function formatProgressTime(value) {
+  if (!value) {
+    return "";
+  }
+  return String(value).replace("T", " ").slice(11, 19) || formatProjectTime(value);
+}
+
 function formatBytes(value) {
   const units = ["B", "KB", "MB", "GB"];
   let size = Number(value) || 0;
@@ -5103,6 +5110,7 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
   const safeCurrentTitle = redactSensitiveText(currentTitle);
   const safeNotice = redactSensitiveText(notice);
   const safeNoticeTitle = redactSensitiveText(noticeTitle);
+  const progressMeta = renderProgressMeta(progress, liveStream, element);
   element.innerHTML = `
     <div class="progress-head">
       <div>
@@ -5112,12 +5120,31 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
       <b>${escapeHtml(percent)}%</b>
     </div>
     ${safeNotice ? `<p class="progress-notice" data-status="${escapeHtml(progress.status || "")}" title="${escapeHtml(safeNoticeTitle)}">${escapeHtml(safeNotice)}</p>` : ""}
+    ${progressMeta}
     <div class="progress-bar"><i style="width: ${percent}%"></i></div>
     <div class="progress-steps">
       ${allSteps.map((step) => renderProgressStep(step, progress)).join("")}
     </div>
     ${renderLlmLiveStream(liveStream, progress)}
   `;
+}
+
+function renderProgressMeta(progress = {}, liveStream = {}, element = null) {
+  const items = [];
+  if (progress.updated_at) {
+    items.push(`进度更新 ${formatProgressTime(progress.updated_at)}`);
+  }
+  if (progress.refreshed_at && progress.refreshed_at !== progress.updated_at) {
+    items.push(`面板刷新 ${formatProgressTime(progress.refreshed_at)}`);
+  }
+  if (!progress.updated_at && liveStream.updated_at) {
+    items.push(`直播更新 ${formatProgressTime(liveStream.updated_at)}`);
+  }
+  const pollMs = Number(element?.dataset.pollAfterMs || 0);
+  if (Number.isFinite(pollMs) && pollMs > 0 && ["queued", "running", "between_steps", "cancel_requested"].includes(progress.status)) {
+    items.push(`约 ${(pollMs / 1000).toFixed(1)}s 刷新`);
+  }
+  return items.length ? `<p class="progress-meta">${items.map(escapeHtml).join(" · ")}</p>` : "";
 }
 
 function hasLiveStream(liveStream = {}) {

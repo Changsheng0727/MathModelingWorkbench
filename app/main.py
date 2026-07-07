@@ -130,6 +130,12 @@ def progress_poll_after_ms(status: object) -> int:
     return 700 if str(status or "") in {"queued", "running", "between_steps", "cancel_requested"} else 1600
 
 
+def mark_progress_refreshed(progress: dict[str, object]) -> dict[str, object]:
+    progress = dict(progress or {})
+    progress["refreshed_at"] = datetime.now().isoformat(timespec="seconds")
+    return progress
+
+
 class LLMSettingsPayload(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
@@ -569,7 +575,8 @@ def batch_delivery_package_job(job_id: str) -> dict:
 def upload_analysis_progress(progress_id: str, response: Response, include_overview: bool = False) -> dict:
     no_store(response)
     progress = load_analysis_progress(progress_id)
-    payload = {"progress": progress or {}, "poll_after_ms": progress_poll_after_ms(progress.get("status") if isinstance(progress, dict) else "")}
+    progress = mark_progress_refreshed(progress if isinstance(progress, dict) else {})
+    payload = {"progress": progress, "poll_after_ms": progress_poll_after_ms(progress.get("status"))}
     if isinstance(progress, dict) and progress.get("project_id"):
         try:
             project_id = str(progress["project_id"])
@@ -2288,6 +2295,7 @@ def project_progress(project_id: str, response: Response, include_overview: bool
         progress["live_stream"] = live_stream
     if response_status == "running" and not progress.get("live_stream") and not progress.get("detail"):
         progress["detail"] = "正在启动自动流程直播，稍后会显示实时输出。"
+    progress = mark_progress_refreshed(progress)
     response = {
         "project_id": project_id,
         "status": response_status,
@@ -2375,6 +2383,7 @@ def project_model_assistant_progress(project_id: str, response: Response, includ
     if meta.get("model_assistant_error"):
         progress["status"] = "failed"
         progress["error"] = redact_sensitive_text(str(meta.get("model_assistant_error")))
+    progress = mark_progress_refreshed(progress)
     response = {
         "project_id": project_id,
         "status": progress.get("status") or status,
@@ -2409,6 +2418,7 @@ def project_llm_analysis_progress(project_id: str, response: Response, include_o
     if meta.get("llm_analysis_error"):
         progress["status"] = "failed"
         progress["error"] = redact_sensitive_text(str(meta.get("llm_analysis_error")))
+    progress = mark_progress_refreshed(progress)
     response = {
         "project_id": project_id,
         "status": progress.get("status") or status,

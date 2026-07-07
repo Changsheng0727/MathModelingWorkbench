@@ -4403,6 +4403,13 @@ p {
   line-height: 1.45;
 }
 
+.progress-meta {
+  margin: -2px 0 0;
+  color: var(--subtle);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .progress-bar {
   height: 8px;
   overflow: hidden;
