@@ -4689,6 +4689,10 @@ els.modelAssistantForm.addEventListener("submit", async (event) => {
   const button = els.modelAssistantForm.querySelector("button[type='submit']");
   button.disabled = true;
   els.modelAssistantStatus.textContent = "正在生成模型辅助方案，下面会显示检索、提示词构建和大模型生成过程。";
+  renderModelAssistantProgress({
+    status: "running",
+    detail: "正在提交模型辅助请求，稍后会显示检索、提示词构建和大模型输出。",
+  });
   const stopProgressPolling = startModelAssistantProgressPolling(projectId);
   try {
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/model-assistant`, {

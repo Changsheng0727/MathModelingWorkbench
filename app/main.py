@@ -2301,16 +2301,31 @@ def project_model_assistant_progress(project_id: str, include_overview: bool = F
     if not isinstance(progress, dict):
         progress = {}
     progress = dict(progress)
+    status = meta.get("model_assistant_status") or progress.get("status") or "idle"
+    if status == "running" and progress.get("status") != "running":
+        progress = {
+            "status": "running",
+            "detail": "正在启动模型辅助流程，稍后会显示检索、提示词构建和大模型输出。",
+            "completed_steps": 0,
+            "total_steps": 5,
+            "percent": 5,
+        }
     if progress_error:
-        progress["status"] = meta.get("model_assistant_status") or "warning"
+        progress["status"] = status if status == "running" else "warning"
         progress["progress_error"] = progress_error
         progress["detail"] = "模型辅助进度文件暂时读取失败，稍后会自动刷新。"
     live_stream = load_llm_live_stream(root)
-    if live_stream.get("channel") == "model_assistant":
+    live_status = str(live_stream.get("status") or "")
+    if live_stream.get("channel") == "model_assistant" and not (status == "running" and live_status != "running"):
         progress["live_stream"] = live_stream
+    if status == "running" and not progress.get("live_stream") and not progress.get("detail"):
+        progress["detail"] = "正在启动模型辅助直播，稍后会显示实时输出。"
+    if meta.get("model_assistant_error"):
+        progress["status"] = "failed"
+        progress["error"] = meta.get("model_assistant_error")
     response = {
         "project_id": project_id,
-        "status": meta.get("model_assistant_status") or progress.get("status") or "idle",
+        "status": progress.get("status") or status,
         "progress": progress or {},
         "artifacts": meta.get("artifacts", {}),
         "error": meta.get("model_assistant_error", ""),
