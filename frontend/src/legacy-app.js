@@ -5125,10 +5125,13 @@ function renderLlmLiveStream(liveStream = {}, progress = {}) {
 
 function renderLiveStreamStaleAction(liveStream = {}, progress = {}) {
   const action = liveStream.stale_action || {};
-  if (liveStream.channel !== "auto_workflow" || action.id !== "cancel_auto" || !progress.can_cancel) {
-    return "";
+  if (liveStream.channel === "auto_workflow" && action.id === "cancel_auto" && progress.can_cancel) {
+    return `<button class="diagnosis-resume" type="button" data-auto-action="cancel">${escapeHtml(action.label || "中断流程")}</button>`;
   }
-  return `<button class="diagnosis-resume" type="button" data-auto-action="cancel">${escapeHtml(action.label || "中断流程")}</button>`;
+  if (action.id === "refresh_progress") {
+    return `<button class="diagnosis-resume" type="button" data-live-action="refresh_progress" data-live-channel="${escapeHtml(liveStream.channel || "")}">${escapeHtml(action.label || "刷新进度")}</button>`;
+  }
+  return "";
 }
 
 function renderLiveEvent(event) {
@@ -5142,6 +5145,38 @@ function renderLiveEvent(event) {
     </div>
   `;
 }
+
+async function handleLiveStreamAction(event) {
+  const button = event.target.closest("[data-live-action='refresh_progress']");
+  if (!button) {
+    return;
+  }
+  const projectId = state.currentProject?.metadata?.id;
+  if (!projectId) {
+    showToast("请先打开一个项目。", "warning");
+    return;
+  }
+  button.disabled = true;
+  const channel = button.dataset.liveChannel || "";
+  try {
+    if (channel === "model_assistant") {
+      await refreshModelAssistantProgress(projectId, { includeOverview: true });
+    } else if (channel === "llm_analysis") {
+      await refreshLlmAnalysisProgress(projectId, { includeOverview: true });
+    } else {
+      await refreshAutoProgress(projectId, { includeOverview: true });
+    }
+    showToast("进度已刷新", "success");
+  } catch (error) {
+    showToast(`刷新进度失败：${error.message}`, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+[els.modelAssistantProgress, els.llmAnalysisProgress].forEach((element) => {
+  element?.addEventListener("click", handleLiveStreamAction);
+});
 
 function renderProgressStep(step, progress = {}) {
   const status = step.status || "pending";

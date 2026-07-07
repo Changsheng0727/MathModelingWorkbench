@@ -73,8 +73,23 @@ def test_finished_stream_is_not_marked_stale() -> None:
     assert payload["is_stale"] is False
 
 
+def test_model_assistant_stale_stream_can_refresh() -> None:
+    payload = enrich_live_stream_status(
+        {
+            "status": "running",
+            "channel": "model_assistant",
+            "updated_at": (datetime.now() - timedelta(seconds=LLM_STREAM_STALE_SECONDS + 5)).isoformat(timespec="seconds"),
+        }
+    )
+
+    assert payload["is_stale"] is True
+    assert payload["stale_action"]["id"] == "refresh_progress"
+    assert "刷新" in payload["stale_detail"]
+
+
 if __name__ == "__main__":
     test_llm_live_stream_redacts_secrets_before_persisting()
     test_load_llm_live_stream_marks_stale_running_stream()
     test_finished_stream_is_not_marked_stale()
+    test_model_assistant_stale_stream_can_refresh()
     print("llm_stream_redaction_tests_ok")

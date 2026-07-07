@@ -53,6 +53,9 @@ def enrich_live_stream_status(payload: dict[str, Any]) -> dict[str, Any]:
         if channel == "auto_workflow":
             payload["stale_detail"] = "大模型接口暂时没有新输出；可以继续等待，若数分钟无变化，可先中断再继续生成。"
             payload["stale_action"] = {"id": "cancel_auto", "label": "中断后继续"}
+        elif channel in {"model_assistant", "llm_analysis"}:
+            payload["stale_detail"] = "大模型接口暂时没有新输出；可以继续等待，或手动刷新一次进度确认当前状态。"
+            payload["stale_action"] = {"id": "refresh_progress", "label": "刷新进度"}
         else:
             payload["stale_detail"] = "大模型接口暂时没有新输出；可以继续等待，若长时间无变化，可刷新进度或重新发起。"
     return payload
