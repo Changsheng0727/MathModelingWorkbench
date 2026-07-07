@@ -10,6 +10,7 @@ READINESS_PHASE_TOTAL = 10
 READINESS_PHASES: dict[str, tuple[int, str, str, str]] = {
     "open_project_root": (1, "project", "检查项目", "打开项目文件夹，确认元数据和输出文件是否完整。"),
     "focus_llm": (1, "configure", "配置接口", "先保存可用的大模型接口。"),
+    "test_llm": (1, "verify_llm", "测试连接", "确认接口、模型名、Key 权限和余额都可用。"),
     "focus_upload": (2, "analyze", "上传分析", "先上传赛题并完成材料分析。"),
     "open_problems": (3, "select", "确认选题", "确认最终解题题号。"),
     "start_auto": (4, "solve", "自动求解", "启动代码求解、运行和论文回填。"),
@@ -23,6 +24,7 @@ READINESS_PHASES: dict[str, tuple[int, str, str, str]] = {
 }
 READINESS_ROADMAP_ACTIONS = [
     "focus_llm",
+    "test_llm",
     "focus_upload",
     "open_problems",
     "start_auto",
@@ -65,8 +67,18 @@ def build_project_readiness(
     todo_items = readiness_todo_items(checks)
     blocking_item = next((item for item in checks if item.get("status") == "fail" and item.get("action")), None)
     warning_item = next((item for item in checks if item.get("status") == "warning" and item.get("action")), None)
+    llm_test_warning = next(
+        (
+            item for item in warnings
+            if item.get("id") == "llm" and (item.get("action") or {}).get("id") == "test_llm"
+        ),
+        None,
+    )
     action_item = blocking_item
     primary_action = action_with_detail(blocking_item) if blocking_item else None
+    if llm_test_warning and (not primary_action or primary_action.get("id") == "start_auto"):
+        primary_action = action_with_detail(llm_test_warning)
+        action_item = llm_test_warning
     if not primary_action and delivery_is_packaged(metadata, package or {}):
         primary_action = output_action(metadata, "打开交付包")
         action_item = None

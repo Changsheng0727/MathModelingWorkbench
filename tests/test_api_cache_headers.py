@@ -159,6 +159,33 @@ def test_project_summary_focus_prioritizes_stale_llm_test() -> None:
     assert focus["filter"] == "all"
 
 
+def test_project_summary_focus_prioritizes_untested_llm_connection() -> None:
+    focus = main.build_project_summary_focus(
+        {"total": 2, "failed": 1},
+        [{"id": "p1", "auto_workflow_status": "failed"}],
+        llm_settings={"configured": True, "connection_status": "untested", "last_test": {}},
+    )
+
+    assert focus["guide_action"] == "test_llm"
+    assert focus["action_label"] == "测试连接"
+    assert focus["tone"] == "warning"
+    assert focus["filter"] == "all"
+
+
+def test_project_readiness_guides_untested_llm_before_auto_start() -> None:
+    with TemporaryDirectory() as tmp:
+        readiness = main.build_project_readiness(
+            Path(tmp),
+            metadata={"final_problem": {"id": "A"}},
+            analysis={"recommended_problem": {"id": "A"}},
+            llm_settings={"configured": True, "last_test": {}},
+        )
+
+    assert readiness["primary_action"]["id"] == "test_llm"
+    assert readiness["phase"]["label"] == "测试连接"
+    assert readiness["next_step"]["tone"] == "warning"
+
+
 def test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm() -> None:
     with TemporaryDirectory() as tmp:
         preflight = main.build_auto_workflow_preflight(
@@ -246,6 +273,8 @@ if __name__ == "__main__":
     test_project_summary_focus_flags_artifact_issues_before_urgent()
     test_project_summary_focus_prioritizes_missing_llm_settings()
     test_project_summary_focus_prioritizes_stale_llm_test()
+    test_project_summary_focus_prioritizes_untested_llm_connection()
+    test_project_readiness_guides_untested_llm_before_auto_start()
     test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm()
     test_auto_workflow_preflight_warns_for_stale_llm_test()
     test_auto_workflow_preflight_exposes_problem_selection_action()

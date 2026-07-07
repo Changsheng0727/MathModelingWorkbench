@@ -2578,6 +2578,28 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
       { id: "test_llm", label: "测试连接" },
     ], "warning");
   }
+  const lastTest = state.llmSettings?.last_test || {};
+  const llmStatus = state.llmSettings?.connection_status || "";
+  if (llmStatus === "blocked" || state.llmSettings?.connection_blocked) {
+    const detail = state.llmSettings?.connection_issue || "上次连接测试失败。请重新测试连接，确认接口、模型名、Key 权限和余额。";
+    return guideStep(3, "修复大模型连接", detail, [
+      { id: "test_llm", label: "重新测试", primary: true },
+      { id: "focus_llm", label: "检查设置" },
+    ], "failed");
+  }
+  if (llmStatus === "untested" || !lastTest.tested_at) {
+    return guideStep(3, "测试大模型连接", "接口已保存，但还没有成功连接测试记录。先测试连接，再启动一键流程。", [
+      { id: "test_llm", label: "测试连接", primary: true },
+      { id: "focus_llm", label: "检查设置" },
+    ], "warning");
+  }
+  if (state.llmSettings?.connection_stale) {
+    const age = state.llmSettings?.last_test_age_label || "较早";
+    return guideStep(3, "重测大模型连接", `最近一次成功连接测试在 ${age}。仍可运行，但先重测更稳。`, [
+      { id: "test_llm", label: "重新测试", primary: true },
+      { id: "start_auto", label: "继续运行" },
+    ], "warning");
+  }
   if (["failed", "completed_with_warnings", "cancelled", "requires_api_key"].includes(autoStatus)) {
     const reason = metadata.last_failure_diagnosis?.suggested_action || metadata.auto_workflow_error || "系统会读取错误日志和上下文继续修复。";
     return guideStep(3, "继续生成并自动修复", reason, [

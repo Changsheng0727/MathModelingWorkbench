@@ -555,6 +555,18 @@ def build_project_summary_focus(
             "action_label": "测试连接",
             "guide_action": "test_llm",
         }
+    if llm_settings is not None and llm_settings.get("configured"):
+        last_test = llm_settings.get("last_test") if isinstance(llm_settings.get("last_test"), dict) else {}
+        if llm_settings.get("connection_status") == "untested" or not last_test.get("tested_at"):
+            return {
+                "filter": "all",
+                "count": total,
+                "label": "建议先测试大模型连接",
+                "detail": "接口已保存，但还没有成功连接测试记录；先测试可以减少自动求解中途失败。",
+                "tone": "warning",
+                "action_label": "测试连接",
+                "guide_action": "test_llm",
+            }
     if llm_settings is not None and llm_settings.get("connection_stale"):
         age = str(llm_settings.get("last_test_age_label") or "较早").strip()
         return {
@@ -1157,7 +1169,7 @@ def project_readiness_bucket(project: dict) -> str:
     if project.get("delivery_package_status") == "success" or project.get("delivery_package_sha256"):
         return "deliverable"
     action = project.get("readiness_action") if isinstance(project.get("readiness_action"), dict) else {}
-    if project.get("readiness_status") == "failed" or action.get("id") in {"focus_llm", "focus_upload", "start_auto", "resume_auto"}:
+    if project.get("readiness_status") == "failed" or action.get("id") in {"focus_llm", "test_llm", "focus_upload", "start_auto", "resume_auto"}:
         return "needs_action"
     try:
         score = int(float(project.get("readiness_score") or 0))
@@ -1314,6 +1326,7 @@ def project_readiness_guide_actions(project: dict) -> list[dict]:
     add_readiness_guide_action(actions, action, primary=True)
     secondary_actions = {
         "focus_llm": {"id": "test_llm", "label": "测试连接"},
+        "test_llm": {"id": "focus_llm", "label": "检查设置"},
         "confirm_recommended_problem": {"id": "open_problems", "label": "查看评分"},
         "start_auto": {"id": "open_outputs", "label": "查看输出区"},
         "watch_auto": {"id": "cancel_auto", "label": "中断流程"},
