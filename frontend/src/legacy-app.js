@@ -25,6 +25,7 @@ const state = {
   actionButtonCatalog: {},
   overviewGeneratedAt: "",
   projectSummary: {},
+  projectSummaryFocus: {},
   uploadProgressStop: null,
   uploadProgressTotalSteps: 8,
   projectRestoreTried: false,
@@ -46,6 +47,7 @@ const els = {
   projectSearch: document.querySelector("#project-search"),
   projectFilters: document.querySelector("#project-filters"),
   projectCount: document.querySelector("#project-count"),
+  projectFocus: document.querySelector("#project-focus"),
   selectAnalyzedProjects: document.querySelector("#select-analyzed-projects"),
   clearProjectSelection: document.querySelector("#clear-project-selection"),
   batchStartProjects: document.querySelector("#batch-start-projects"),
@@ -692,6 +694,7 @@ function applyProductOverviewPayload(payload = {}) {
   }
   state.overviewGeneratedAt = payload.generated_at || state.overviewGeneratedAt || "";
   state.projectSummary = payload.project_summary || state.projectSummary || {};
+  state.projectSummaryFocus = payload.project_summary_focus || state.projectSummaryFocus || {};
   state.actionAliasCatalog = payload.action_alias_catalog || state.actionAliasCatalog || {};
   state.actionCatalog = payload.action_catalog || state.actionCatalog || {};
   state.actionProgressCatalog = payload.action_progress_catalog || state.actionProgressCatalog || {};
@@ -833,6 +836,7 @@ function renderProjectList() {
       : "暂无项目";
     els.projectCount.innerHTML = `${escapeHtml(baseText)}${renderProjectSummaryChips(state.projectSummary)}${freshness}`;
   }
+  renderProjectFocus(state.projectSummaryFocus);
 
   if (!projects.length) {
     els.projectList.innerHTML = renderProjectEmptyState(state.experience?.onboarding);
@@ -916,6 +920,30 @@ function renderProjectSummaryChips(summary = {}) {
   return `<span class="project-count-chips">${chips.map(([key, count, label, tone]) => (
     `<button class="project-count-chip${state.projectFilter === key ? " is-active" : ""}" type="button" data-project-filter="${escapeHtml(key)}" data-tone="${escapeHtml(tone)}" aria-pressed="${state.projectFilter === key ? "true" : "false"}">${escapeHtml(label)} ${escapeHtml(count)}</button>`
   )).join("")}</span>`;
+}
+
+function renderProjectFocus(focus = {}) {
+  if (!els.projectFocus) {
+    return;
+  }
+  const filter = validProjectFilter(focus.filter || "");
+  const label = String(focus.label || "").trim();
+  const detail = String(focus.detail || "").trim();
+  const actionLabel = String(focus.action_label || "").trim();
+  if (!label || !detail) {
+    els.projectFocus.classList.add("hidden");
+    els.projectFocus.innerHTML = "";
+    return;
+  }
+  els.projectFocus.classList.remove("hidden");
+  els.projectFocus.dataset.tone = String(focus.tone || "normal");
+  els.projectFocus.innerHTML = `
+    <span>
+      <b>${escapeHtml(label)}</b>
+      <small>${escapeHtml(detail)}</small>
+    </span>
+    <button class="project-focus-action" type="button" data-project-filter="${escapeHtml(filter)}">${escapeHtml(actionLabel || projectFilterLabel(filter))}</button>
+  `;
 }
 
 function renderProjectEmptyState(onboarding = {}) {
@@ -4476,6 +4504,15 @@ els.projectCount?.addEventListener("click", (event) => {
     return;
   }
   setProjectFilter(button.dataset.projectFilter || "all");
+});
+
+els.projectFocus?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-project-filter]");
+  if (!button) {
+    return;
+  }
+  setProjectFilter(button.dataset.projectFilter || "all");
+  scrollIntoViewIfPossible(els.projectList);
 });
 
 function setProjectFilter(filter = "all") {

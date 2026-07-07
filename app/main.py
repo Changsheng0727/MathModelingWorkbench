@@ -455,10 +455,12 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
     delivery_batch_jobs = list_delivery_batch_jobs()
     delivery_batches = list_delivery_package_batches()
     settings = load_capacity_settings()
+    project_summary = build_project_summary(projects_snapshot)
     return redact_public_payload({
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "projects": projects_snapshot,
-        "project_summary": build_project_summary(projects_snapshot),
+        "project_summary": project_summary,
+        "project_summary_focus": build_project_summary_focus(project_summary),
         "action_alias_catalog": ACTION_ALIASES,
         "action_catalog": ACTION_OUTCOMES,
         "action_progress_catalog": ACTION_PROGRESS,
@@ -506,6 +508,39 @@ def build_project_summary(projects: list[dict]) -> dict[str, int]:
             or str(item.get("delivery_readiness_status") or "") in ready_statuses
         ),
         "artifact_issue": sum(1 for item in projects if project_has_artifact_issue(item)),
+    }
+
+
+def build_project_summary_focus(summary: dict[str, int]) -> dict[str, object]:
+    total = project_summary_int(summary.get("total"))
+    if total <= 0:
+        return {}
+    priorities = [
+        ("failed", "先修失败项目", "失败项目最影响生成成功率，建议先从这里继续或查看诊断。", "failed"),
+        ("artifact_issue", "检查文件异常", "有生成文件或元数据异常，建议先打开项目文件夹确认。", "failed"),
+        ("urgent", "先处理高优先级", "这些项目有必需步骤未完成，处理后才能继续自动求解或交付。", "warning"),
+        ("running", "查看运行进度", "后台任务正在排队或执行，先观察当前进度再决定是否继续操作。", "running"),
+        ("needs_action", "继续待处理项目", "这些项目已经有下一步入口，适合逐个推进。", "warning"),
+        ("deliverable", "检查可交付项目", "已有项目接近提交状态，可以检查论文、结果和交付包。", "success"),
+    ]
+    for key, label, detail, tone in priorities:
+        count = project_summary_int(summary.get(key))
+        if count > 0:
+            return {
+                "filter": key,
+                "count": count,
+                "label": label,
+                "detail": detail,
+                "tone": tone,
+                "action_label": f"查看 {count} 个",
+            }
+    return {
+        "filter": "all",
+        "count": total,
+        "label": "项目状态平稳",
+        "detail": "没有明显阻塞项，可以打开最近项目继续检查或上传新赛题。",
+        "tone": "success",
+        "action_label": "查看全部",
     }
 
 

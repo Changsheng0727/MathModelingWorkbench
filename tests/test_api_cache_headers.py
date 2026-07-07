@@ -46,6 +46,7 @@ def test_product_overview_payload_has_freshness_timestamp() -> None:
     assert payload["generated_at"]
     assert payload["projects"] == []
     assert payload["project_summary"]["total"] == 0
+    assert payload["project_summary_focus"] == {}
 
 
 def test_project_summary_counts_workflow_signals() -> None:
@@ -75,6 +76,28 @@ def test_project_summary_counts_workflow_signals() -> None:
     assert summary["artifact_issue"] == 1
 
 
+def test_project_summary_focus_prioritizes_failures() -> None:
+    focus = main.build_project_summary_focus(
+        {
+            "total": 4,
+            "failed": 1,
+            "urgent": 2,
+            "running": 1,
+            "needs_action": 3,
+        }
+    )
+
+    assert focus["filter"] == "failed"
+    assert focus["count"] == 1
+    assert focus["tone"] == "failed"
+
+
+def test_project_summary_focus_flags_artifact_issues_before_urgent() -> None:
+    focus = main.build_project_summary_focus({"total": 3, "artifact_issue": 1, "urgent": 2})
+
+    assert focus["filter"] == "artifact_issue"
+
+
 def test_progress_polling_hint_is_fast_only_while_active() -> None:
     assert main.progress_poll_after_ms("running") < main.progress_poll_after_ms("success")
     assert main.progress_poll_after_ms("queued") == 700
@@ -102,6 +125,8 @@ if __name__ == "__main__":
     test_environment_status_is_not_browser_cached()
     test_product_overview_payload_has_freshness_timestamp()
     test_project_summary_counts_workflow_signals()
+    test_project_summary_focus_prioritizes_failures()
+    test_project_summary_focus_flags_artifact_issues_before_urgent()
     test_progress_polling_hint_is_fast_only_while_active()
     test_progress_live_quiet_seconds_reads_stream_status()
     test_progress_payload_gets_refresh_timestamp()

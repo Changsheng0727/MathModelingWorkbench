@@ -116,6 +116,7 @@ export default function WorkbenchPage() {
               <button className="project-filter" type="button" data-project-filter="artifact_issue">文件/元数据异常</button>
             </div>
             <p id="project-count" className="project-count" aria-live="polite">暂无项目</p>
+            <div id="project-focus" className="project-focus hidden" aria-live="polite"></div>
             <details id="project-batch-details" className="simple-advanced">
               <summary>高级批量操作</summary>
               <div className="project-batch-actions">

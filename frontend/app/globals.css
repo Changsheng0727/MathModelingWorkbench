@@ -916,6 +916,102 @@ p {
   color: var(--teal);
 }
 
+.project-focus {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  box-shadow: var(--shadow-inset);
+}
+
+.project-focus > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.project-focus b,
+.project-focus small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-focus b {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.project-focus small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.project-focus-action {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 780;
+  box-shadow: var(--shadow-inset);
+}
+
+.project-focus-action:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.project-focus-action:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus), var(--shadow-inset);
+}
+
+.project-focus[data-tone="failed"] {
+  border-color: color-mix(in oklch, var(--red) 30%, var(--line));
+  background: var(--red-soft);
+}
+
+.project-focus[data-tone="failed"] .project-focus-action,
+.project-focus[data-tone="failed"] b {
+  color: var(--red);
+}
+
+.project-focus[data-tone="warning"] {
+  border-color: color-mix(in oklch, var(--amber) 30%, var(--line));
+  background: var(--amber-soft);
+}
+
+.project-focus[data-tone="warning"] .project-focus-action,
+.project-focus[data-tone="warning"] b {
+  color: var(--amber);
+}
+
+.project-focus[data-tone="running"] {
+  border-color: color-mix(in oklch, var(--primary) 30%, var(--line));
+  background: var(--primary-soft);
+}
+
+.project-focus[data-tone="success"] {
+  border-color: color-mix(in oklch, var(--teal) 30%, var(--line));
+  background: var(--teal-soft);
+}
+
+.project-focus[data-tone="success"] .project-focus-action,
+.project-focus[data-tone="success"] b {
+  color: var(--teal);
+}
+
 .project-empty-card {
   display: grid;
   gap: 9px;
