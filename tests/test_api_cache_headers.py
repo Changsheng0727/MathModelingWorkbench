@@ -84,18 +84,31 @@ def test_project_summary_focus_prioritizes_failures() -> None:
             "urgent": 2,
             "running": 1,
             "needs_action": 3,
-        }
+        },
+        [
+            {"id": "p1", "name": "失败项目", "auto_workflow_status": "failed"},
+            {"id": "p2", "name": "高优先级项目", "readiness_next_step_urgency": "high"},
+        ],
     )
 
     assert focus["filter"] == "failed"
     assert focus["count"] == 1
     assert focus["tone"] == "failed"
+    assert focus["project_id"] == "p1"
+    assert focus["project_name"] == "失败项目"
 
 
 def test_project_summary_focus_flags_artifact_issues_before_urgent() -> None:
-    focus = main.build_project_summary_focus({"total": 3, "artifact_issue": 1, "urgent": 2})
+    focus = main.build_project_summary_focus(
+        {"total": 3, "artifact_issue": 1, "urgent": 2},
+        [
+            {"id": "p1", "readiness_next_step_urgency": "high"},
+            {"id": "p2", "artifact_health_status": "warning"},
+        ],
+    )
 
     assert focus["filter"] == "artifact_issue"
+    assert focus["project_id"] == "p2"
 
 
 def test_progress_polling_hint_is_fast_only_while_active() -> None:

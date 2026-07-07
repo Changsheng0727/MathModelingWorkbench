@@ -110,6 +110,8 @@ app.mount("/_next", StaticFiles(directory=next_static_dir), name="next_static")
 
 MAX_FOLDER_UPLOAD_FILES = 1200
 MAX_FOLDER_UPLOAD_BYTES = 500 * 1024 * 1024
+ACTIVE_PROJECT_STATUSES = {"queued", "running", "between_steps", "cancel_requested"}
+READY_DELIVERY_STATUSES = {"deliverable", "review", "ready", "success"}
 
 
 def redact_public_payload(value):
@@ -460,7 +462,7 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "projects": projects_snapshot,
         "project_summary": project_summary,
-        "project_summary_focus": build_project_summary_focus(project_summary),
+        "project_summary_focus": build_project_summary_focus(project_summary, projects_snapshot),
         "action_alias_catalog": ACTION_ALIASES,
         "action_catalog": ACTION_OUTCOMES,
         "action_progress_catalog": ACTION_PROGRESS,
@@ -487,14 +489,12 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
 
 
 def build_project_summary(projects: list[dict]) -> dict[str, int]:
-    active_statuses = {"queued", "running", "between_steps", "cancel_requested"}
-    ready_statuses = {"deliverable", "review", "ready", "success"}
     return {
         "total": len(projects),
         "analyzed": sum(1 for item in projects if item.get("analysis_available")),
         "urgent": sum(1 for item in projects if str(item.get("readiness_next_step_urgency") or "") == "high"),
         "needs_action": sum(1 for item in projects if str(item.get("readiness_bucket") or "") == "needs_action"),
-        "running": sum(1 for item in projects if str(item.get("auto_workflow_status") or "") in active_statuses),
+        "running": sum(1 for item in projects if str(item.get("auto_workflow_status") or "") in ACTIVE_PROJECT_STATUSES),
         "failed": sum(
             1
             for item in projects
@@ -505,16 +505,17 @@ def build_project_summary(projects: list[dict]) -> dict[str, int]:
             1
             for item in projects
             if str(item.get("readiness_bucket") or "") == "deliverable"
-            or str(item.get("delivery_readiness_status") or "") in ready_statuses
+            or str(item.get("delivery_readiness_status") or "") in READY_DELIVERY_STATUSES
         ),
         "artifact_issue": sum(1 for item in projects if project_has_artifact_issue(item)),
     }
 
 
-def build_project_summary_focus(summary: dict[str, int]) -> dict[str, object]:
+def build_project_summary_focus(summary: dict[str, int], projects: list[dict] | None = None) -> dict[str, object]:
     total = project_summary_int(summary.get("total"))
     if total <= 0:
         return {}
+    projects = projects or []
     priorities = [
         ("failed", "先修失败项目", "失败项目最影响生成成功率，建议先从这里继续或查看诊断。", "failed"),
         ("artifact_issue", "检查文件异常", "有生成文件或元数据异常，建议先打开项目文件夹确认。", "failed"),
@@ -526,7 +527,7 @@ def build_project_summary_focus(summary: dict[str, int]) -> dict[str, object]:
     for key, label, detail, tone in priorities:
         count = project_summary_int(summary.get(key))
         if count > 0:
-            return {
+            focus = {
                 "filter": key,
                 "count": count,
                 "label": label,
@@ -534,14 +535,53 @@ def build_project_summary_focus(summary: dict[str, int]) -> dict[str, object]:
                 "tone": tone,
                 "action_label": f"查看 {count} 个",
             }
-    return {
+            return attach_project_summary_focus_target(focus, projects)
+    return attach_project_summary_focus_target({
         "filter": "all",
         "count": total,
         "label": "项目状态平稳",
         "detail": "没有明显阻塞项，可以打开最近项目继续检查或上传新赛题。",
         "tone": "success",
         "action_label": "查看全部",
-    }
+    }, projects)
+
+
+def attach_project_summary_focus_target(focus: dict[str, object], projects: list[dict]) -> dict[str, object]:
+    filter_key = str(focus.get("filter") or "all")
+    target = next((item for item in projects if project_matches_summary_filter(item, filter_key)), None)
+    if not target:
+        return focus
+    project_id = str(target.get("id") or "").strip()
+    if not project_id:
+        return focus
+    focus["project_id"] = project_id
+    focus["project_name"] = str(target.get("name") or target.get("original_name") or project_id)
+    focus["project_action_label"] = "打开项目"
+    return focus
+
+
+def project_matches_summary_filter(project: dict, filter_key: str) -> bool:
+    if filter_key == "all":
+        return True
+    if filter_key == "failed":
+        return (
+            str(project.get("auto_workflow_status") or "") == "failed"
+            or str(project.get("computed_solution_status") or "") == "failed"
+        )
+    if filter_key == "artifact_issue":
+        return project_has_artifact_issue(project)
+    if filter_key == "urgent":
+        return str(project.get("readiness_next_step_urgency") or "") == "high"
+    if filter_key == "running":
+        return str(project.get("auto_workflow_status") or "") in ACTIVE_PROJECT_STATUSES
+    if filter_key == "needs_action":
+        return str(project.get("readiness_bucket") or "") == "needs_action"
+    if filter_key == "deliverable":
+        return (
+            str(project.get("readiness_bucket") or "") == "deliverable"
+            or str(project.get("delivery_readiness_status") or "") in READY_DELIVERY_STATUSES
+        )
+    return False
 
 
 def project_has_artifact_issue(project: dict) -> bool:

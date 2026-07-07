@@ -930,6 +930,9 @@ function renderProjectFocus(focus = {}) {
   const label = String(focus.label || "").trim();
   const detail = String(focus.detail || "").trim();
   const actionLabel = String(focus.action_label || "").trim();
+  const projectId = String(focus.project_id || "").trim();
+  const projectName = String(focus.project_name || "").trim();
+  const projectActionLabel = String(focus.project_action_label || "").trim();
   if (!label || !detail) {
     els.projectFocus.classList.add("hidden");
     els.projectFocus.innerHTML = "";
@@ -942,7 +945,10 @@ function renderProjectFocus(focus = {}) {
       <b>${escapeHtml(label)}</b>
       <small>${escapeHtml(detail)}</small>
     </span>
-    <button class="project-focus-action" type="button" data-project-filter="${escapeHtml(filter)}">${escapeHtml(actionLabel || projectFilterLabel(filter))}</button>
+    <span class="project-focus-actions">
+      <button class="project-focus-action" type="button" data-project-filter="${escapeHtml(filter)}">${escapeHtml(actionLabel || projectFilterLabel(filter))}</button>
+      ${projectId ? `<button class="project-focus-action" type="button" data-focus-project-id="${escapeHtml(projectId)}" title="${escapeHtml(projectName ? `打开 ${projectName}` : "打开焦点项目")}">${escapeHtml(projectActionLabel || "打开项目")}</button>` : ""}
+    </span>
   `;
 }
 
@@ -4507,6 +4513,17 @@ els.projectCount?.addEventListener("click", (event) => {
 });
 
 els.projectFocus?.addEventListener("click", (event) => {
+  const projectButton = event.target.closest("[data-focus-project-id]");
+  if (projectButton) {
+    const projectId = projectButton.dataset.focusProjectId || "";
+    projectButton.disabled = true;
+    openProject(projectId).catch((error) => {
+      showToast(`打开项目失败：${error.message}`, "error");
+    }).finally(() => {
+      projectButton.disabled = false;
+    });
+    return;
+  }
   const button = event.target.closest("[data-project-filter]");
   if (!button) {
     return;
