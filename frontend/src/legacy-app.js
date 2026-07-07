@@ -907,14 +907,14 @@ function renderProjectSummaryChips(summary = {}) {
     ["deliverable", "可交付", "success"],
     ["artifact_issue", "文件异常", "failed"],
   ]
-    .map(([key, label, tone]) => [Number(summary?.[key] || 0), label, tone])
-    .filter(([count]) => count > 0)
+    .map(([key, label, tone]) => [key, Number(summary?.[key] || 0), label, tone])
+    .filter(([, count]) => count > 0)
     .slice(0, 4);
   if (!chips.length) {
     return "";
   }
-  return `<span class="project-count-chips">${chips.map(([count, label, tone]) => (
-    `<span class="project-count-chip" data-tone="${escapeHtml(tone)}">${escapeHtml(label)} ${escapeHtml(count)}</span>`
+  return `<span class="project-count-chips">${chips.map(([key, count, label, tone]) => (
+    `<button class="project-count-chip${state.projectFilter === key ? " is-active" : ""}" type="button" data-project-filter="${escapeHtml(key)}" data-tone="${escapeHtml(tone)}" aria-pressed="${state.projectFilter === key ? "true" : "false"}">${escapeHtml(label)} ${escapeHtml(count)}</button>`
   )).join("")}</span>`;
 }
 
@@ -1060,9 +1060,12 @@ function renderProjectFilters(projects = []) {
       if (isUrgentProject(project)) {
         acc.urgent += 1;
       }
+      if (isFailedProject(project)) {
+        acc.failed += 1;
+      }
       return acc;
     },
-    { all: 0, urgent: 0, needs_action: 0, running: 0, deliverable: 0, artifact_issue: 0 },
+    { all: 0, urgent: 0, needs_action: 0, running: 0, failed: 0, deliverable: 0, artifact_issue: 0 },
   );
   els.projectFilters.querySelectorAll("[data-project-filter]").forEach((button) => {
     const filter = button.dataset.projectFilter || "all";
@@ -1084,6 +1087,9 @@ function projectFilterMatches(project = {}, filter = "all") {
   if (validFilter === "urgent") {
     return isUrgentProject(project);
   }
+  if (validFilter === "failed") {
+    return isFailedProject(project);
+  }
   return (project.readiness_bucket || "normal") === validFilter;
 }
 
@@ -1093,6 +1099,7 @@ function projectFilterLabel(filter = "all") {
     urgent: "优先处理",
     needs_action: "需处理",
     running: "运行中",
+    failed: "失败",
     deliverable: "可交付",
     artifact_issue: "文件/元数据异常",
   };
@@ -1100,7 +1107,7 @@ function projectFilterLabel(filter = "all") {
 }
 
 function validProjectFilter(filter = "all") {
-  return ["all", "urgent", "needs_action", "running", "deliverable", "artifact_issue"].includes(filter) ? filter : "all";
+  return ["all", "urgent", "needs_action", "running", "failed", "deliverable", "artifact_issue"].includes(filter) ? filter : "all";
 }
 
 function renderDefaultOpenBadge(project = {}) {
@@ -1176,6 +1183,10 @@ function hasArtifactIssue(project = {}) {
 
 function isUrgentProject(project = {}) {
   return (project.readiness_next_step_urgency || project.readiness_next_step?.urgency || "") === "high";
+}
+
+function isFailedProject(project = {}) {
+  return project.auto_workflow_status === "failed" || project.computed_solution_status === "failed";
 }
 
 function sortProjectsForAttention(projects = []) {
@@ -4456,10 +4467,22 @@ els.projectFilters?.addEventListener("click", (event) => {
   if (!button) {
     return;
   }
-  state.projectFilter = validProjectFilter(button.dataset.projectFilter || "all");
+  setProjectFilter(button.dataset.projectFilter || "all");
+});
+
+els.projectCount?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-project-filter]");
+  if (!button) {
+    return;
+  }
+  setProjectFilter(button.dataset.projectFilter || "all");
+});
+
+function setProjectFilter(filter = "all") {
+  state.projectFilter = validProjectFilter(filter);
   writePreference("mmw-project-filter", state.projectFilter);
   renderProjectList();
-});
+}
 
 els.projectBatchDetails?.addEventListener("toggle", () => {
   renderProjectList();

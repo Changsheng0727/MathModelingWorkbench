@@ -872,6 +872,26 @@ p {
   font-weight: 750;
 }
 
+.project-count-chip {
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.project-count-chip:hover,
+.project-count-chip.is-active {
+  border-color: var(--primary);
+  box-shadow: var(--focus);
+}
+
+.project-count-chip:active {
+  transform: translateY(1px);
+}
+
+.project-count-chip:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus);
+}
+
 .project-count-chip[data-tone="failed"] {
   border-color: color-mix(in oklch, var(--red) 28%, var(--line));
   background: var(--red-soft);

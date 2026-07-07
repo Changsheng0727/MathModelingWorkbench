@@ -111,6 +111,7 @@ export default function WorkbenchPage() {
               <button className="project-filter" type="button" data-project-filter="urgent">优先处理</button>
               <button className="project-filter" type="button" data-project-filter="needs_action">需处理</button>
               <button className="project-filter" type="button" data-project-filter="running">运行中</button>
+              <button className="project-filter" type="button" data-project-filter="failed">失败</button>
               <button className="project-filter" type="button" data-project-filter="deliverable">可交付</button>
               <button className="project-filter" type="button" data-project-filter="artifact_issue">文件/元数据异常</button>
             </div>
