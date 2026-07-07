@@ -5068,7 +5068,7 @@ function renderProgressPanel(element, progress = {}, fallbackTotal = 6) {
     <div class="progress-steps">
       ${allSteps.map((step) => renderProgressStep(step, progress)).join("")}
     </div>
-    ${renderLlmLiveStream(liveStream)}
+    ${renderLlmLiveStream(liveStream, progress)}
   `;
 }
 
@@ -5081,7 +5081,7 @@ function hasLiveStream(liveStream = {}) {
   );
 }
 
-function renderLlmLiveStream(liveStream = {}) {
+function renderLlmLiveStream(liveStream = {}, progress = {}) {
   if (!hasLiveStream(liveStream)) {
     return "";
   }
@@ -5094,8 +5094,9 @@ function renderLlmLiveStream(liveStream = {}) {
   const badge = status === "running" ? "实时" : statusLabel(status);
   const quietSeconds = Number(liveStream.quiet_seconds || 0);
   const staleNotice = liveStream.is_stale
-    ? `已 ${formatDuration(quietSeconds)} 未收到新内容，可能正在等待接口响应。`
+    ? liveStream.stale_detail || `已 ${formatDuration(quietSeconds)} 未收到新内容，可能正在等待接口响应。`
     : "";
+  const staleAction = renderLiveStreamStaleAction(liveStream, progress);
   const hiddenSensitive = [contentTail, label, ...events.map((event) => `${event.label || ""} ${event.detail || ""}`)]
     .some((value) => redactSensitiveText(value).includes("[REDACTED]"));
   return `
@@ -5108,13 +5109,26 @@ function renderLlmLiveStream(liveStream = {}) {
         <b>${escapeHtml(badge)}</b>
       </div>
       ${hiddenSensitive ? `<p class="llm-live-privacy">已自动隐藏可能包含密钥的片段。</p>` : ""}
-      ${staleNotice ? `<p class="llm-live-stale">${escapeHtml(staleNotice)}</p>` : ""}
+      ${staleNotice ? `
+        <div class="llm-live-stale">
+          <p>${escapeHtml(staleNotice)}</p>
+          ${staleAction}
+        </div>
+      ` : ""}
       ${contentTail ? `<pre>${escapeHtml(contentTail)}</pre>` : ""}
       <div class="llm-live-events">
         ${events.map(renderLiveEvent).join("")}
       </div>
     </div>
   `;
+}
+
+function renderLiveStreamStaleAction(liveStream = {}, progress = {}) {
+  const action = liveStream.stale_action || {};
+  if (liveStream.channel !== "auto_workflow" || action.id !== "cancel_auto" || !progress.can_cancel) {
+    return "";
+  }
+  return `<button class="diagnosis-resume" type="button" data-auto-action="cancel">${escapeHtml(action.label || "中断流程")}</button>`;
 }
 
 function renderLiveEvent(event) {
@@ -5185,7 +5199,7 @@ function renderFailureDiagnosis(diagnosis = {}, options = {}) {
 }
 
 els.autoWorkflowProgress?.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-auto-action='resume']");
+  const button = event.target.closest("[data-auto-action]");
   if (!button) {
     return;
   }
@@ -5195,7 +5209,14 @@ els.autoWorkflowProgress?.addEventListener("click", async (event) => {
     return;
   }
   button.disabled = true;
-  await runAutoWorkflow(projectId, { resume: true });
+  if (button.dataset.autoAction === "cancel") {
+    const requested = await requestAutoWorkflowCancel(projectId);
+    if (!requested) {
+      button.disabled = false;
+    }
+  } else {
+    await runAutoWorkflow(projectId, { resume: true });
+  }
 });
 
 els.runAutoWorkflow.addEventListener("click", async () => {
@@ -5255,20 +5276,30 @@ if (els.cancelAutoWorkflow) {
       els.autoWorkflowStatus.textContent = "请先打开一个项目。";
       return;
     }
+    await requestAutoWorkflowCancel(projectId);
+  });
+}
+
+async function requestAutoWorkflowCancel(projectId) {
+  if (els.cancelAutoWorkflow) {
     els.cancelAutoWorkflow.disabled = true;
-    els.autoWorkflowStatus.textContent = "已请求中断，系统会在当前阶段安全结束后停止。";
-    try {
-      const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/cancel`, { method: "POST" });
-      renderProject(payload.project);
-      const progressSynced = await refreshAutoProgress(projectId);
-      if (!progressSynced) {
-        await syncOverviewAfterAction(payload);
-      }
-    } catch (error) {
-      els.autoWorkflowStatus.textContent = `中断请求失败：${error.message}`;
+  }
+  els.autoWorkflowStatus.textContent = "已请求中断，系统会在当前阶段安全结束后停止。";
+  try {
+    const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/auto/cancel`, { method: "POST" });
+    renderProject(payload.project);
+    const progressSynced = await refreshAutoProgress(projectId);
+    if (!progressSynced) {
+      await syncOverviewAfterAction(payload);
+    }
+    return true;
+  } catch (error) {
+    els.autoWorkflowStatus.textContent = `中断请求失败：${error.message}`;
+    if (els.cancelAutoWorkflow) {
       els.cancelAutoWorkflow.disabled = false;
     }
-  });
+    return false;
+  }
 }
 
 async function refreshDiagnosticsForProject(projectId) {

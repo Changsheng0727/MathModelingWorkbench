@@ -58,6 +58,8 @@ def test_load_llm_live_stream_marks_stale_running_stream() -> None:
 
     assert payload["is_stale"] is True
     assert payload["quiet_seconds"] >= LLM_STREAM_STALE_SECONDS
+    assert payload["stale_action"]["id"] == "cancel_auto"
+    assert "中断" in payload["stale_detail"]
 
 
 def test_finished_stream_is_not_marked_stale() -> None:

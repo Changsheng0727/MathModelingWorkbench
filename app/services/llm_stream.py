@@ -48,6 +48,13 @@ def enrich_live_stream_status(payload: dict[str, Any]) -> dict[str, Any]:
     payload["quiet_seconds"] = quiet
     payload["is_stale"] = payload.get("status") == "running" and quiet >= LLM_STREAM_STALE_SECONDS
     payload["stale_after_seconds"] = LLM_STREAM_STALE_SECONDS
+    if payload["is_stale"]:
+        channel = str(payload.get("channel") or "")
+        if channel == "auto_workflow":
+            payload["stale_detail"] = "大模型接口暂时没有新输出；可以继续等待，若数分钟无变化，可先中断再继续生成。"
+            payload["stale_action"] = {"id": "cancel_auto", "label": "中断后继续"}
+        else:
+            payload["stale_detail"] = "大模型接口暂时没有新输出；可以继续等待，若长时间无变化，可刷新进度或重新发起。"
     return payload
 
 
