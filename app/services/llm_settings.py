@@ -378,12 +378,29 @@ def effective_base_url(value: str | None) -> str:
 def normalize_model(value: str | None) -> str:
     if value is None:
         return ""
-    value = value.strip()
+    value = extract_model_candidate(value)
     if not value:
         return DEFAULT_MODEL
     if any(ch.isspace() for ch in value):
         raise ValueError("模型名称不能包含空白字符")
     return value
+
+
+def extract_model_candidate(value: str | None) -> str:
+    text = str(value or "").strip().strip("\"'")
+    if not text:
+        return ""
+    assignment = re.match(r"^(?:openai_model|model|model_name)\s*[:=]\s*(.+)$", text, flags=re.IGNORECASE)
+    if assignment:
+        return assignment.group(1).strip().strip("\"'")
+    json_model = re.search(
+        r"[\"'](?:openai_model|model|model_name)[\"']\s*:\s*[\"']([^\"']+)[\"']",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if json_model:
+        return json_model.group(1).strip()
+    return text
 
 
 def mask_api_key(api_key: str) -> str:

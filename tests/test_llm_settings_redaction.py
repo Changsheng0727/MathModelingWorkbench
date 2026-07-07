@@ -52,6 +52,13 @@ def test_normalize_base_url_accepts_common_pasted_formats() -> None:
     assert llm_settings.normalize_base_url('{"base_url": "api.chshapi.org/v1/chat/completions"}') == "https://api.chshapi.org/v1"
 
 
+def test_normalize_model_accepts_common_pasted_formats() -> None:
+    assert llm_settings.normalize_model("gpt-5.5") == "gpt-5.5"
+    assert llm_settings.normalize_model("MODEL=gpt-5.5") == "gpt-5.5"
+    assert llm_settings.normalize_model('{"model": "gpt-5.5"}') == "gpt-5.5"
+    assert llm_settings.normalize_model('"deepseek-chat"') == "deepseek-chat"
+
+
 def test_record_llm_test_result_persists_redacted_message() -> None:
     original_path = llm_settings.SETTINGS_PATH
     api_key = "sk" + "-test_" + "abcdefghijklmnopqrstuvwxyz"
@@ -141,6 +148,7 @@ if __name__ == "__main__":
     test_redact_sensitive_text_masks_common_tokens()
     test_normalize_api_key_accepts_common_pasted_formats()
     test_normalize_base_url_accepts_common_pasted_formats()
+    test_normalize_model_accepts_common_pasted_formats()
     test_record_llm_test_result_persists_redacted_message()
     test_llm_settings_marks_stale_successful_test()
     test_llm_test_endpoint_returns_redacted_error()

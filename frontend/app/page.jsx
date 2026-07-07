@@ -77,6 +77,7 @@ export default function WorkbenchPage() {
                 <label>
                   <span className="label">模型</span>
                   <input id="model-input" className="text-input" type="text" autoComplete="off" />
+                  <span className="field-hint">可填模型名，也可粘贴 MODEL=模型名 或 JSON 配置片段；保存时会自动提取模型名。</span>
                 </label>
                 <label>
                   <span className="label">求解策略</span>
