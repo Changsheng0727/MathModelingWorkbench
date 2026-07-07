@@ -51,6 +51,7 @@ const els = {
   projectFocus: document.querySelector("#project-focus"),
   selectAnalyzedProjects: document.querySelector("#select-analyzed-projects"),
   clearProjectSelection: document.querySelector("#clear-project-selection"),
+  batchPreviewProjects: document.querySelector("#batch-preview-projects"),
   batchStartProjects: document.querySelector("#batch-start-projects"),
   projectBatchDetails: document.querySelector("#project-batch-details"),
   batchProjectStatus: document.querySelector("#batch-project-status"),
@@ -1452,6 +1453,10 @@ function updateProjectBatchControls(filteredProjects = null) {
     els.batchStartProjects.disabled = selectedCount === 0;
     els.batchStartProjects.textContent = selectedCount ? `批量入队 ${selectedCount}` : "批量入队";
   }
+  if (els.batchPreviewProjects) {
+    els.batchPreviewProjects.disabled = selectedCount === 0;
+    els.batchPreviewProjects.textContent = selectedCount ? `预检 ${selectedCount}` : "预检";
+  }
   if (els.clearProjectSelection) {
     els.clearProjectSelection.disabled = selectedCount === 0;
   }
@@ -1500,6 +1505,9 @@ async function startSelectedProjectsBatch() {
     return;
   }
   els.batchStartProjects.disabled = true;
+  if (els.batchPreviewProjects) {
+    els.batchPreviewProjects.disabled = true;
+  }
   els.selectAnalyzedProjects.disabled = true;
   els.clearProjectSelection.disabled = true;
   els.batchProjectStatus.textContent = `正在逐个预检 ${projectIds.length} 个项目，可运行的项目会先进入任务池。`;
@@ -1528,6 +1536,35 @@ async function startSelectedProjectsBatch() {
   } catch (error) {
     els.batchProjectStatus.textContent = `批量入队失败：${error.message}`;
     showToast(`批量入队失败：${error.message}`, "error");
+  } finally {
+    updateProjectBatchControls();
+  }
+}
+
+async function previewSelectedProjectsBatch() {
+  const projectIds = Array.from(state.selectedProjectIds);
+  if (!projectIds.length) {
+    els.batchProjectStatus.textContent = "请先选择已分析项目。";
+    return;
+  }
+  if (els.batchPreviewProjects) {
+    els.batchPreviewProjects.disabled = true;
+  }
+  els.batchProjectStatus.textContent = `正在预检 ${projectIds.length} 个项目。`;
+  try {
+    const payload = await api("/api/auto/batch/preflight", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_ids: projectIds, mode: "auto" }),
+    });
+    const preflight = payload.batch_preflight || {};
+    const skipped = Array.isArray(preflight.skipped) ? preflight.skipped : [];
+    const readyText = preflight.ready_count ? ` 可点击“批量入队”提交 ${preflight.ready_count} 个项目。` : "";
+    els.batchProjectStatus.innerHTML = `${escapeHtml(preflight.summary || "预检完成。")}${escapeHtml(readyText)}${renderBatchSkippedItems(skipped)}`;
+    showToast(preflight.summary || "批量预检完成", preflight.status === "failed" ? "error" : preflight.status === "success" ? "success" : "warning");
+  } catch (error) {
+    els.batchProjectStatus.textContent = `批量预检失败：${error.message}`;
+    showToast(`批量预检失败：${error.message}`, "error");
   } finally {
     updateProjectBatchControls();
   }
@@ -4836,6 +4873,10 @@ els.clearProjectSelection?.addEventListener("click", () => {
   state.selectedProjectIds.clear();
   renderProjectList();
   els.batchProjectStatus.textContent = "已清空批量选择。";
+});
+
+els.batchPreviewProjects?.addEventListener("click", async () => {
+  await previewSelectedProjectsBatch();
 });
 
 els.batchStartProjects?.addEventListener("click", async () => {

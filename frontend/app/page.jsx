@@ -125,6 +125,7 @@ export default function WorkbenchPage() {
               <div className="project-batch-actions">
                 <button id="select-analyzed-projects" className="ghost compact" type="button">选择已分析</button>
                 <button id="clear-project-selection" className="ghost compact" type="button">清空</button>
+                <button id="batch-preview-projects" className="ghost compact" type="button">预检</button>
                 <button id="batch-start-projects" className="primary compact" type="button">批量入队</button>
               </div>
             </details>

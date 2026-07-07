@@ -1112,14 +1112,15 @@ p {
 }
 
 .project-batch-actions {
-  display: grid;
-  grid-template-columns: 1fr 72px 1fr;
+  display: flex;
+  flex-wrap: wrap;
   gap: 7px;
   margin: 0 0 10px;
 }
 
 .project-batch-actions .primary,
 .project-batch-actions .ghost {
+  flex: 1 1 72px;
   min-height: 34px;
   padding: 0 9px;
   font-size: 12px;

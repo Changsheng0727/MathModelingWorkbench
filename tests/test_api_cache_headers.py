@@ -424,6 +424,37 @@ def test_auto_batch_skips_bad_metadata_and_submits_valid_project() -> None:
     assert batch["skipped"][1]["action_label"] == "去确认选题"
 
 
+def test_auto_batch_preflight_does_not_start_jobs() -> None:
+    with TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        good = root / "good"
+        needs_problem = root / "needs_problem"
+        for project_root in [good, needs_problem]:
+            (project_root / "artifacts").mkdir(parents=True)
+        (good / "metadata.json").write_text('{"id":"good","name":"可运行项目","final_problem":{"id":"A"}}', encoding="utf-8")
+        (good / "artifacts" / "analysis.json").write_text('{"recommended_problem":{"id":"A"}}', encoding="utf-8")
+        (needs_problem / "metadata.json").write_text('{"id":"needs_problem","name":"待确认项目"}', encoding="utf-8")
+        (needs_problem / "artifacts" / "analysis.json").write_text('{"recommended_problem":{"id":"B"}}', encoding="utf-8")
+
+        def fake_project_root(project_id: str) -> Path:
+            return {"good": good, "needs_problem": needs_problem}[project_id]
+
+        with (
+            patch.object(main, "project_root", side_effect=fake_project_root),
+            patch.object(main, "get_llm_settings", return_value={"configured": True, "last_test": {"ok": True}}),
+            patch.object(main, "start_auto_workflow_job") as starter,
+        ):
+            payload = main.preflight_auto_workflow_batch(main.BatchAutoWorkflowPayload(project_ids=["good", "needs_problem"], mode="auto"))
+
+    starter.assert_not_called()
+    batch = payload["batch_preflight"]
+    assert batch["status"] == "warning"
+    assert batch["ready_count"] == 1
+    assert batch["skipped_count"] == 1
+    assert batch["ready"][0]["project_name"] == "可运行项目"
+    assert batch["skipped"][0]["action_label"] == "去确认选题"
+
+
 def test_progress_polling_hint_is_fast_only_while_active() -> None:
     assert main.progress_poll_after_ms("running") < main.progress_poll_after_ms("success")
     assert main.progress_poll_after_ms("queued") == 700
@@ -471,6 +502,7 @@ if __name__ == "__main__":
     test_auto_batch_skip_includes_project_name()
     test_auto_batch_skip_redacts_sensitive_reason()
     test_auto_batch_skips_bad_metadata_and_submits_valid_project()
+    test_auto_batch_preflight_does_not_start_jobs()
     test_progress_polling_hint_is_fast_only_while_active()
     test_progress_live_quiet_seconds_reads_stream_status()
     test_progress_payload_gets_refresh_timestamp()

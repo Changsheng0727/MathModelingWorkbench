@@ -2272,52 +2272,25 @@ def llm_batch_preflight_issue(llm_settings: dict) -> str:
 
 @app.post("/api/auto/batch/start")
 def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
-    project_ids = dedupe_project_ids(payload.project_ids)
-    if not project_ids:
-        raise HTTPException(status_code=400, detail="请选择至少一个项目。")
-    if len(project_ids) > 40:
-        raise HTTPException(status_code=400, detail="单次最多批量提交 40 个项目。")
+    project_ids = validate_auto_batch_project_ids(payload.project_ids)
     mode = normalize_batch_mode(payload.mode)
     llm_settings = get_llm_settings()
     llm_issue = llm_batch_preflight_issue(llm_settings)
     if llm_issue:
         raise HTTPException(status_code=400, detail=f"批量入队前需要先通过大模型连接测试：{llm_issue}")
+    ready, skipped = collect_auto_batch_candidates(project_ids, mode, llm_settings)
     submitted: list[dict] = []
-    skipped: list[dict] = []
-    for project_id in project_ids:
+    for item in ready:
+        project_id = str(item.get("project_id") or "")
         try:
             root = project_root(project_id)
         except FileNotFoundError:
             skipped.append(build_auto_batch_skip(project_id, "项目不存在。"))
             continue
         try:
-            meta = load_json(root / "metadata.json")
-            if not isinstance(meta, dict):
-                raise ValueError("metadata.json must contain a JSON object")
+            job = start_auto_workflow_job(project_id, root, resume=bool(item.get("resume")))
         except Exception as exc:
-            skipped.append(build_auto_batch_skip(project_id, f"项目元数据无法读取：{type(exc).__name__}: {exc}"))
-            continue
-        analysis_path = root / "artifacts" / "analysis.json"
-        if not analysis_path.exists():
-            skipped.append(
-                build_auto_batch_skip(
-                    project_id,
-                    "项目尚未完成赛题分析。",
-                    meta,
-                    {"guide_action": "analyze_project", "action_label": "重新分析", "tone": "warning"},
-                )
-            )
-            continue
-        resume = should_resume_batch_project(meta, mode)
-        blocker = auto_workflow_preflight_blocker(root, meta=meta, resume=resume, llm_settings=llm_settings)
-        issue = str(blocker.get("detail") or "")
-        if issue:
-            skipped.append(build_auto_batch_skip(project_id, issue, meta, blocker))
-            continue
-        try:
-            job = start_auto_workflow_job(project_id, root, resume=resume)
-        except Exception as exc:
-            skipped.append(build_auto_batch_skip(project_id, f"{type(exc).__name__}: {exc}", meta))
+            skipped.append(build_auto_batch_skip(project_id, f"{type(exc).__name__}: {exc}", {"name": item.get("project_name")}))
             continue
         submitted.append(job)
     overview = build_product_overview_response()
@@ -2326,6 +2299,74 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
         "auto_jobs": overview.get("auto_jobs") or list_auto_workflow_jobs(),
         "overview": overview,
     }
+
+
+@app.post("/api/auto/batch/preflight")
+def preflight_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
+    project_ids = validate_auto_batch_project_ids(payload.project_ids)
+    mode = normalize_batch_mode(payload.mode)
+    llm_settings = get_llm_settings()
+    llm_issue = llm_batch_preflight_issue(llm_settings)
+    if llm_issue:
+        raise HTTPException(status_code=400, detail=f"批量预检前需要先通过大模型连接测试：{llm_issue}")
+    ready, skipped = collect_auto_batch_candidates(project_ids, mode, llm_settings)
+    return {"batch_preflight": build_auto_batch_preflight_result(len(project_ids), ready, skipped, mode)}
+
+
+def validate_auto_batch_project_ids(project_ids: list[str]) -> list[str]:
+    normalized = dedupe_project_ids(project_ids)
+    if not normalized:
+        raise HTTPException(status_code=400, detail="请选择至少一个项目。")
+    if len(normalized) > 40:
+        raise HTTPException(status_code=400, detail="单次最多批量提交 40 个项目。")
+    return normalized
+
+
+def collect_auto_batch_candidates(project_ids: list[str], mode: str, llm_settings: dict) -> tuple[list[dict], list[dict]]:
+    ready: list[dict] = []
+    skipped: list[dict] = []
+    for project_id in project_ids:
+        candidate, skip = inspect_auto_batch_candidate(project_id, mode, llm_settings)
+        if skip:
+            skipped.append(skip)
+        elif candidate:
+            ready.append(candidate)
+    return ready, skipped
+
+
+def inspect_auto_batch_candidate(project_id: str, mode: str, llm_settings: dict) -> tuple[dict | None, dict | None]:
+    try:
+        root = project_root(project_id)
+    except FileNotFoundError:
+        return None, build_auto_batch_skip(project_id, "项目不存在。")
+    try:
+        meta = load_json(root / "metadata.json")
+        if not isinstance(meta, dict):
+            raise ValueError("metadata.json must contain a JSON object")
+    except Exception as exc:
+        return None, build_auto_batch_skip(project_id, f"项目元数据无法读取：{type(exc).__name__}: {exc}")
+    analysis_path = root / "artifacts" / "analysis.json"
+    if not analysis_path.exists():
+        return None, build_auto_batch_skip(
+            project_id,
+            "项目尚未完成赛题分析。",
+            meta,
+            {"guide_action": "analyze_project", "action_label": "重新分析", "tone": "warning"},
+        )
+    resume = should_resume_batch_project(meta, mode)
+    blocker = auto_workflow_preflight_blocker(root, meta=meta, resume=resume, llm_settings=llm_settings)
+    issue = str(blocker.get("detail") or "")
+    if issue:
+        return None, build_auto_batch_skip(project_id, issue, meta, blocker)
+    return build_auto_batch_ready(project_id, meta, resume), None
+
+
+def build_auto_batch_ready(project_id: str, meta: dict, resume: bool) -> dict:
+    item = {"project_id": project_id, "resume": bool(resume), "run_mode": "resume" if resume else "start"}
+    name = str(meta.get("name") or meta.get("original_name") or "").strip()
+    if name:
+        item["project_name"] = name
+    return item
 
 
 def build_auto_batch_skip(project_id: str, reason: str, meta: dict | None = None, blocker: dict | None = None) -> dict:
@@ -2340,6 +2381,32 @@ def build_auto_batch_skip(project_id: str, reason: str, meta: dict | None = None
             if value:
                 item[target_key] = value
     return item
+
+
+def build_auto_batch_preflight_result(requested_count: int, ready: list[dict], skipped: list[dict], mode: str) -> dict:
+    ready_count = len(ready)
+    skipped_count = len(skipped)
+    actionable_skipped_count = sum(1 for item in skipped if item.get("project_id") and item.get("guide_action"))
+    if ready_count and skipped_count:
+        status = "warning"
+        summary = f"预检完成：{ready_count} 个可入队，{skipped_count} 个需先处理。"
+    elif ready_count:
+        status = "success"
+        summary = f"预检完成：{ready_count} 个项目均可入队。"
+    else:
+        status = "failed"
+        summary = f"预检完成：没有可入队项目，{skipped_count} 个需先处理。"
+    return {
+        "requested_count": int(requested_count or 0),
+        "ready_count": ready_count,
+        "skipped_count": skipped_count,
+        "actionable_skipped_count": actionable_skipped_count,
+        "status": status,
+        "summary": summary,
+        "mode": mode,
+        "ready": ready,
+        "skipped": skipped,
+    }
 
 
 def build_auto_batch_result(requested_count: int, submitted: list[dict], skipped: list[dict], mode: str) -> dict:
