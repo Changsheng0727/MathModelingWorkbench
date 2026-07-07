@@ -4822,7 +4822,11 @@ els.llmSettingsForm.addEventListener("submit", async (event) => {
   try {
     const settings = await saveLlmSettingsFromForm();
     await refreshCurrentProjectIfMissing(settings);
-    showToast("大模型设置已保存", "success");
+    if (settings.connection_test_required) {
+      showToast("大模型设置已保存，请测试连接", "warning");
+    } else {
+      showToast("大模型设置已保存", "success");
+    }
   } catch (error) {
     setLlmSettingsStatus(`保存失败：${error.message}`, "failed");
     showToast(`大模型设置保存失败：${error.message}`, "error");

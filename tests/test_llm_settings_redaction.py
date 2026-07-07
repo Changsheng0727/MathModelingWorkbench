@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import sys
 from datetime import datetime, timedelta
 from tempfile import TemporaryDirectory
@@ -100,7 +101,33 @@ def test_llm_settings_marks_stale_successful_test() -> None:
 
     assert settings["connection_stale"] is True
     assert settings["connection_tone"] == "warning"
+    assert settings["connection_test_required"] is True
     assert settings["last_test_age_seconds"] >= 24 * 3600
+
+
+def test_save_llm_settings_invalidates_test_when_endpoint_or_model_changes() -> None:
+    original_path = llm_settings.SETTINGS_PATH
+    api_key = "sk" + "-test_" + "abcdefghijklmnopqrstuvwxyz"
+    with TemporaryDirectory() as temp_dir:
+        try:
+            llm_settings.SETTINGS_PATH = Path(temp_dir) / "llm.json"
+            llm_settings.SETTINGS_PATH.write_text(
+                json.dumps({
+                    "api_key": api_key,
+                    "base_url": "https://api.chshapi.org/v1",
+                    "model": "gpt-5.5",
+                    "last_test": {"ok": True, "tested_at": datetime.now().isoformat(timespec="seconds")},
+                }),
+                encoding="utf-8",
+            )
+            settings = llm_settings.save_llm_settings("", "https://api.deepseek.com/v1", "deepseek-chat")
+        finally:
+            llm_settings.SETTINGS_PATH = original_path
+
+    assert settings["connection_status"] == "untested"
+    assert settings["connection_test_required"] is True
+    assert settings["base_url"] == "https://api.deepseek.com/v1"
+    assert settings["model"] == "deepseek-chat"
 
 
 def test_llm_test_endpoint_returns_redacted_error() -> None:
@@ -151,6 +178,7 @@ if __name__ == "__main__":
     test_normalize_model_accepts_common_pasted_formats()
     test_record_llm_test_result_persists_redacted_message()
     test_llm_settings_marks_stale_successful_test()
+    test_save_llm_settings_invalidates_test_when_endpoint_or_model_changes()
     test_llm_test_endpoint_returns_redacted_error()
     test_public_progress_payload_redacts_nested_strings()
     print("llm_settings_redaction_tests_ok")

@@ -51,6 +51,8 @@ def get_llm_settings() -> dict[str, Any]:
     strategy = get_workflow_strategy(stored.get("workflow_strategy"))
     base_url = effective_base_url(stored.get("base_url"))
     last_test = stored.get("last_test") if isinstance(stored.get("last_test"), dict) else {}
+    connection_status = llm_connection_status(last_test)
+    connection_stale = llm_connection_stale(last_test)
     return {
         "provider": "openai",
         "configured": bool(api_key),
@@ -65,8 +67,9 @@ def get_llm_settings() -> dict[str, Any]:
         "last_test": last_test,
         "last_test_age_seconds": llm_test_age_seconds(last_test),
         "last_test_age_label": llm_test_age_label(last_test),
-        "connection_stale": llm_connection_stale(last_test),
-        "connection_status": llm_connection_status(last_test),
+        "connection_stale": connection_stale,
+        "connection_status": connection_status,
+        "connection_test_required": bool(api_key) and (connection_status != "passed" or connection_stale),
         "connection_blocked": llm_connection_blocked(last_test),
         "connection_issue": llm_connection_issue(last_test),
         "connection_label": llm_connection_label(bool(api_key), last_test),
