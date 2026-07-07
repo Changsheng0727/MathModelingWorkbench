@@ -7,6 +7,7 @@ from pathlib import Path
 import time
 from typing import Any, Iterator
 
+from app.services.llm_settings import redact_sensitive_text
 from app.services.store import load_json, save_json
 
 
@@ -25,11 +26,15 @@ def tail_text(text: str, limit: int) -> str:
     return text[-limit:]
 
 
+def safe_stream_text(value: Any) -> str:
+    return redact_sensitive_text(str(value or ""))
+
+
 class LLMLiveStream:
     def __init__(self, root: Path, channel: str, title: str) -> None:
         self.root = root
-        self.channel = channel
-        self.title = title
+        self.channel = safe_stream_text(channel)
+        self.title = safe_stream_text(title)
         self.path = root / LLM_LIVE_STREAM_RELATIVE
         self.seq = 0
         self.events: list[dict[str, Any]] = []
@@ -48,6 +53,7 @@ class LLMLiveStream:
 
     def begin_request(self, label: str, attempt: int, attempts: int, max_tokens: int | None) -> None:
         self.flush()
+        label = safe_stream_text(label)
         self.current = {
             "label": label,
             "status": "running",
@@ -65,6 +71,7 @@ class LLMLiveStream:
     def append_delta(self, delta: str) -> None:
         if not delta:
             return
+        delta = str(delta)
         if self.current is None:
             self.current = {
                 "label": "大模型生成内容",
@@ -76,9 +83,9 @@ class LLMLiveStream:
                 "detail": "正在接收 LLM 流式响应。",
             }
         self.content_chars += len(delta)
-        self.content_tail = tail_text(self.content_tail + delta, 8000)
+        self.content_tail = safe_stream_text(tail_text(self.content_tail + delta, 8000))
         self.current["content_chars"] = int(self.current.get("content_chars") or 0) + len(delta)
-        self.current["content_tail"] = tail_text(str(self.current.get("content_tail") or "") + delta, 5000)
+        self.current["content_tail"] = safe_stream_text(tail_text(str(self.current.get("content_tail") or "") + delta, 5000))
         self.current["updated_at"] = utc_now_text()
         self.current["detail"] = f"已接收 {self.current['content_chars']} 个字符，界面显示最近片段。"
         self.updated_at = self.current["updated_at"]
@@ -90,6 +97,8 @@ class LLMLiveStream:
     def finish_request(self, status: str, detail: str = "") -> None:
         self.flush()
         label = self.current.get("label") if self.current else "大模型生成内容"
+        status = safe_stream_text(status)
+        detail = safe_stream_text(detail)
         if self.current:
             self.current["status"] = status
             self.current["finished_at"] = utc_now_text()
@@ -104,10 +113,10 @@ class LLMLiveStream:
         event = {
             "seq": self.seq,
             "time": utc_now_text(),
-            "kind": kind,
-            "label": label,
-            "detail": detail,
-            "status": status,
+            "kind": safe_stream_text(kind),
+            "label": safe_stream_text(label),
+            "detail": safe_stream_text(detail),
+            "status": safe_stream_text(status),
         }
         self.events.append(event)
         self.events = self.events[-80:]
@@ -126,6 +135,7 @@ class LLMLiveStream:
         if self._terminal:
             return
         self.flush()
+        status = safe_stream_text(status)
         self.status = status
         self._terminal = True
         self.emit("session_finish", "直播结束", detail, status=status)

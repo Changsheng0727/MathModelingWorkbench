@@ -5087,11 +5087,13 @@ function renderLlmLiveStream(liveStream = {}) {
   }
   const current = liveStream.current || {};
   const events = (liveStream.events || []).slice(-6).reverse();
-  const contentTail = current.content_tail || liveStream.content_tail || "";
+  const contentTail = redactSensitiveText(current.content_tail || liveStream.content_tail || "");
   const status = current.status || liveStream.status || "running";
-  const label = current.label || liveStream.title || "大模型实时输出";
+  const label = redactSensitiveText(current.label || liveStream.title || "大模型实时输出");
   const chars = current.content_chars ?? liveStream.content_chars ?? 0;
   const badge = status === "running" ? "实时" : statusLabel(status);
+  const hiddenSensitive = [contentTail, label, ...events.map((event) => `${event.label || ""} ${event.detail || ""}`)]
+    .some((value) => redactSensitiveText(value).includes("[REDACTED]"));
   return `
     <div class="llm-live-stream" data-status="${escapeHtml(status)}">
       <div class="llm-live-head">
@@ -5101,6 +5103,7 @@ function renderLlmLiveStream(liveStream = {}) {
         </div>
         <b>${escapeHtml(badge)}</b>
       </div>
+      ${hiddenSensitive ? `<p class="llm-live-privacy">已自动隐藏可能包含密钥的片段。</p>` : ""}
       ${contentTail ? `<pre>${escapeHtml(contentTail)}</pre>` : ""}
       <div class="llm-live-events">
         ${events.map(renderLiveEvent).join("")}
@@ -5111,11 +5114,12 @@ function renderLlmLiveStream(liveStream = {}) {
 
 function renderLiveEvent(event) {
   const status = event.status || "info";
-  const detail = event.detail ? ` · ${event.detail}` : "";
+  const label = redactSensitiveText(event.label || event.kind || "大模型操作");
+  const detail = event.detail ? ` · ${redactSensitiveText(event.detail)}` : "";
   return `
     <div class="llm-live-event" data-status="${escapeHtml(status)}">
       <span></span>
-      <p>${escapeHtml(event.label || event.kind || "大模型操作")}${escapeHtml(detail)}</p>
+      <p>${escapeHtml(label)}${escapeHtml(detail)}</p>
     </div>
   `;
 }
