@@ -5076,6 +5076,7 @@ function renderLlmLiveStream(liveStream = {}) {
   const status = current.status || liveStream.status || "running";
   const label = current.label || liveStream.title || "大模型实时输出";
   const chars = current.content_chars ?? liveStream.content_chars ?? 0;
+  const badge = status === "running" ? "实时" : statusLabel(status);
   return `
     <div class="llm-live-stream" data-status="${escapeHtml(status)}">
       <div class="llm-live-head">
@@ -5083,7 +5084,7 @@ function renderLlmLiveStream(liveStream = {}) {
           <strong>${escapeHtml(label)}</strong>
           <span>${escapeHtml(statusLabel(status))} · 已接收 ${escapeHtml(chars)} 字符</span>
         </div>
-        <b>实时</b>
+        <b>${escapeHtml(badge)}</b>
       </div>
       ${contentTail ? `<pre>${escapeHtml(contentTail)}</pre>` : ""}
       <div class="llm-live-events">

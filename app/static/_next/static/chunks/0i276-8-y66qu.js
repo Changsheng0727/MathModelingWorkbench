@@ -547,14 +547,14 @@
     </div>
   `})(e,t)).join("")}
     </div>
-    ${function(e={}){if(!eY(e))return"";let t=e.current||{},a=(e.events||[]).slice(-6).reverse(),r=t.content_tail||e.content_tail||"",s=t.status||e.status||"running",n=t.label||e.title||"大模型实时输出",o=t.content_chars??e.content_chars??0;return`
+    ${function(e={}){if(!eY(e))return"";let t=e.current||{},a=(e.events||[]).slice(-6).reverse(),r=t.content_tail||e.content_tail||"",s=t.status||e.status||"running",n=t.label||e.title||"大模型实时输出",o=t.content_chars??e.content_chars??0,l="running"===s?"实时":eq(s);return`
     <div class="llm-live-stream" data-status="${i(s)}">
       <div class="llm-live-head">
         <div>
           <strong>${i(n)}</strong>
           <span>${i(eq(s))} \xb7 已接收 ${i(o)} 字符</span>
         </div>
-        <b>实时</b>
+        <b>${i(l)}</b>
       </div>
       ${r?`<pre>${i(r)}</pre>`:""}
       <div class="llm-live-events">

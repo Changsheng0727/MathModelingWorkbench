@@ -552,9 +552,17 @@ def upload_analysis_progress(progress_id: str, include_overview: bool = False) -
             project_id = str(progress["project_id"])
             root = project_root(project_id)
             live_stream = load_llm_live_stream(root)
-            if live_stream.get("channel") == "upload_analysis":
+            live_status = str(live_stream.get("status") or "")
+            progress_status = str(progress.get("status") or "")
+            if live_stream.get("channel") == "upload_analysis" and not (
+                progress_status == "running" and live_status != "running"
+            ):
                 progress = dict(progress)
                 progress["live_stream"] = live_stream
+                response["progress"] = progress
+            elif progress_status == "running" and progress.get("current_step") and not progress.get("detail"):
+                progress = dict(progress)
+                progress["detail"] = "正在启动上传分析直播，稍后会显示实时输出。"
                 response["progress"] = progress
             if include_overview:
                 response["project"] = project_detail(project_id)
