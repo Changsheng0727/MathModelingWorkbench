@@ -362,27 +362,45 @@ def test_auto_batch_result_reports_partial_submission_as_warning() -> None:
 
 
 def test_auto_batch_skip_includes_project_name() -> None:
-    item = main.build_auto_batch_skip("p1", "尚未确认最终选题。", {"name": "A题项目"})
+    item = main.build_auto_batch_skip(
+        "p1",
+        "尚未确认最终选题。",
+        {"name": "A题项目"},
+        {"guide_action": "open_problems", "action_label": "去确认选题", "tone": "warning"},
+    )
 
     assert item["project_id"] == "p1"
     assert item["project_name"] == "A题项目"
     assert item["reason"] == "尚未确认最终选题。"
+    assert item["guide_action"] == "open_problems"
+    assert item["action_label"] == "去确认选题"
+    assert item["tone"] == "warning"
+
+
+def test_auto_batch_skip_redacts_sensitive_reason() -> None:
+    item = main.build_auto_batch_skip("p1", "Bearer " + "sk-" + "abcdefghijklmnopqrstuvwxyz123456")
+
+    assert "sk-" not in item["reason"]
+    assert "[REDACTED]" in item["reason"]
 
 
 def test_auto_batch_skips_bad_metadata_and_submits_valid_project() -> None:
     with TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         bad = root / "bad"
+        needs_problem = root / "needs_problem"
         good = root / "good"
-        for project_root in [bad, good]:
+        for project_root in [bad, needs_problem, good]:
             (project_root / "artifacts").mkdir(parents=True)
         (bad / "metadata.json").write_text("{", encoding="utf-8")
         (bad / "artifacts" / "analysis.json").write_text("{}", encoding="utf-8")
+        (needs_problem / "metadata.json").write_text('{"id":"needs_problem","name":"待确认项目"}', encoding="utf-8")
+        (needs_problem / "artifacts" / "analysis.json").write_text('{"recommended_problem":{"id":"B"}}', encoding="utf-8")
         (good / "metadata.json").write_text('{"id":"good","name":"可运行项目","final_problem":{"id":"A"}}', encoding="utf-8")
         (good / "artifacts" / "analysis.json").write_text('{"recommended_problem":{"id":"A"}}', encoding="utf-8")
 
         def fake_project_root(project_id: str) -> Path:
-            return {"bad": bad, "good": good}[project_id]
+            return {"bad": bad, "needs_problem": needs_problem, "good": good}[project_id]
 
         with (
             patch.object(main, "project_root", side_effect=fake_project_root),
@@ -390,14 +408,17 @@ def test_auto_batch_skips_bad_metadata_and_submits_valid_project() -> None:
             patch.object(main, "start_auto_workflow_job", return_value={"project_id": "good", "job_id": "job-1"}),
             patch.object(main, "build_product_overview_response", return_value={"auto_jobs": {}, "projects": []}),
         ):
-            payload = main.start_auto_workflow_batch(main.BatchAutoWorkflowPayload(project_ids=["bad", "good"], mode="auto"))
+            payload = main.start_auto_workflow_batch(main.BatchAutoWorkflowPayload(project_ids=["bad", "needs_problem", "good"], mode="auto"))
 
     batch = payload["batch"]
     assert batch["status"] == "warning"
     assert batch["submitted_count"] == 1
-    assert batch["skipped_count"] == 1
+    assert batch["skipped_count"] == 2
     assert batch["skipped"][0]["project_id"] == "bad"
     assert "项目元数据无法读取" in batch["skipped"][0]["reason"]
+    assert batch["skipped"][1]["project_name"] == "待确认项目"
+    assert batch["skipped"][1]["guide_action"] == "open_problems"
+    assert batch["skipped"][1]["action_label"] == "去确认选题"
 
 
 def test_progress_polling_hint_is_fast_only_while_active() -> None:
@@ -445,6 +466,7 @@ if __name__ == "__main__":
     test_auto_batch_result_reports_all_skipped_as_failed()
     test_auto_batch_result_reports_partial_submission_as_warning()
     test_auto_batch_skip_includes_project_name()
+    test_auto_batch_skip_redacts_sensitive_reason()
     test_auto_batch_skips_bad_metadata_and_submits_valid_project()
     test_progress_polling_hint_is_fast_only_while_active()
     test_progress_live_quiet_seconds_reads_stream_status()

@@ -2299,12 +2299,20 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
             continue
         analysis_path = root / "artifacts" / "analysis.json"
         if not analysis_path.exists():
-            skipped.append(build_auto_batch_skip(project_id, "项目尚未完成赛题分析。", meta))
+            skipped.append(
+                build_auto_batch_skip(
+                    project_id,
+                    "项目尚未完成赛题分析。",
+                    meta,
+                    {"guide_action": "analyze_project", "action_label": "重新分析", "tone": "warning"},
+                )
+            )
             continue
         resume = should_resume_batch_project(meta, mode)
-        issue = auto_workflow_preflight_issue(root, meta=meta, resume=resume, llm_settings=llm_settings)
+        blocker = auto_workflow_preflight_blocker(root, meta=meta, resume=resume, llm_settings=llm_settings)
+        issue = str(blocker.get("detail") or "")
         if issue:
-            skipped.append(build_auto_batch_skip(project_id, issue, meta))
+            skipped.append(build_auto_batch_skip(project_id, issue, meta, blocker))
             continue
         try:
             job = start_auto_workflow_job(project_id, root, resume=resume)
@@ -2320,12 +2328,17 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
     }
 
 
-def build_auto_batch_skip(project_id: str, reason: str, meta: dict | None = None) -> dict:
-    item = {"project_id": project_id, "reason": reason}
+def build_auto_batch_skip(project_id: str, reason: str, meta: dict | None = None, blocker: dict | None = None) -> dict:
+    item = {"project_id": project_id, "reason": redact_sensitive_text(reason)}
     if isinstance(meta, dict):
         name = str(meta.get("name") or meta.get("original_name") or "").strip()
         if name:
             item["project_name"] = name
+    if isinstance(blocker, dict):
+        for source_key, target_key in [("guide_action", "guide_action"), ("action_label", "action_label"), ("tone", "tone")]:
+            value = str(blocker.get(source_key) or "").strip()
+            if value:
+                item[target_key] = value
     return item
 
 

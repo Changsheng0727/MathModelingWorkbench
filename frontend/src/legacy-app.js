@@ -1519,7 +1519,7 @@ async function startSelectedProjectsBatch() {
     await syncOverviewAfterAction(payload);
     const skipped = Array.isArray(batch.skipped) ? batch.skipped : [];
     const skippedReasonText = skipped.length
-      ? ` 跳过原因：${skipped.slice(0, 2).map((item) => `${item.project_name || item.project_id || "项目"}：${item.reason || "未通过预检"}`).join("；")}${skipped.length > 2 ? "…" : ""}`
+      ? ` 跳过原因：${skipped.slice(0, 2).map(batchSkipText).join("；")}${skipped.length > 2 ? "…" : ""}`
       : "";
     const batchStatus = batch.status || (submitted.length ? "success" : "failed");
     const batchSummary = batch.summary || `批量入队完成：${batch.submitted_count || submitted.length} 个进入任务池。`;
@@ -1534,6 +1534,11 @@ async function startSelectedProjectsBatch() {
   } finally {
     updateProjectBatchControls();
   }
+}
+
+function batchSkipText(item = {}) {
+  const action = item.action_label ? `，下一步：${item.action_label}` : "";
+  return `${item.project_name || item.project_id || "项目"}：${item.reason || "未通过预检"}${action}`;
 }
 
 function projectSearchText(project = {}) {
