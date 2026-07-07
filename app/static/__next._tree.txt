@@ -1,2 +1,2 @@
-:HL["/static/_next/static/chunks/0~h_hzfposw0_.css","style"]
+:HL["/static/_next/static/chunks/0s-w~rviu80m1.css","style"]
 0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}},"staleTime":300,"buildId":"modeling-workbench-static"}

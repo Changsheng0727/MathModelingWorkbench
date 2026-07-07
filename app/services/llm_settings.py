@@ -221,9 +221,15 @@ def llm_connection_tone(configured: bool, last_test: dict[str, Any]) -> str:
 def normalize_api_key(value: str | None) -> str:
     if value is None:
         return ""
-    value = value.strip()
+    value = value.strip().strip("\"'")
     if not value:
         return ""
+    authorization = re.match(r"^authorization\s*:\s*(.+)$", value, flags=re.IGNORECASE)
+    if authorization:
+        value = authorization.group(1).strip().strip("\"'")
+    bearer = re.match(r"^bearer\s+(.+)$", value, flags=re.IGNORECASE)
+    if bearer:
+        value = bearer.group(1).strip().strip("\"'")
     if any(ch.isspace() for ch in value):
         raise ValueError("API Key 不能包含空白字符")
     if len(value) < 20:

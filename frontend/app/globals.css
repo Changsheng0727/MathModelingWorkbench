@@ -538,6 +538,15 @@ p {
   margin-bottom: 5px;
 }
 
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .text-input,
 .text-area {
   width: 100%;

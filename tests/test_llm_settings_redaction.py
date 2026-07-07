@@ -29,6 +29,15 @@ def test_redact_sensitive_text_masks_common_tokens() -> None:
     assert "[REDACTED]" in redacted
 
 
+def test_normalize_api_key_accepts_common_pasted_formats() -> None:
+    key = "sk-test_abcdefghijklmnopqrstuvwxyz"
+
+    assert llm_settings.normalize_api_key(key) == key
+    assert llm_settings.normalize_api_key(f"Bearer {key}") == key
+    assert llm_settings.normalize_api_key(f"Authorization: Bearer {key}") == key
+    assert llm_settings.normalize_api_key(f'"{key}"') == key
+
+
 def test_record_llm_test_result_persists_redacted_message() -> None:
     original_path = llm_settings.SETTINGS_PATH
     api_key = "sk" + "-test_" + "abcdefghijklmnopqrstuvwxyz"
@@ -95,6 +104,7 @@ def test_public_progress_payload_redacts_nested_strings() -> None:
 
 if __name__ == "__main__":
     test_redact_sensitive_text_masks_common_tokens()
+    test_normalize_api_key_accepts_common_pasted_formats()
     test_record_llm_test_result_persists_redacted_message()
     test_llm_test_endpoint_returns_redacted_error()
     test_public_progress_payload_redacts_nested_strings()

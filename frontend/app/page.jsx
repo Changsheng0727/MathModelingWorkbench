@@ -65,6 +65,7 @@ export default function WorkbenchPage() {
               <label>
                 <span className="label">大模型接口密钥</span>
                 <input id="api-key-input" className="text-input" type="password" autoComplete="off" placeholder="sk-..." />
+                <span className="field-hint">可直接粘贴 sk-...；若复制了 Bearer 前缀或引号，保存时会自动清理。</span>
               </label>
               <details className="simple-advanced">
                 <summary>高级模型设置</summary>
