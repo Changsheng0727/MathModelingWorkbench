@@ -334,6 +334,33 @@ def test_auto_workflow_preflight_exposes_problem_selection_action() -> None:
     assert "A" in preflight["detail"]
 
 
+def test_auto_batch_result_reports_all_skipped_as_failed() -> None:
+    batch = main.build_auto_batch_result(
+        2,
+        [],
+        [{"project_id": "p1", "reason": "未确认选题"}, {"project_id": "p2", "reason": "缺少分析"}],
+        "auto",
+    )
+
+    assert batch["status"] == "failed"
+    assert batch["submitted_count"] == 0
+    assert batch["skipped_count"] == 2
+    assert "未提交任何项目" in batch["summary"]
+
+
+def test_auto_batch_result_reports_partial_submission_as_warning() -> None:
+    batch = main.build_auto_batch_result(
+        2,
+        [{"project_id": "p1"}],
+        [{"project_id": "p2", "reason": "缺少分析"}],
+        "auto",
+    )
+
+    assert batch["status"] == "warning"
+    assert batch["submitted_count"] == 1
+    assert batch["skipped_count"] == 1
+
+
 def test_progress_polling_hint_is_fast_only_while_active() -> None:
     assert main.progress_poll_after_ms("running") < main.progress_poll_after_ms("success")
     assert main.progress_poll_after_ms("queued") == 700
@@ -376,6 +403,8 @@ if __name__ == "__main__":
     test_progress_resume_is_gated_by_preflight()
     test_auto_workflow_preflight_blocks_stale_llm_test()
     test_auto_workflow_preflight_exposes_problem_selection_action()
+    test_auto_batch_result_reports_all_skipped_as_failed()
+    test_auto_batch_result_reports_partial_submission_as_warning()
     test_progress_polling_hint_is_fast_only_while_active()
     test_progress_live_quiet_seconds_reads_stream_status()
     test_progress_payload_gets_refresh_timestamp()

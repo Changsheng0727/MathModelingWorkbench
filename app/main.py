@@ -2308,16 +2308,33 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
         submitted.append(job)
     overview = build_product_overview_response()
     return {
-        "batch": {
-            "requested_count": len(project_ids),
-            "submitted_count": len(submitted),
-            "skipped_count": len(skipped),
-            "mode": mode,
-            "submitted": submitted,
-            "skipped": skipped,
-        },
+        "batch": build_auto_batch_result(len(project_ids), submitted, skipped, mode),
         "auto_jobs": overview.get("auto_jobs") or list_auto_workflow_jobs(),
         "overview": overview,
+    }
+
+
+def build_auto_batch_result(requested_count: int, submitted: list[dict], skipped: list[dict], mode: str) -> dict:
+    submitted_count = len(submitted)
+    skipped_count = len(skipped)
+    if submitted_count and skipped_count:
+        status = "warning"
+        summary = f"批量入队部分完成：{submitted_count} 个进入任务池，{skipped_count} 个被跳过。"
+    elif submitted_count:
+        status = "success"
+        summary = f"批量入队完成：{submitted_count} 个项目已进入任务池。"
+    else:
+        status = "failed"
+        summary = f"批量入队未提交任何项目，{skipped_count} 个项目被跳过。"
+    return {
+        "requested_count": int(requested_count or 0),
+        "submitted_count": submitted_count,
+        "skipped_count": skipped_count,
+        "status": status,
+        "summary": summary,
+        "mode": mode,
+        "submitted": submitted,
+        "skipped": skipped,
     }
 
 

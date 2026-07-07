@@ -1529,11 +1529,16 @@ async function startSelectedProjectsBatch() {
     });
     await syncOverviewAfterAction(payload);
     const skipped = Array.isArray(batch.skipped) ? batch.skipped : [];
-    const skippedText = skipped.length
-      ? `，跳过 ${skipped.length} 个：${skipped.slice(0, 2).map((item) => item.reason || item.project_id).join("；")}${skipped.length > 2 ? "…" : ""}`
+    const skippedReasonText = skipped.length
+      ? ` 跳过原因：${skipped.slice(0, 2).map((item) => item.reason || item.project_id).join("；")}${skipped.length > 2 ? "…" : ""}`
       : "";
-    els.batchProjectStatus.textContent = `批量入队完成：${batch.submitted_count || submitted.length} 个进入任务池${skippedText}。`;
-    showToast("批量任务已提交后台任务池", "success");
+    const batchStatus = batch.status || (submitted.length ? "success" : "failed");
+    const batchSummary = batch.summary || `批量入队完成：${batch.submitted_count || submitted.length} 个进入任务池。`;
+    els.batchProjectStatus.textContent = `${batchSummary}${skippedReasonText}`;
+    showToast(
+      batchStatus === "failed" ? "批量入队未提交任何项目" : batchSummary,
+      batchStatus === "success" ? "success" : "warning",
+    );
   } catch (error) {
     els.batchProjectStatus.textContent = `批量入队失败：${error.message}`;
     showToast(`批量入队失败：${error.message}`, "error");
