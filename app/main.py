@@ -6,7 +6,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -120,6 +120,10 @@ def redact_public_payload(value):
     if isinstance(value, dict):
         return {key: redact_public_payload(item) for key, item in value.items()}
     return value
+
+
+def no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
 
 
 class LLMSettingsPayload(BaseModel):
@@ -330,7 +334,8 @@ def build_capacity_autotune_plan(
 
 
 @app.get("/api/product/growth")
-def product_growth_metrics(include_overview: bool = False) -> dict:
+def product_growth_metrics(response: Response, include_overview: bool = False) -> dict:
+    no_store(response)
     if include_overview:
         overview = build_product_overview_response()
         return {"growth": overview.get("growth") or {}, "overview": overview}
@@ -345,7 +350,8 @@ def product_growth_metrics(include_overview: bool = False) -> dict:
 
 
 @app.get("/api/product/experience")
-def product_experience_center(include_overview: bool = False) -> dict:
+def product_experience_center(response: Response, include_overview: bool = False) -> dict:
+    no_store(response)
     if include_overview:
         overview = build_product_overview_response()
         return {
@@ -379,7 +385,8 @@ def product_experience_center(include_overview: bool = False) -> dict:
 
 
 @app.get("/api/product/trust")
-def product_trust_center(include_overview: bool = False) -> dict:
+def product_trust_center(response: Response, include_overview: bool = False) -> dict:
+    no_store(response)
     if include_overview:
         overview = build_product_overview_response()
         return {
@@ -400,7 +407,8 @@ def product_trust_center(include_overview: bool = False) -> dict:
 
 
 @app.get("/api/product/overview")
-def product_overview(refresh: bool = False) -> dict:
+def product_overview(response: Response, refresh: bool = False) -> dict:
+    no_store(response)
     return build_product_overview_response(refresh=refresh)
 
 
@@ -554,7 +562,8 @@ def batch_delivery_package_job(job_id: str) -> dict:
 
 
 @app.get("/api/upload-analysis-progress/{progress_id}")
-def upload_analysis_progress(progress_id: str, include_overview: bool = False) -> dict:
+def upload_analysis_progress(progress_id: str, response: Response, include_overview: bool = False) -> dict:
+    no_store(response)
     progress = load_analysis_progress(progress_id)
     response = {"progress": progress or {}}
     if isinstance(progress, dict) and progress.get("project_id"):
@@ -1981,8 +1990,8 @@ def project_auto_workflow_job(project_id: str) -> dict:
 
 
 @app.get("/api/projects/{project_id}/auto/status")
-def project_auto_workflow_status(project_id: str) -> dict:
-    payload = project_progress(project_id)
+def project_auto_workflow_status(project_id: str, response: Response) -> dict:
+    payload = project_progress(project_id, response)
     progress = payload.get("progress", {}) if isinstance(payload.get("progress"), dict) else {}
     auto_job = progress.get("auto_job") if isinstance(progress.get("auto_job"), dict) else get_project_auto_workflow_job(project_id)
     return {
@@ -2199,7 +2208,8 @@ def auto_workflow_job(job_id: str) -> dict:
 
 
 @app.get("/api/projects/{project_id}/progress")
-def project_progress(project_id: str, include_overview: bool = False, include_jobs: bool = False) -> dict:
+def project_progress(project_id: str, response: Response, include_overview: bool = False, include_jobs: bool = False) -> dict:
+    no_store(response)
     try:
         root = project_root(project_id)
     except FileNotFoundError as exc:
@@ -2321,7 +2331,8 @@ def auto_progress_is_missing_or_stale(progress: object, seconds: int = 180) -> b
 
 
 @app.get("/api/projects/{project_id}/llm/model-assistant/progress")
-def project_model_assistant_progress(project_id: str, include_overview: bool = False) -> dict:
+def project_model_assistant_progress(project_id: str, response: Response, include_overview: bool = False) -> dict:
+    no_store(response)
     try:
         root = project_root(project_id)
     except FileNotFoundError as exc:
@@ -2373,7 +2384,8 @@ def project_model_assistant_progress(project_id: str, include_overview: bool = F
 
 
 @app.get("/api/projects/{project_id}/llm/analyze/progress")
-def project_llm_analysis_progress(project_id: str, include_overview: bool = False) -> dict:
+def project_llm_analysis_progress(project_id: str, response: Response, include_overview: bool = False) -> dict:
+    no_store(response)
     try:
         root = project_root(project_id)
     except FileNotFoundError as exc:

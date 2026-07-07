@@ -282,7 +282,12 @@ function responseErrorMessage(response, payload, text, requestPath = "") {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, options);
+  const requestOptions = { ...options };
+  const method = String(requestOptions.method || "GET").toUpperCase();
+  if (method === "GET" && !requestOptions.cache) {
+    requestOptions.cache = "no-store";
+  }
+  const response = await fetch(path, requestOptions);
   const text = await response.text();
   let payload = null;
   if (text) {
