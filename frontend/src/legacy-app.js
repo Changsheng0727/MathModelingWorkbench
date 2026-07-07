@@ -5148,6 +5148,10 @@ function renderProgressMeta(progress = {}, liveStream = {}, element = null) {
   if (!progress.updated_at && liveStream.updated_at) {
     items.push(`直播更新 ${formatProgressTime(liveStream.updated_at)}`);
   }
+  const quietSeconds = Number(liveStream.quiet_seconds || 0);
+  if (liveStream.status === "running" && Number.isFinite(quietSeconds) && quietSeconds >= 10) {
+    items.push(`接口静默 ${formatDuration(quietSeconds)}`);
+  }
   const pollMs = Number(element?.dataset.pollAfterMs || 0);
   if (Number.isFinite(pollMs) && pollMs > 0 && ["queued", "running", "between_steps", "cancel_requested"].includes(progress.status)) {
     items.push(`约 ${(pollMs / 1000).toFixed(1)}s 刷新`);
@@ -5176,6 +5180,9 @@ function renderLlmLiveStream(liveStream = {}, progress = {}) {
   const chars = current.content_chars ?? liveStream.content_chars ?? 0;
   const badge = status === "running" ? "实时" : statusLabel(status);
   const quietSeconds = Number(liveStream.quiet_seconds || 0);
+  const quietText = status === "running" && Number.isFinite(quietSeconds) && quietSeconds >= 10
+    ? ` · 静默 ${formatDuration(quietSeconds)}`
+    : "";
   const staleNotice = liveStream.is_stale
     ? liveStream.stale_detail || `已 ${formatDuration(quietSeconds)} 未收到新内容，可能正在等待接口响应。`
     : "";
@@ -5187,7 +5194,7 @@ function renderLlmLiveStream(liveStream = {}, progress = {}) {
       <div class="llm-live-head">
         <div>
           <strong>${escapeHtml(label)}</strong>
-          <span>${escapeHtml(statusLabel(status))} · 已接收 ${escapeHtml(chars)} 字符</span>
+          <span>${escapeHtml(statusLabel(status))} · 已接收 ${escapeHtml(chars)} 字符${escapeHtml(quietText)}</span>
         </div>
         <b>${escapeHtml(badge)}</b>
       </div>

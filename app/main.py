@@ -126,8 +126,33 @@ def no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
 
 
-def progress_poll_after_ms(status: object) -> int:
-    return 700 if str(status or "") in {"queued", "running", "between_steps", "cancel_requested"} else 1600
+ACTIVE_PROGRESS_STATUSES = {"queued", "running", "between_steps", "cancel_requested"}
+
+
+def progress_poll_after_ms(status: object, quiet_seconds: object = 0) -> int:
+    if str(status or "") not in ACTIVE_PROGRESS_STATUSES:
+        return 1600
+    try:
+        quiet = int(float(quiet_seconds or 0))
+    except (TypeError, ValueError):
+        quiet = 0
+    if quiet >= 120:
+        return 4000
+    if quiet >= 45:
+        return 2500
+    return 700
+
+
+def progress_live_quiet_seconds(progress: object) -> int:
+    if not isinstance(progress, dict):
+        return 0
+    live_stream = progress.get("live_stream")
+    if not isinstance(live_stream, dict):
+        return 0
+    try:
+        return int(float(live_stream.get("quiet_seconds") or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def mark_progress_refreshed(progress: dict[str, object]) -> dict[str, object]:
@@ -577,7 +602,7 @@ def upload_analysis_progress(progress_id: str, response: Response, include_overv
     no_store(response)
     progress = load_analysis_progress(progress_id)
     progress = mark_progress_refreshed(progress if isinstance(progress, dict) else {})
-    payload = {"progress": progress, "poll_after_ms": progress_poll_after_ms(progress.get("status"))}
+    payload = {"progress": progress}
     if isinstance(progress, dict) and progress.get("project_id"):
         try:
             project_id = str(progress["project_id"])
@@ -600,6 +625,7 @@ def upload_analysis_progress(progress_id: str, response: Response, include_overv
                 payload["overview"] = build_product_overview_response()
         except Exception:
             pass
+    payload["poll_after_ms"] = progress_poll_after_ms(progress.get("status"), progress_live_quiet_seconds(progress))
     return payload
 
 
@@ -2301,7 +2327,7 @@ def project_progress(project_id: str, response: Response, include_overview: bool
         "project_id": project_id,
         "status": response_status,
         "progress": redact_public_payload(progress or {}),
-        "poll_after_ms": progress_poll_after_ms(progress.get("status") or response_status),
+        "poll_after_ms": progress_poll_after_ms(progress.get("status") or response_status, progress_live_quiet_seconds(progress)),
         "artifacts": meta.get("artifacts", {}),
         "error": redact_sensitive_text(str(meta.get("auto_workflow_error", ""))),
     }
@@ -2389,7 +2415,7 @@ def project_model_assistant_progress(project_id: str, response: Response, includ
         "project_id": project_id,
         "status": progress.get("status") or status,
         "progress": redact_public_payload(progress or {}),
-        "poll_after_ms": progress_poll_after_ms(progress.get("status") or status),
+        "poll_after_ms": progress_poll_after_ms(progress.get("status") or status, progress_live_quiet_seconds(progress)),
         "artifacts": meta.get("artifacts", {}),
         "error": redact_sensitive_text(str(meta.get("model_assistant_error", ""))),
     }
@@ -2424,7 +2450,7 @@ def project_llm_analysis_progress(project_id: str, response: Response, include_o
         "project_id": project_id,
         "status": progress.get("status") or status,
         "progress": redact_public_payload(progress),
-        "poll_after_ms": progress_poll_after_ms(progress.get("status") or status),
+        "poll_after_ms": progress_poll_after_ms(progress.get("status") or status, progress_live_quiet_seconds(progress)),
         "artifacts": meta.get("artifacts", {}),
         "error": redact_sensitive_text(str(meta.get("llm_analysis_error", ""))),
     }
