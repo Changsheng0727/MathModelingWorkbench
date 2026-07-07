@@ -930,6 +930,7 @@ function renderProjectFocus(focus = {}) {
   const label = String(focus.label || "").trim();
   const detail = String(focus.detail || "").trim();
   const actionLabel = String(focus.action_label || "").trim();
+  const guideAction = String(focus.guide_action || "").trim();
   const projectId = String(focus.project_id || "").trim();
   const projectName = String(focus.project_name || "").trim();
   const projectNextStep = String(focus.project_next_step || "").trim();
@@ -950,7 +951,7 @@ function renderProjectFocus(focus = {}) {
       ${projectNextDetail ? `<small class="project-focus-detail">${escapeHtml(projectNextDetail)}</small>` : ""}
     </span>
     <span class="project-focus-actions">
-      <button class="project-focus-action" type="button" data-project-filter="${escapeHtml(filter)}">${escapeHtml(actionLabel || projectFilterLabel(filter))}</button>
+      <button class="project-focus-action" type="button" ${guideAction ? `data-guide-action="${escapeHtml(guideAction)}"` : `data-project-filter="${escapeHtml(filter)}"`}>${escapeHtml(actionLabel || projectFilterLabel(filter))}</button>
       ${projectId ? `<button class="project-focus-action" type="button" data-focus-project-id="${escapeHtml(projectId)}" title="${escapeHtml(projectName ? `打开 ${projectName}` : "打开焦点项目")}">${escapeHtml(projectActionLabel || "打开项目")}</button>` : ""}
     </span>
   `;
@@ -4517,6 +4518,16 @@ els.projectCount?.addEventListener("click", (event) => {
 });
 
 els.projectFocus?.addEventListener("click", (event) => {
+  const guideButton = event.target.closest("[data-guide-action]");
+  if (guideButton) {
+    guideButton.disabled = true;
+    runGuideAction(guideButton.dataset.guideAction || "").catch((error) => {
+      reportGuideActionError(error);
+    }).finally(() => {
+      guideButton.disabled = false;
+    });
+    return;
+  }
   const projectButton = event.target.closest("[data-focus-project-id]");
   if (projectButton) {
     const projectId = projectButton.dataset.focusProjectId || "";

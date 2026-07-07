@@ -119,6 +119,18 @@ def test_project_summary_focus_flags_artifact_issues_before_urgent() -> None:
     assert focus["project_id"] == "p2"
 
 
+def test_project_summary_focus_prioritizes_missing_llm_settings() -> None:
+    focus = main.build_project_summary_focus(
+        {"total": 2, "failed": 1},
+        [{"id": "p1", "auto_workflow_status": "failed"}],
+        llm_settings={"configured": False},
+    )
+
+    assert focus["label"] == "先配置大模型接口"
+    assert focus["guide_action"] == "focus_llm"
+    assert focus["filter"] == "all"
+
+
 def test_progress_polling_hint_is_fast_only_while_active() -> None:
     assert main.progress_poll_after_ms("running") < main.progress_poll_after_ms("success")
     assert main.progress_poll_after_ms("queued") == 700
@@ -148,6 +160,7 @@ if __name__ == "__main__":
     test_project_summary_counts_workflow_signals()
     test_project_summary_focus_prioritizes_failures()
     test_project_summary_focus_flags_artifact_issues_before_urgent()
+    test_project_summary_focus_prioritizes_missing_llm_settings()
     test_progress_polling_hint_is_fast_only_while_active()
     test_progress_live_quiet_seconds_reads_stream_status()
     test_progress_payload_gets_refresh_timestamp()

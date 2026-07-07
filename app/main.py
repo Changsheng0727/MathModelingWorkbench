@@ -462,7 +462,7 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "projects": projects_snapshot,
         "project_summary": project_summary,
-        "project_summary_focus": build_project_summary_focus(project_summary, projects_snapshot),
+        "project_summary_focus": build_project_summary_focus(project_summary, projects_snapshot, llm_settings=llm_settings),
         "action_alias_catalog": ACTION_ALIASES,
         "action_catalog": ACTION_OUTCOMES,
         "action_progress_catalog": ACTION_PROGRESS,
@@ -511,10 +511,35 @@ def build_project_summary(projects: list[dict]) -> dict[str, int]:
     }
 
 
-def build_project_summary_focus(summary: dict[str, int], projects: list[dict] | None = None) -> dict[str, object]:
+def build_project_summary_focus(
+    summary: dict[str, int],
+    projects: list[dict] | None = None,
+    *,
+    llm_settings: dict[str, Any] | None = None,
+) -> dict[str, object]:
     total = project_summary_int(summary.get("total"))
     if total <= 0:
         return {}
+    if llm_settings is not None and not llm_settings.get("configured"):
+        return {
+            "filter": "all",
+            "count": total,
+            "label": "先配置大模型接口",
+            "detail": "已有项目等待生成，但还没有可用 API Key；先完成连接测试可以减少后续失败。",
+            "tone": "warning",
+            "action_label": "填写接口",
+            "guide_action": "focus_llm",
+        }
+    if llm_settings is not None and llm_settings.get("connection_blocked"):
+        return {
+            "filter": "all",
+            "count": total,
+            "label": "先修复大模型连接",
+            "detail": str(llm_settings.get("connection_issue") or "上次连接测试失败，请重新测试后再运行自动流程。"),
+            "tone": "failed",
+            "action_label": "测试连接",
+            "guide_action": "test_llm",
+        }
     projects = projects or []
     priorities = [
         ("failed", "先修失败项目", "失败项目最影响生成成功率，建议先从这里继续或查看诊断。", "failed"),
