@@ -1,11 +1,18 @@
 from pathlib import Path
+from datetime import datetime, timedelta
 import json
 import sys
 from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.llm_stream import LLMLiveStream, LLM_LIVE_STREAM_RELATIVE
+from app.services.llm_stream import (
+    LLMLiveStream,
+    LLM_LIVE_STREAM_RELATIVE,
+    LLM_STREAM_STALE_SECONDS,
+    enrich_live_stream_status,
+    load_llm_live_stream,
+)
 
 
 def test_llm_live_stream_redacts_secrets_before_persisting() -> None:
@@ -30,6 +37,42 @@ def test_llm_live_stream_redacts_secrets_before_persisting() -> None:
     assert "[REDACTED]" in text
 
 
+def test_load_llm_live_stream_marks_stale_running_stream() -> None:
+    with TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        path = root / LLM_LIVE_STREAM_RELATIVE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "status": "running",
+                    "channel": "auto_workflow",
+                    "updated_at": (datetime.now() - timedelta(seconds=LLM_STREAM_STALE_SECONDS + 5)).isoformat(
+                        timespec="seconds"
+                    ),
+                }
+            ),
+            encoding="utf-8",
+        )
+        payload = load_llm_live_stream(root)
+
+    assert payload["is_stale"] is True
+    assert payload["quiet_seconds"] >= LLM_STREAM_STALE_SECONDS
+
+
+def test_finished_stream_is_not_marked_stale() -> None:
+    payload = enrich_live_stream_status(
+        {
+            "status": "success",
+            "updated_at": (datetime.now() - timedelta(seconds=LLM_STREAM_STALE_SECONDS + 5)).isoformat(timespec="seconds"),
+        }
+    )
+
+    assert payload["is_stale"] is False
+
+
 if __name__ == "__main__":
     test_llm_live_stream_redacts_secrets_before_persisting()
+    test_load_llm_live_stream_marks_stale_running_stream()
+    test_finished_stream_is_not_marked_stale()
     print("llm_stream_redaction_tests_ok")

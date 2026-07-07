@@ -547,7 +547,7 @@
     </div>
   `})(e,t)).join("")}
     </div>
-    ${function(e={}){if(!eY(e))return"";let t=e.current||{},a=(e.events||[]).slice(-6).reverse(),r=m(t.content_tail||e.content_tail||""),s=t.status||e.status||"running",n=m(t.label||e.title||"大模型实时输出"),o=t.content_chars??e.content_chars??0,l="running"===s?"实时":eN(s),c=[r,n,...a.map(e=>`${e.label||""} ${e.detail||""}`)].some(e=>m(e).includes("[REDACTED]"));return`
+    ${function(e={}){if(!eY(e))return"";let t=e.current||{},a=(e.events||[]).slice(-6).reverse(),r=m(t.content_tail||e.content_tail||""),s=t.status||e.status||"running",n=m(t.label||e.title||"大模型实时输出"),o=t.content_chars??e.content_chars??0,l="running"===s?"实时":eN(s),c=Number(e.quiet_seconds||0),u=e.is_stale?`已 ${eq(c)} 未收到新内容，可能正在等待接口响应。`:"",d=[r,n,...a.map(e=>`${e.label||""} ${e.detail||""}`)].some(e=>m(e).includes("[REDACTED]"));return`
     <div class="llm-live-stream" data-status="${i(s)}">
       <div class="llm-live-head">
         <div>
@@ -556,7 +556,8 @@
         </div>
         <b>${i(l)}</b>
       </div>
-      ${c?'<p class="llm-live-privacy">已自动隐藏可能包含密钥的片段。</p>':""}
+      ${d?'<p class="llm-live-privacy">已自动隐藏可能包含密钥的片段。</p>':""}
+      ${u?`<p class="llm-live-stale">${i(u)}</p>`:""}
       ${r?`<pre>${i(r)}</pre>`:""}
       <div class="llm-live-events">
         ${a.map(e0).join("")}

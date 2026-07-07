@@ -12,6 +12,7 @@ from app.services.store import load_json, save_json
 
 
 LLM_LIVE_STREAM_RELATIVE = "artifacts/llm_live_stream.json"
+LLM_STREAM_STALE_SECONDS = 45
 
 _ACTIVE_STREAM: ContextVar["LLMLiveStream | None"] = ContextVar("active_llm_stream", default=None)
 
@@ -28,6 +29,26 @@ def tail_text(text: str, limit: int) -> str:
 
 def safe_stream_text(value: Any) -> str:
     return redact_sensitive_text(str(value or ""))
+
+
+def stream_quiet_seconds(payload: dict[str, Any], now: datetime | None = None) -> int:
+    updated_at = str(payload.get("updated_at") or "")
+    if not updated_at:
+        return 0
+    try:
+        updated = datetime.fromisoformat(updated_at)
+    except ValueError:
+        return 0
+    seconds = (now or datetime.now()).replace(tzinfo=updated.tzinfo) - updated
+    return max(0, int(seconds.total_seconds()))
+
+
+def enrich_live_stream_status(payload: dict[str, Any]) -> dict[str, Any]:
+    quiet = stream_quiet_seconds(payload)
+    payload["quiet_seconds"] = quiet
+    payload["is_stale"] = payload.get("status") == "running" and quiet >= LLM_STREAM_STALE_SECONDS
+    payload["stale_after_seconds"] = LLM_STREAM_STALE_SECONDS
+    return payload
 
 
 class LLMLiveStream:
@@ -191,4 +212,4 @@ def load_llm_live_stream(root: Path) -> dict[str, Any]:
         payload = load_json(path)
     except Exception:
         return {}
-    return payload if isinstance(payload, dict) else {}
+    return enrich_live_stream_status(payload) if isinstance(payload, dict) else {}

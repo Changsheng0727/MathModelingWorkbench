@@ -5092,6 +5092,10 @@ function renderLlmLiveStream(liveStream = {}) {
   const label = redactSensitiveText(current.label || liveStream.title || "大模型实时输出");
   const chars = current.content_chars ?? liveStream.content_chars ?? 0;
   const badge = status === "running" ? "实时" : statusLabel(status);
+  const quietSeconds = Number(liveStream.quiet_seconds || 0);
+  const staleNotice = liveStream.is_stale
+    ? `已 ${formatDuration(quietSeconds)} 未收到新内容，可能正在等待接口响应。`
+    : "";
   const hiddenSensitive = [contentTail, label, ...events.map((event) => `${event.label || ""} ${event.detail || ""}`)]
     .some((value) => redactSensitiveText(value).includes("[REDACTED]"));
   return `
@@ -5104,6 +5108,7 @@ function renderLlmLiveStream(liveStream = {}) {
         <b>${escapeHtml(badge)}</b>
       </div>
       ${hiddenSensitive ? `<p class="llm-live-privacy">已自动隐藏可能包含密钥的片段。</p>` : ""}
+      ${staleNotice ? `<p class="llm-live-stale">${escapeHtml(staleNotice)}</p>` : ""}
       ${contentTail ? `<pre>${escapeHtml(contentTail)}</pre>` : ""}
       <div class="llm-live-events">
         ${events.map(renderLiveEvent).join("")}

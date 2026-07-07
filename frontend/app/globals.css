@@ -4629,6 +4629,17 @@ p {
   font-weight: 700;
 }
 
+.llm-live-stale {
+  padding: 7px 9px;
+  border: 1px solid oklch(82% 0.07 70 / 0.65);
+  border-radius: 6px;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .llm-live-stream pre {
   max-height: 260px;
   overflow: auto;
