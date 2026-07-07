@@ -610,14 +610,23 @@ function renderLlmSettings(settings) {
   const label = settings.connection_label || (settings.configured ? "已配置接口" : "未配置接口");
   const detail = settings.connection_detail || (settings.configured ? llmTestSummary(settings.last_test) : "尚未配置 API 密钥。");
   const source = settings.source === "env" ? "环境变量" : "本地设置";
+  const testMeta = llmSettingsTestMeta(settings);
   const model = settings.model ? ` · 模型 ${settings.model}` : "";
   const endpoint = settings.base_url ? ` · 接口 ${settings.base_url}` : "";
   const strategy = settings.workflow_strategy_label ? ` · ${settings.workflow_strategy_label}` : "";
   if (settings.configured) {
-    setLlmSettingsStatus(`${label}：${detail}${model}${endpoint} · ${settings.masked_api_key} · ${source}${strategy}`, settings.connection_tone || "warning");
+    setLlmSettingsStatus(`${label}：${detail}${testMeta}${model}${endpoint} · ${settings.masked_api_key} · ${source}${strategy}`, settings.connection_tone || "warning");
   } else {
     setLlmSettingsStatus(`${label}：${detail}`, settings.connection_tone || "failed");
   }
+}
+
+function llmSettingsTestMeta(settings = {}) {
+  const age = settings.last_test_age_label || "";
+  if (!age) {
+    return "";
+  }
+  return settings.connection_stale ? ` · 测试 ${age}，建议重测` : ` · 测试 ${age}`;
 }
 
 function renderLlmSettingsResponse(payload = {}) {

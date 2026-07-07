@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from datetime import datetime, timedelta
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
@@ -71,6 +72,27 @@ def test_record_llm_test_result_persists_redacted_message() -> None:
     assert github_token not in last_test["diagnosis"]["suggested_action"]
 
 
+def test_llm_settings_marks_stale_successful_test() -> None:
+    original_path = llm_settings.SETTINGS_PATH
+    with TemporaryDirectory() as temp_dir:
+        try:
+            llm_settings.SETTINGS_PATH = Path(temp_dir) / "llm.json"
+            stale_time = (datetime.now() - timedelta(hours=25)).isoformat(timespec="seconds")
+            llm_settings.SETTINGS_PATH.write_text(
+                '{"api_key":"sk-test_abcdefghijklmnopqrstuvwxyz","last_test":{"ok":true,"tested_at":"'
+                + stale_time
+                + '"}}',
+                encoding="utf-8",
+            )
+            settings = llm_settings.get_llm_settings()
+        finally:
+            llm_settings.SETTINGS_PATH = original_path
+
+    assert settings["connection_stale"] is True
+    assert settings["connection_tone"] == "warning"
+    assert settings["last_test_age_seconds"] >= 24 * 3600
+
+
 def test_llm_test_endpoint_returns_redacted_error() -> None:
     original_path = llm_settings.SETTINGS_PATH
     api_key = "sk" + "-test_" + "abcdefghijklmnopqrstuvwxyz"
@@ -117,6 +139,7 @@ if __name__ == "__main__":
     test_normalize_api_key_accepts_common_pasted_formats()
     test_normalize_base_url_accepts_common_pasted_formats()
     test_record_llm_test_result_persists_redacted_message()
+    test_llm_settings_marks_stale_successful_test()
     test_llm_test_endpoint_returns_redacted_error()
     test_public_progress_payload_redacts_nested_strings()
     print("llm_settings_redaction_tests_ok")

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -20,6 +20,7 @@ from app.services.workflow_strategy import (
 SETTINGS_PATH = SETTINGS_ROOT / "llm.json"
 DEFAULT_BASE_URL = "https://api.chshapi.org/v1"
 DEFAULT_MODEL = "gpt-5.5"
+LLM_TEST_STALE_AFTER = timedelta(hours=24)
 BASE_URL_ENDPOINT_SUFFIXES = (
     "/chat/completions",
     "/completions",
@@ -62,6 +63,9 @@ def get_llm_settings() -> dict[str, Any]:
         "workflow_strategy_summary": strategy["summary"],
         "workflow_strategy_options": workflow_strategy_options(),
         "last_test": last_test,
+        "last_test_age_seconds": llm_test_age_seconds(last_test),
+        "last_test_age_label": llm_test_age_label(last_test),
+        "connection_stale": llm_connection_stale(last_test),
         "connection_status": llm_connection_status(last_test),
         "connection_blocked": llm_connection_blocked(last_test),
         "connection_issue": llm_connection_issue(last_test),
@@ -175,6 +179,41 @@ def llm_connection_status(last_test: dict[str, Any]) -> str:
     return "passed" if last_test.get("ok") else "failed"
 
 
+def llm_test_age_seconds(last_test: dict[str, Any]) -> int | None:
+    tested_at = parse_tested_at(last_test.get("tested_at") if isinstance(last_test, dict) else "")
+    if not tested_at:
+        return None
+    return max(0, int((datetime.now() - tested_at).total_seconds()))
+
+
+def llm_test_age_label(last_test: dict[str, Any]) -> str:
+    age = llm_test_age_seconds(last_test)
+    if age is None:
+        return ""
+    if age < 60:
+        return "刚刚"
+    if age < 3600:
+        return f"{age // 60} 分钟前"
+    if age < 86400:
+        return f"{age // 3600} 小时前"
+    return f"{age // 86400} 天前"
+
+
+def llm_connection_stale(last_test: dict[str, Any]) -> bool:
+    if llm_connection_status(last_test) != "passed":
+        return False
+    age = llm_test_age_seconds(last_test)
+    return age is not None and age > int(LLM_TEST_STALE_AFTER.total_seconds())
+
+
+def parse_tested_at(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value or ""))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+
+
 def llm_connection_blocked(last_test: dict[str, Any]) -> bool:
     return llm_connection_status(last_test) == "failed"
 
@@ -193,6 +232,8 @@ def llm_connection_label(configured: bool, last_test: dict[str, Any]) -> str:
         return "未配置接口"
     status = llm_connection_status(last_test)
     if status == "passed":
+        if llm_connection_stale(last_test):
+            return "建议重测连接"
         return "连接正常"
     if status == "failed":
         return "连接测试失败"
@@ -204,6 +245,8 @@ def llm_connection_detail(configured: bool, last_test: dict[str, Any]) -> str:
         return "填写 API Key 后先测试连接，再启动自动求解。"
     status = llm_connection_status(last_test)
     if status == "passed":
+        if llm_connection_stale(last_test):
+            return f"最近一次成功测试在 {llm_test_age_label(last_test)}，建议重新测试以减少中途失败。"
         return "最近一次测试成功，可以运行大模型和代码自动流程。"
     if status == "failed":
         return llm_connection_issue(last_test)
@@ -214,6 +257,8 @@ def llm_connection_tone(configured: bool, last_test: dict[str, Any]) -> str:
     if not configured or llm_connection_status(last_test) == "failed":
         return "failed"
     if llm_connection_status(last_test) == "passed":
+        if llm_connection_stale(last_test):
+            return "warning"
         return "success"
     return "warning"
 
