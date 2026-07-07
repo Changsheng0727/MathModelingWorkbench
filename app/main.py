@@ -2558,6 +2558,9 @@ def project_progress(project_id: str, response: Response, include_overview: bool
             progress["detail"] = "自动流程进度文件读取失败，已切换为可继续状态。"
             progress["resume_hint"] = progress.get("resume_hint") or "点击继续生成，系统会重新读取项目上下文。"
             response_status = "interrupted"
+    preflight = build_auto_workflow_preflight(root, meta)
+    progress["auto_workflow_preflight"] = preflight
+    progress = apply_auto_progress_preflight(progress, preflight)
     live_stream = load_llm_live_stream(root)
     live_status = str(live_stream.get("status") or "")
     if live_stream.get("channel") == "auto_workflow" and (
@@ -2593,6 +2596,17 @@ def project_progress(project_id: str, response: Response, include_overview: bool
         else:
             response.update(build_auto_jobs_response())
     return response
+
+
+def apply_auto_progress_preflight(progress: dict, preflight: dict) -> dict:
+    progress = dict(progress or {})
+    preflight = preflight if isinstance(preflight, dict) else {}
+    if progress.get("can_resume") and preflight.get("primary_mode") == "resume" and preflight.get("can_resume") is False:
+        blocker = str(preflight.get("resume_detail") or preflight.get("detail") or "").strip()
+        progress["can_resume"] = False
+        progress["resume_blocked"] = True
+        progress["resume_hint"] = blocker or progress.get("resume_hint") or "请先完成准备项，再继续生成。"
+    return progress
 
 
 def auto_progress_is_stale(progress: dict, seconds: int = 180) -> bool:

@@ -276,6 +276,21 @@ def test_auto_workflow_preflight_blocks_resume_when_llm_missing() -> None:
     assert "大模型" in preflight["resume_detail"]
 
 
+def test_progress_resume_is_gated_by_preflight() -> None:
+    progress = main.apply_auto_progress_preflight(
+        {"status": "failed", "can_resume": True, "resume_hint": ""},
+        {
+            "primary_mode": "resume",
+            "can_resume": False,
+            "resume_detail": "请先重新测试大模型连接。",
+        },
+    )
+
+    assert progress["can_resume"] is False
+    assert progress["resume_blocked"] is True
+    assert "重新测试" in progress["resume_hint"]
+
+
 def test_auto_workflow_preflight_blocks_stale_llm_test() -> None:
     with TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -357,6 +372,7 @@ if __name__ == "__main__":
     test_auto_workflow_preflight_blocks_untested_llm_connection()
     test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm()
     test_auto_workflow_preflight_blocks_resume_when_llm_missing()
+    test_progress_resume_is_gated_by_preflight()
     test_auto_workflow_preflight_blocks_stale_llm_test()
     test_auto_workflow_preflight_exposes_problem_selection_action()
     test_progress_polling_hint_is_fast_only_while_active()

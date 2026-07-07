@@ -5210,6 +5210,21 @@ async function runAutoWorkflow(
     await refreshCurrentProjectDetail().catch(() => {});
     return;
   }
+  const metadata = state.currentProject?.metadata || {};
+  const preflight = metadata.auto_workflow_preflight || {};
+  const preflightBlocker = resume
+    ? preflight.primary_mode === "resume" && preflight.can_resume === false
+      ? preflight.resume_detail || preflight.detail || "暂不能继续生成。"
+      : ""
+    : preflight.can_start === false
+      ? preflight.start_detail || preflight.detail || "暂不能开始自动流程。"
+      : "";
+  if (preflightBlocker) {
+    els.autoWorkflowStatus.textContent = `${resume ? "暂不能继续生成" : "暂不能开始自动流程"}：${preflightBlocker}`;
+    renderAutoWorkflowPreflight(metadata);
+    showToast(resume ? "请先处理阻断项，再继续生成" : "请先处理阻断项，再开始自动流程", "warning");
+    return;
+  }
   const selectedId = selectedProblemId(state.currentProject?.metadata || {});
   if (!resume && !selectedId) {
     els.autoWorkflowStatus.textContent = "请先在“选题”模块点击“选择此题”，确认后再运行一键自动流程。";
@@ -5357,7 +5372,7 @@ function renderAutoWorkflowProgress(progress = {}) {
 
 function updateAutoWorkflowButtons(status = "", progress = {}, metadata = state.currentProject?.metadata || {}) {
   const running = isAutoWorkflowActive(status, progress);
-  const preflight = metadata.auto_workflow_preflight || {};
+  const preflight = progress.auto_workflow_preflight || metadata.auto_workflow_preflight || {};
   const hasPreflight = Object.keys(preflight).length > 0;
   const canStart = !hasPreflight || preflight.can_start !== false;
   const fallbackCanResume = Boolean(progress.can_resume) || ["failed", "cancelled", "completed_with_warnings", "cancel_requested", "interrupted"].includes(status);
