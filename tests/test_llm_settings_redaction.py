@@ -42,8 +42,11 @@ def test_normalize_api_key_accepts_common_pasted_formats() -> None:
 
 
 def test_normalize_base_url_accepts_common_pasted_formats() -> None:
+    assert llm_settings.normalize_base_url("api.chshapi.org") == "https://api.chshapi.org/v1"
     assert llm_settings.normalize_base_url("api.chshapi.org/v1") == "https://api.chshapi.org/v1"
     assert llm_settings.normalize_base_url('"api.openai.com"') == "https://api.openai.com/v1"
+    assert llm_settings.normalize_base_url("https://api.deepseek.com") == "https://api.deepseek.com/v1"
+    assert llm_settings.normalize_base_url("http://localhost:11434") == "http://localhost:11434"
     assert llm_settings.normalize_base_url("https://api.chshapi.org/v1/chat/completions") == "https://api.chshapi.org/v1"
     assert llm_settings.normalize_base_url("BASE_URL=https://api.chshapi.org/v1") == "https://api.chshapi.org/v1"
     assert llm_settings.normalize_base_url('{"base_url": "api.chshapi.org/v1/chat/completions"}') == "https://api.chshapi.org/v1"

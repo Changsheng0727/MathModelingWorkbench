@@ -317,9 +317,14 @@ def normalize_base_url(value: str | None) -> str:
     if not parsed.scheme or not parsed.netloc:
         raise ValueError("Base URL must be a complete http(s) URL")
     path = parsed.path.rstrip("/")
-    if parsed.netloc.lower() == "api.openai.com" and not path:
+    if not path and should_append_v1_path(parsed.netloc):
         path = "/v1"
     return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def should_append_v1_path(netloc: str) -> bool:
+    host = str(netloc or "").split(":", 1)[0].lower()
+    return host.startswith("api.")
 
 
 def extract_base_url_candidate(value: str | None) -> str:
