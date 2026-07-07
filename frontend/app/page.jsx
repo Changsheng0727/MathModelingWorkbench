@@ -72,6 +72,7 @@ export default function WorkbenchPage() {
                 <label>
                   <span className="label">接口地址</span>
                   <input id="base-url-input" className="text-input" type="url" autoComplete="off" />
+                  <span className="field-hint">可填完整地址，也可直接填 api.chshapi.org/v1；系统会自动补 https:// 并裁剪 chat/completions 端点。</span>
                 </label>
                 <label>
                   <span className="label">模型</span>

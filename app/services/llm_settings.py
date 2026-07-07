@@ -240,9 +240,11 @@ def normalize_api_key(value: str | None) -> str:
 def normalize_base_url(value: str | None) -> str:
     if value is None:
         return ""
-    value = value.strip().rstrip("/")
+    value = value.strip().strip("\"'").rstrip("/")
     if not value:
         return DEFAULT_BASE_URL
+    if "://" not in value:
+        value = f"https://{value}"
     if not (value.startswith("https://") or value.startswith("http://")):
         raise ValueError("Base URL 必须以 http:// 或 https:// 开头")
     value = strip_completion_endpoint(value)
