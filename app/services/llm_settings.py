@@ -53,6 +53,7 @@ def get_llm_settings() -> dict[str, Any]:
     last_test = stored.get("last_test") if isinstance(stored.get("last_test"), dict) else {}
     connection_status = llm_connection_status(last_test)
     connection_stale = llm_connection_stale(last_test)
+    auto_run_ready = bool(api_key) and connection_status == "passed" and not connection_stale
     return {
         "provider": "openai",
         "configured": bool(api_key),
@@ -76,6 +77,8 @@ def get_llm_settings() -> dict[str, Any]:
         "connection_detail": llm_connection_detail(bool(api_key), last_test),
         "connection_tone": llm_connection_tone(bool(api_key), last_test),
         "connection_action": llm_connection_action(bool(api_key), last_test),
+        "auto_run_ready": auto_run_ready,
+        "auto_run_blocker": "" if auto_run_ready else llm_auto_run_blocker(bool(api_key), last_test),
     }
 
 
@@ -278,6 +281,19 @@ def llm_connection_action(configured: bool, last_test: dict[str, Any]) -> dict[s
     if status == "untested":
         return {"id": "test_llm", "label": "测试连接"}
     return {}
+
+
+def llm_auto_run_blocker(configured: bool, last_test: dict[str, Any]) -> str:
+    if not configured:
+        return "自动运行前需要先填写 API Key 并测试连接。"
+    status = llm_connection_status(last_test)
+    if status == "failed":
+        return llm_connection_issue(last_test)
+    if status == "passed" and llm_connection_stale(last_test):
+        return f"最近一次连接测试在 {llm_test_age_label(last_test)}，请重新测试后再开启上传后自动运行。"
+    if status == "untested":
+        return "接口已保存，但还没有成功连接测试记录；请先测试连接。"
+    return ""
 
 
 def normalize_api_key(value: str | None) -> str:

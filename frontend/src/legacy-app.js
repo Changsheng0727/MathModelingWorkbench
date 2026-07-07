@@ -584,6 +584,7 @@ function renderTemplateHint(templateId = "builtin-default") {
 
 function renderLlmSettings(settings) {
   state.llmSettings = settings;
+  renderAutoRunAfterUploadGate(settings);
   els.apiKeyInput.value = "";
   els.baseUrlInput.value = settings.base_url || "https://api.chshapi.org/v1";
   els.modelInput.value = settings.model || "gpt-5.5";
@@ -618,6 +619,23 @@ function renderLlmSettings(settings) {
     setLlmSettingsStatus(`${label}：${detail}${testMeta}${model}${endpoint} · ${settings.masked_api_key} · ${source}${strategy}`, settings.connection_tone || "warning", settings.connection_action);
   } else {
     setLlmSettingsStatus(`${label}：${detail}`, settings.connection_tone || "failed", settings.connection_action);
+  }
+}
+
+function renderAutoRunAfterUploadGate(settings = {}) {
+  if (!els.autoRunAfterUpload) {
+    return;
+  }
+  const ready = Boolean(settings.auto_run_ready);
+  const blocker = settings.auto_run_blocker || "请先保存并测试大模型连接。";
+  els.autoRunAfterUpload.disabled = !ready;
+  const row = els.autoRunAfterUpload.closest(".check-row");
+  row?.classList.toggle("is-disabled", !ready);
+  if (row) {
+    row.title = ready ? "上传分析完成后会自动确认推荐题并开始一键生成。" : blocker;
+  }
+  if (!ready && els.autoRunAfterUpload.checked) {
+    els.autoRunAfterUpload.checked = false;
   }
 }
 
@@ -3956,6 +3974,11 @@ els.form.addEventListener("submit", async (event) => {
     renderProject(detail);
     await syncOverviewAfterAction(detail);
     if (els.autoRunAfterUpload?.checked) {
+      if (!state.llmSettings?.auto_run_ready) {
+        els.status.textContent = state.llmSettings?.auto_run_blocker || "分析完成；请先测试大模型连接，再手动开始一键生成。";
+        showToast("大模型连接未就绪，已跳过上传后自动运行", "warning");
+        return;
+      }
       const rec = detail.analysis?.recommended_problem || {};
       if (rec.id) {
         if (await selectProblem(rec.id)) {

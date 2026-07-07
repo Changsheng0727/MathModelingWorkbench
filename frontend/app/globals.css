@@ -445,6 +445,15 @@ p {
   accent-color: var(--primary);
 }
 
+.check-row.is-disabled {
+  opacity: 0.66;
+  cursor: not-allowed;
+}
+
+.check-row.is-disabled input {
+  cursor: not-allowed;
+}
+
 .settings-form {
   display: grid;
   gap: 10px;
