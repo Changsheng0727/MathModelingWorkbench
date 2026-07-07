@@ -2280,6 +2280,7 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
         raise HTTPException(status_code=400, detail=f"批量入队前需要先通过大模型连接测试：{llm_issue}")
     ready, skipped = collect_auto_batch_candidates(project_ids, mode, llm_settings)
     submitted: list[dict] = []
+    submitted_modes: list[dict] = []
     for item in ready:
         project_id = str(item.get("project_id") or "")
         try:
@@ -2293,9 +2294,10 @@ def start_auto_workflow_batch(payload: BatchAutoWorkflowPayload) -> dict:
             skipped.append(build_auto_batch_skip(project_id, f"{type(exc).__name__}: {exc}", {"name": item.get("project_name")}))
             continue
         submitted.append(job)
+        submitted_modes.append(item)
     overview = build_product_overview_response()
     return {
-        "batch": build_auto_batch_result(len(project_ids), submitted, skipped, mode),
+        "batch": build_auto_batch_result(len(project_ids), submitted, skipped, mode, submitted_modes),
         "auto_jobs": overview.get("auto_jobs") or list_auto_workflow_jobs(),
         "overview": overview,
     }
@@ -2386,6 +2388,7 @@ def build_auto_batch_skip(project_id: str, reason: str, meta: dict | None = None
 def build_auto_batch_preflight_result(requested_count: int, ready: list[dict], skipped: list[dict], mode: str) -> dict:
     ready_count = len(ready)
     skipped_count = len(skipped)
+    mode_counts = count_auto_batch_modes(ready)
     actionable_skipped_count = sum(1 for item in skipped if item.get("project_id") and item.get("guide_action"))
     if ready_count and skipped_count:
         status = "warning"
@@ -2401,6 +2404,7 @@ def build_auto_batch_preflight_result(requested_count: int, ready: list[dict], s
         "ready_count": ready_count,
         "skipped_count": skipped_count,
         "actionable_skipped_count": actionable_skipped_count,
+        **mode_counts,
         "status": status,
         "summary": summary,
         "mode": mode,
@@ -2409,9 +2413,10 @@ def build_auto_batch_preflight_result(requested_count: int, ready: list[dict], s
     }
 
 
-def build_auto_batch_result(requested_count: int, submitted: list[dict], skipped: list[dict], mode: str) -> dict:
+def build_auto_batch_result(requested_count: int, submitted: list[dict], skipped: list[dict], mode: str, mode_items: list[dict] | None = None) -> dict:
     submitted_count = len(submitted)
     skipped_count = len(skipped)
+    mode_counts = count_auto_batch_modes(mode_items or [])
     actionable_skipped_count = sum(1 for item in skipped if item.get("project_id") and item.get("guide_action"))
     if submitted_count and skipped_count:
         status = "warning"
@@ -2427,12 +2432,19 @@ def build_auto_batch_result(requested_count: int, submitted: list[dict], skipped
         "submitted_count": submitted_count,
         "skipped_count": skipped_count,
         "actionable_skipped_count": actionable_skipped_count,
+        **mode_counts,
         "status": status,
         "summary": summary,
         "mode": mode,
         "submitted": submitted,
         "skipped": skipped,
     }
+
+
+def count_auto_batch_modes(items: list[dict]) -> dict[str, int]:
+    resume_count = sum(1 for item in items if item.get("resume") or str(item.get("run_mode") or "") == "resume")
+    start_count = max(len(items) - resume_count, 0)
+    return {"start_count": start_count, "resume_count": resume_count}
 
 
 def dedupe_project_ids(project_ids: list[str]) -> list[str]:

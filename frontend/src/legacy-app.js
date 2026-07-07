@@ -1528,7 +1528,7 @@ async function startSelectedProjectsBatch() {
     const skipped = Array.isArray(batch.skipped) ? batch.skipped : [];
     const batchStatus = batch.status || (submitted.length ? "success" : "failed");
     const batchSummary = batch.summary || `批量入队完成：${batch.submitted_count || submitted.length} 个进入任务池。`;
-    els.batchProjectStatus.innerHTML = `${escapeHtml(batchSummary)}${renderBatchSkippedItems(skipped)}`;
+    els.batchProjectStatus.innerHTML = `${escapeHtml(batchSummary)}${renderBatchModeChips(batch)}${renderBatchSkippedItems(skipped)}`;
     showToast(
       batchStatus === "failed" ? "批量入队未提交任何项目" : batchSummary,
       batchStatus === "failed" ? "error" : batchStatus === "success" ? "success" : "warning",
@@ -1560,7 +1560,7 @@ async function previewSelectedProjectsBatch() {
     const preflight = payload.batch_preflight || {};
     const skipped = Array.isArray(preflight.skipped) ? preflight.skipped : [];
     const readyText = preflight.ready_count ? ` 可点击“批量入队”提交 ${preflight.ready_count} 个项目。` : "";
-    els.batchProjectStatus.innerHTML = `${escapeHtml(preflight.summary || "预检完成。")}${escapeHtml(readyText)}${renderBatchSkippedItems(skipped)}`;
+    els.batchProjectStatus.innerHTML = `${escapeHtml(preflight.summary || "预检完成。")}${escapeHtml(readyText)}${renderBatchModeChips(preflight)}${renderBatchSkippedItems(skipped)}`;
     showToast(preflight.summary || "批量预检完成", preflight.status === "failed" ? "error" : preflight.status === "success" ? "success" : "warning");
   } catch (error) {
     els.batchProjectStatus.textContent = `批量预检失败：${error.message}`;
@@ -1573,6 +1573,20 @@ async function previewSelectedProjectsBatch() {
 function batchSkipText(item = {}) {
   const action = item.action_label ? `，下一步：${item.action_label}` : "";
   return `${item.project_name || item.project_id || "项目"}：${item.reason || "未通过预检"}${action}`;
+}
+
+function renderBatchModeChips(batch = {}) {
+  const startCount = Number(batch.start_count || 0);
+  const resumeCount = Number(batch.resume_count || 0);
+  if (!startCount && !resumeCount) {
+    return "";
+  }
+  return `
+    <span class="batch-mode-chips" aria-label="批量运行方式">
+      ${startCount ? `<span data-mode="start">重新开始 ${escapeHtml(startCount)}</span>` : ""}
+      ${resumeCount ? `<span data-mode="resume">断点继续 ${escapeHtml(resumeCount)}</span>` : ""}
+    </span>
+  `;
 }
 
 function renderBatchSkippedItems(skipped = []) {

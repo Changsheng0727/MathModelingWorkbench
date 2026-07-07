@@ -355,12 +355,15 @@ def test_auto_batch_result_reports_partial_submission_as_warning() -> None:
         [{"project_id": "p1"}],
         [{"project_id": "p2", "reason": "缺少分析", "guide_action": "analyze_project"}],
         "auto",
+        [{"project_id": "p1", "run_mode": "resume", "resume": True}],
     )
 
     assert batch["status"] == "warning"
     assert batch["submitted_count"] == 1
     assert batch["skipped_count"] == 1
     assert batch["actionable_skipped_count"] == 1
+    assert batch["start_count"] == 0
+    assert batch["resume_count"] == 1
 
 
 def test_auto_batch_skip_includes_project_name() -> None:
@@ -451,6 +454,8 @@ def test_auto_batch_preflight_does_not_start_jobs() -> None:
     assert batch["status"] == "warning"
     assert batch["ready_count"] == 1
     assert batch["skipped_count"] == 1
+    assert batch["start_count"] == 1
+    assert batch["resume_count"] == 0
     assert batch["ready"][0]["project_name"] == "可运行项目"
     assert batch["skipped"][0]["action_label"] == "去确认选题"
 
