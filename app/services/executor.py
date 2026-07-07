@@ -13,6 +13,7 @@ from app.services.process_utils import describe_returncode, find_external_comman
 
 
 ENV_CACHE_SECONDS = 25
+DEPENDENCY_INSTALL_ACTIVE_SECONDS = 60 * 60
 _ENV_CACHE: dict[str, Any] | None = None
 _ENV_CACHE_AT = 0.0
 
@@ -144,15 +145,24 @@ def dependency_next_action(status: str, missing: list[str], can_auto_install: bo
 
 
 def start_dependency_install() -> dict[str, Any]:
+    log_dir = DATA_ROOT / "client"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "dependency_install.log"
+    status_path = log_dir / "dependency_status.json"
+    current_status = load_dependency_install_status()
+    if dependency_install_is_active(current_status, status_path):
+        return {
+            "started": False,
+            "existing": True,
+            "status": str(current_status.get("status") or "checking"),
+            "message": "依赖安装已在进行中，请稍后刷新状态。",
+            "log": str(current_status.get("log") or log_path),
+        }
     if os.name != "nt":
         return {"started": False, "status": "manual_required", "message": "自动安装依赖仅支持 Windows。"}
     script = (Path(__file__).resolve().parents[1] / "resources" / "install_dependencies.ps1").resolve()
     if not script.exists():
         raise FileNotFoundError("install_dependencies.ps1")
-    log_dir = DATA_ROOT / "client"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "dependency_install.log"
-    status_path = log_dir / "dependency_status.json"
     status_path.write_text(
         json.dumps(
             {
@@ -179,6 +189,22 @@ def start_dependency_install() -> dict[str, Any]:
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     process = subprocess.Popen(command, cwd=script.parents[2], creationflags=creationflags)
     return {"started": True, "pid": process.pid, "status": "checking", "log": str(log_path)}
+
+
+def dependency_install_is_active(status: dict[str, Any], status_path: Path | None = None, now: float | None = None) -> bool:
+    if str(status.get("status") or "") not in {"checking", "installing"}:
+        return False
+    current_time = time.time() if now is None else now
+    generated_at = str(status.get("generated_at") or "")
+    if generated_at:
+        try:
+            started = time.mktime(time.strptime(generated_at[:19], "%Y-%m-%dT%H:%M:%S"))
+            return current_time - started <= DEPENDENCY_INSTALL_ACTIVE_SECONDS
+        except ValueError:
+            pass
+    if status_path and status_path.exists():
+        return current_time - status_path.stat().st_mtime <= DEPENDENCY_INSTALL_ACTIVE_SECONDS
+    return True
 
 
 def detect_winget() -> dict[str, Any]:

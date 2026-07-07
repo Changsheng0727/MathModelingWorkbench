@@ -505,7 +505,12 @@ els.environment?.addEventListener("click", async (event) => {
           applyProductOverviewPayload(payload.environment.overview);
         }
         renderEnvironments(payload.environment || {});
-        showToast(payload.install?.started ? "依赖安装已启动，稍后刷新状态。" : (payload.install?.message || "依赖需要手动处理。"), payload.install?.started ? "success" : "warning");
+        const installMessage = payload.install?.existing
+          ? "依赖安装已在进行中，稍后刷新状态。"
+          : payload.install?.started
+            ? "依赖安装已启动，稍后刷新状态。"
+            : (payload.install?.message || "依赖需要手动处理。");
+        showToast(installMessage, payload.install?.started ? "success" : "warning");
         return;
       }
       if (action === "refresh_environment") {
