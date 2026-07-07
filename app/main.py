@@ -339,9 +339,9 @@ def product_growth_metrics(include_overview: bool = False) -> dict:
     delivery_batches = list_delivery_package_batches()
     delivery_batch_jobs = list_delivery_batch_jobs()
     growth = build_growth_metrics(projects_snapshot, jobs_snapshot, delivery_batches, delivery_batch_jobs)
-    return {
+    return redact_public_payload({
         "growth": growth,
-    }
+    })
 
 
 @app.get("/api/product/experience")
@@ -362,7 +362,7 @@ def product_experience_center(include_overview: bool = False) -> dict:
     delivery_jobs = list_delivery_batch_jobs()
     settings = load_capacity_settings()
     llm_settings = get_llm_settings()
-    return {
+    return redact_public_payload({
         "action_alias_catalog": ACTION_ALIASES,
         "action_catalog": ACTION_OUTCOMES,
         "action_progress_catalog": ACTION_PROGRESS,
@@ -375,7 +375,7 @@ def product_experience_center(include_overview: bool = False) -> dict:
             settings,
             llm_settings,
         )
-    }
+    })
 
 
 @app.get("/api/product/trust")
@@ -392,11 +392,11 @@ def product_trust_center(include_overview: bool = False) -> dict:
     jobs_snapshot = list_auto_workflow_jobs()
     delivery_batch_jobs = list_delivery_batch_jobs()
     delivery_batches = list_delivery_package_batches()
-    return {
+    return redact_public_payload({
         "trust": build_trust_center(projects_snapshot, jobs_snapshot, delivery_batch_jobs, delivery_batches),
         "trust_exports": list_trust_report_exports(),
         "repair_campaigns": list_repair_campaigns(),
-    }
+    })
 
 
 @app.get("/api/product/overview")
@@ -411,7 +411,7 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
     delivery_batch_jobs = list_delivery_batch_jobs()
     delivery_batches = list_delivery_package_batches()
     settings = load_capacity_settings()
-    return {
+    return redact_public_payload({
         "projects": projects_snapshot,
         "action_alias_catalog": ACTION_ALIASES,
         "action_catalog": ACTION_OUTCOMES,
@@ -435,7 +435,7 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
         "repair_campaigns": list_repair_campaigns(),
         "templates": list_templates(),
         "llm_settings": llm_settings,
-    }
+    })
 
 
 @app.post("/api/product/trust/export")
@@ -758,7 +758,7 @@ def format_bytes(value: int) -> str:
 
 @app.get("/api/projects")
 def projects(refresh: bool = False) -> list[dict]:
-    return build_project_list_response(refresh=refresh)
+    return redact_public_payload(build_project_list_response(refresh=refresh))
 
 
 def build_project_list_response(*, refresh: bool = False, llm_settings: dict | None = None) -> list[dict]:
@@ -1490,7 +1490,7 @@ def project_detail(project_id: str, include_overview: bool = False) -> dict:
     }
     if include_overview:
         detail["overview"] = build_product_overview_response()
-    return detail
+    return redact_public_payload(detail)
 
 
 def load_optional_project_json(root: Path, path: Path, meta: dict, label: str) -> dict | None:

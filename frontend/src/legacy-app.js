@@ -249,6 +249,19 @@ function redactSensitiveText(value) {
     .replace(sensitiveKeyPattern, "$1[REDACTED]");
 }
 
+function redactPayload(value) {
+  if (typeof value === "string") {
+    return redactSensitiveText(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(redactPayload);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactPayload(item)]));
+  }
+  return value;
+}
+
 function responseErrorMessage(response, payload, text, requestPath = "") {
   const rawDetail = payload?.detail || payload?.message || text || response.statusText || `HTTP ${response.status}`;
   const detail = String(rawDetail || "").trim();
@@ -283,7 +296,7 @@ async function api(path, options = {}) {
     const detail = responseErrorMessage(response, payload, text, path);
     throw new Error(detail);
   }
-  return payload ?? {};
+  return redactPayload(payload ?? {});
 }
 
 function delay(ms) {
