@@ -65,14 +65,14 @@ export default function WorkbenchPage() {
               <label>
                 <span className="label">大模型接口密钥</span>
                 <input id="api-key-input" className="text-input" type="password" autoComplete="off" placeholder="sk-..." />
-                <span className="field-hint">可直接粘贴 sk-...；若复制了 Bearer 前缀或引号，保存时会自动清理。</span>
+                <span className="field-hint">可直接粘贴密钥、Bearer 前缀、OPENAI_API_KEY=密钥 或 JSON 配置片段；保存时会自动提取密钥。</span>
               </label>
               <details className="simple-advanced">
                 <summary>高级模型设置</summary>
                 <label>
                   <span className="label">接口地址</span>
                   <input id="base-url-input" className="text-input" type="url" autoComplete="off" />
-                  <span className="field-hint">可填完整地址，也可直接填 api.chshapi.org/v1；系统会自动补 https:// 并裁剪 chat/completions 端点。</span>
+                  <span className="field-hint">可填完整地址，也可粘贴 BASE_URL=...、JSON 配置或 api.chshapi.org/v1；系统会自动补 https:// 并裁剪 chat/completions 端点。</span>
                 </label>
                 <label>
                   <span className="label">模型</span>

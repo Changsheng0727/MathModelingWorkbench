@@ -221,7 +221,7 @@ def llm_connection_tone(configured: bool, last_test: dict[str, Any]) -> str:
 def normalize_api_key(value: str | None) -> str:
     if value is None:
         return ""
-    value = value.strip().strip("\"'")
+    value = extract_api_key_candidate(value)
     if not value:
         return ""
     authorization = re.match(r"^authorization\s*:\s*(.+)$", value, flags=re.IGNORECASE)
@@ -237,10 +237,30 @@ def normalize_api_key(value: str | None) -> str:
     return value
 
 
+def extract_api_key_candidate(value: str | None) -> str:
+    text = str(value or "").strip().strip("\"'")
+    if not text:
+        return ""
+    assignment = re.match(r"^(?:openai_api_key|api[_-]?key|key)\s*[:=]\s*(.+)$", text, flags=re.IGNORECASE)
+    if assignment:
+        return assignment.group(1).strip().strip("\"'")
+    json_key = re.search(
+        r"[\"'](?:openai_api_key|api[_-]?key|key)[\"']\s*:\s*[\"']([^\"']+)[\"']",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if json_key:
+        return json_key.group(1).strip()
+    sk_key = re.search(r"sk-[A-Za-z0-9_-]{16,}", text)
+    if sk_key:
+        return sk_key.group(0).strip()
+    return text
+
+
 def normalize_base_url(value: str | None) -> str:
     if value is None:
         return ""
-    value = value.strip().strip("\"'").rstrip("/")
+    value = extract_base_url_candidate(value)
     if not value:
         return DEFAULT_BASE_URL
     if "://" not in value:
@@ -255,6 +275,37 @@ def normalize_base_url(value: str | None) -> str:
     if parsed.netloc.lower() == "api.openai.com" and not path:
         path = "/v1"
     return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def extract_base_url_candidate(value: str | None) -> str:
+    text = str(value or "").strip().strip("\"'").rstrip("/")
+    if not text:
+        return ""
+    assignment = re.match(
+        r"^(?:openai_base_url|base[_-]?url|api[_-]?base|api[_-]?url)\s*[:=]\s*(.+)$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if assignment:
+        return clean_url_candidate(assignment.group(1))
+    json_url = re.search(
+        r"[\"'](?:openai_base_url|base[_-]?url|api[_-]?base|api[_-]?url)[\"']\s*:\s*[\"']([^\"']+)[\"']",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if json_url:
+        return clean_url_candidate(json_url.group(1))
+    url = re.search(r"https?://[^\s\"'<>]+", text, flags=re.IGNORECASE)
+    if url:
+        return clean_url_candidate(url.group(0))
+    host = re.search(r"(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d+)?(?:/[^\s\"'<>]*)?", text)
+    if host:
+        return clean_url_candidate(host.group(0))
+    return clean_url_candidate(text)
+
+
+def clean_url_candidate(value: str) -> str:
+    return str(value or "").strip().strip("\"'").rstrip(".,;)}]").rstrip("/")
 
 
 def strip_completion_endpoint(value: str) -> str:
