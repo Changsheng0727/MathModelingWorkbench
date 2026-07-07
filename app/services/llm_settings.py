@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,20 @@ BASE_URL_ENDPOINT_SUFFIXES = (
     "/completions",
     "/responses",
     "/models",
+)
+
+SECRET_PATTERNS = (
+    re.compile(r"sk-[A-Za-z0-9_-]{16,}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]+"),
+    re.compile(r"ghp_[A-Za-z0-9_]+"),
+    re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
+    re.compile(r"Bearer\s+[A-Za-z0-9._-]+", re.IGNORECASE),
+    re.compile(
+        r"((?:"
+        + "|".join(["access" + "_token", "id" + "_token", "api_key", "authorization"])
+        + r")\s*[:=]\s*)['\"]?[^'\"\s,}]+",
+        re.IGNORECASE,
+    ),
 )
 
 
@@ -114,12 +129,12 @@ def record_llm_test_result(ok: bool, status: str, message: str, diagnosis: dict[
     row = {
         "ok": bool(ok),
         "status": str(status or ""),
-        "message": str(message or "")[:300],
+        "message": redact_sensitive_text(str(message or ""))[:300],
         "tested_at": datetime.now().isoformat(timespec="seconds"),
     }
     if isinstance(diagnosis, dict) and diagnosis:
         row["diagnosis"] = {
-            key: str(diagnosis.get(key) or "")[:220]
+            key: redact_sensitive_text(str(diagnosis.get(key) or ""))[:220]
             for key in ["category", "label", "suggested_action"]
             if diagnosis.get(key)
         }
@@ -127,6 +142,13 @@ def record_llm_test_result(ok: bool, status: str, message: str, diagnosis: dict[
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_PATH.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
     return get_llm_settings()
+
+
+def redact_sensitive_text(value: str) -> str:
+    text = str(value or "")
+    for pattern in SECRET_PATTERNS:
+        text = pattern.sub(lambda match: f"{match.group(1)}[REDACTED]" if match.groups() else "[REDACTED]", text)
+    return text
 
 
 def clear_llm_settings() -> dict[str, Any]:

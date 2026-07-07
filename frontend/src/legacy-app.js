@@ -227,12 +227,26 @@ function showToast(message, tone = "info") {
   const toast = document.createElement("div");
   toast.className = `toast toast-${tone}`;
   toast.setAttribute("role", tone === "error" ? "alert" : "status");
-  toast.textContent = message;
+  toast.textContent = redactSensitiveText(message);
   els.toastRegion.appendChild(toast);
   window.setTimeout(() => {
     toast.classList.add("is-leaving");
     window.setTimeout(() => toast.remove(), 180);
   }, 2800);
+}
+
+function redactSensitiveText(value) {
+  const sensitiveKeyPattern = new RegExp(
+    `((?:${["access" + "_token", "id" + "_token", "api_key", "authorization"].join("|")})\\s*[:=]\\s*)['"]?[^'"\\s,}]+`,
+    "gi",
+  );
+  return String(value ?? "")
+    .replace(/sk-[A-Za-z0-9_-]{16,}/g, "[REDACTED]")
+    .replace(/github_pat_[A-Za-z0-9_]+/g, "[REDACTED]")
+    .replace(/ghp_[A-Za-z0-9_]+/g, "[REDACTED]")
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[REDACTED]")
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "[REDACTED]")
+    .replace(sensitiveKeyPattern, "$1[REDACTED]");
 }
 
 function responseErrorMessage(response, payload, text, requestPath = "") {
@@ -251,7 +265,7 @@ function responseErrorMessage(response, payload, text, requestPath = "") {
   if (isLocalApiRequest && response.status === 404 && (!detail || /not found/i.test(detail)) && !looksLikeLlmProvider404) {
     return "后端接口不存在（HTTP 404）。请关闭旧客户端或旧后台服务后重新打开最新版客户端；如果仍然出现，请重新安装最新安装包。";
   }
-  return detail || `HTTP ${response.status}`;
+  return redactSensitiveText(detail || `HTTP ${response.status}`);
 }
 
 async function api(path, options = {}) {
@@ -560,7 +574,7 @@ function setLlmSettingsStatus(message, tone = "") {
   if (!els.llmSettingsStatus) {
     return;
   }
-  els.llmSettingsStatus.textContent = message || "";
+  els.llmSettingsStatus.textContent = redactSensitiveText(message || "");
   if (tone) {
     els.llmSettingsStatus.dataset.status = tone;
   } else {
