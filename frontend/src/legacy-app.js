@@ -932,6 +932,8 @@ function renderProjectFocus(focus = {}) {
   const actionLabel = String(focus.action_label || "").trim();
   const projectId = String(focus.project_id || "").trim();
   const projectName = String(focus.project_name || "").trim();
+  const projectNextStep = String(focus.project_next_step || "").trim();
+  const projectNextDetail = String(focus.project_next_detail || "").trim();
   const projectActionLabel = String(focus.project_action_label || "").trim();
   if (!label || !detail) {
     els.projectFocus.classList.add("hidden");
@@ -944,6 +946,8 @@ function renderProjectFocus(focus = {}) {
     <span>
       <b>${escapeHtml(label)}</b>
       <small>${escapeHtml(detail)}</small>
+      ${projectName ? `<small class="project-focus-target">${escapeHtml(projectName)}${projectNextStep ? ` · 下一步：${escapeHtml(projectNextStep)}` : ""}</small>` : ""}
+      ${projectNextDetail ? `<small class="project-focus-detail">${escapeHtml(projectNextDetail)}</small>` : ""}
     </span>
     <span class="project-focus-actions">
       <button class="project-focus-action" type="button" data-project-filter="${escapeHtml(filter)}">${escapeHtml(actionLabel || projectFilterLabel(filter))}</button>

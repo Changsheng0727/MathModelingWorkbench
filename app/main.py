@@ -556,6 +556,18 @@ def attach_project_summary_focus_target(focus: dict[str, object], projects: list
         return focus
     focus["project_id"] = project_id
     focus["project_name"] = str(target.get("name") or target.get("original_name") or project_id)
+    focus["project_next_step"] = str(
+        target.get("readiness_action_label")
+        or target.get("readiness_next_step_label")
+        or target.get("readiness_phase_label")
+        or ""
+    )
+    focus["project_next_detail"] = str(
+        target.get("readiness_action_hint")
+        or target.get("readiness_attention_reason")
+        or target.get("readiness_summary")
+        or ""
+    )
     focus["project_action_label"] = "打开项目"
     return focus
 

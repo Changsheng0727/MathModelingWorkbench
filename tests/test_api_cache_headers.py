@@ -86,7 +86,13 @@ def test_project_summary_focus_prioritizes_failures() -> None:
             "needs_action": 3,
         },
         [
-            {"id": "p1", "name": "失败项目", "auto_workflow_status": "failed"},
+            {
+                "id": "p1",
+                "name": "失败项目",
+                "auto_workflow_status": "failed",
+                "readiness_action_label": "继续修复",
+                "readiness_action_hint": "从失败处继续生成。",
+            },
             {"id": "p2", "name": "高优先级项目", "readiness_next_step_urgency": "high"},
         ],
     )
@@ -96,6 +102,8 @@ def test_project_summary_focus_prioritizes_failures() -> None:
     assert focus["tone"] == "failed"
     assert focus["project_id"] == "p1"
     assert focus["project_name"] == "失败项目"
+    assert focus["project_next_step"] == "继续修复"
+    assert focus["project_next_detail"] == "从失败处继续生成。"
 
 
 def test_project_summary_focus_flags_artifact_issues_before_urgent() -> None:

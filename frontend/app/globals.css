@@ -954,6 +954,16 @@ p {
   line-height: 1.35;
 }
 
+.project-focus-target {
+  color: var(--text);
+  font-weight: 750;
+}
+
+.project-focus-detail {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .project-focus-actions {
   display: inline-flex;
   flex-wrap: wrap;
