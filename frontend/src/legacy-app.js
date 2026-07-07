@@ -3786,23 +3786,51 @@ function createProgressId() {
   return `upload-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function startUploadProgressPolling(progressId) {
+function rememberPollDelay(element, value) {
+  if (!element || value === undefined || value === null) {
+    return;
+  }
+  element.dataset.pollAfterMs = String(value);
+}
+
+function progressPollDelay(element, fallback) {
+  const value = Number(element?.dataset.pollAfterMs);
+  return Number.isFinite(value) ? Math.max(300, Math.min(5000, value)) : fallback;
+}
+
+function startSequentialProgressPolling(refresh, { element = null, interval = 700, isDone = () => false } = {}) {
   let stopped = false;
-  refreshUploadProgress(progressId);
-  const timer = window.setInterval(async () => {
+  let timer = null;
+  const tick = async () => {
     if (stopped) {
       return;
     }
-    const done = await refreshUploadProgress(progressId);
-    if (done) {
-      stopped = true;
-      window.clearInterval(timer);
+    let result = false;
+    try {
+      result = await refresh();
+    } catch {
+      result = false;
     }
-  }, 500);
+    if (stopped || isDone(result)) {
+      return;
+    }
+    timer = window.setTimeout(tick, progressPollDelay(element, interval));
+  };
+  timer = window.setTimeout(tick, 0);
   return () => {
     stopped = true;
-    window.clearInterval(timer);
+    if (timer) {
+      window.clearTimeout(timer);
+    }
   };
+}
+
+function startUploadProgressPolling(progressId) {
+  return startSequentialProgressPolling(() => refreshUploadProgress(progressId), {
+    element: els.uploadProgress,
+    interval: 500,
+    isDone: Boolean,
+  });
 }
 
 async function refreshUploadProgress(progressId, { includeOverview = false } = {}) {
@@ -3813,6 +3841,7 @@ async function refreshUploadProgress(progressId, { includeOverview = false } = {
   try {
     const suffix = includeOverview ? "?include_overview=true" : "";
     const payload = await api(`/api/upload-analysis-progress/${encodeURIComponent(progressId)}${suffix}`);
+    rememberPollDelay(els.uploadProgress, payload.poll_after_ms);
     if (payload.project) {
       renderProject(payload.project);
     }
@@ -4759,17 +4788,10 @@ els.modelAssistantForm.addEventListener("submit", async (event) => {
 });
 
 function startModelAssistantProgressPolling(projectId) {
-  let stopped = false;
-  refreshModelAssistantProgress(projectId);
-  const timer = window.setInterval(() => {
-    if (!stopped) {
-      refreshModelAssistantProgress(projectId);
-    }
-  }, 700);
-  return () => {
-    stopped = true;
-    window.clearInterval(timer);
-  };
+  return startSequentialProgressPolling(() => refreshModelAssistantProgress(projectId), {
+    element: els.modelAssistantProgress,
+    interval: 700,
+  });
 }
 
 async function refreshModelAssistantProgress(projectId, { includeOverview = false } = {}) {
@@ -4779,6 +4801,7 @@ async function refreshModelAssistantProgress(projectId, { includeOverview = fals
   try {
     const suffix = includeOverview ? "?include_overview=true" : "";
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/model-assistant/progress${suffix}`);
+    rememberPollDelay(els.modelAssistantProgress, payload.poll_after_ms);
     if (payload.project) {
       renderProject(payload.project);
     }
@@ -4947,10 +4970,13 @@ async function runAutoWorkflow(
 async function waitForAutoWorkflowCompletion(projectId) {
   let latest = null;
   let ticks = 0;
+  let pollAfterMs = 900;
   const progressPath = `/api/projects/${encodeURIComponent(projectId)}/progress`;
   for (;;) {
-    await delay(900);
+    await delay(pollAfterMs);
     latest = await api(progressPath);
+    rememberPollDelay(els.autoWorkflowProgress, latest.poll_after_ms);
+    pollAfterMs = progressPollDelay(els.autoWorkflowProgress, 900);
     renderAutoWorkflowProgress(latest.progress);
     updateAutoWorkflowButtons(latest.status, latest.progress || {});
     ticks += 1;
@@ -4992,6 +5018,7 @@ async function refreshAutoProgress(projectId, { includeOverview = true } = {}) {
   try {
     const suffix = includeOverview ? "include_overview=true&include_jobs=true" : "include_jobs=true";
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/progress?${suffix}`);
+    rememberPollDelay(els.autoWorkflowProgress, payload.poll_after_ms);
     applyAutoJobsPayload(payload);
     if (payload.project) {
       renderProject(payload.project);
@@ -5289,17 +5316,10 @@ if (els.resumeAutoWorkflow) {
 }
 
 function startLlmAnalysisProgressPolling(projectId) {
-  let stopped = false;
-  refreshLlmAnalysisProgress(projectId);
-  const timer = window.setInterval(() => {
-    if (!stopped) {
-      refreshLlmAnalysisProgress(projectId);
-    }
-  }, 700);
-  return () => {
-    stopped = true;
-    window.clearInterval(timer);
-  };
+  return startSequentialProgressPolling(() => refreshLlmAnalysisProgress(projectId), {
+    element: els.llmAnalysisProgress,
+    interval: 700,
+  });
 }
 
 async function refreshLlmAnalysisProgress(projectId, { includeOverview = false } = {}) {
@@ -5309,6 +5329,7 @@ async function refreshLlmAnalysisProgress(projectId, { includeOverview = false }
   try {
     const suffix = includeOverview ? "?include_overview=true" : "";
     const payload = await api(`/api/projects/${encodeURIComponent(projectId)}/llm/analyze/progress${suffix}`);
+    rememberPollDelay(els.llmAnalysisProgress, payload.poll_after_ms);
     if (payload.project) {
       renderProject(payload.project);
     }

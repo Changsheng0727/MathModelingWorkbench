@@ -126,6 +126,10 @@ def no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
 
 
+def progress_poll_after_ms(status: object) -> int:
+    return 700 if str(status or "") in {"queued", "running", "between_steps", "cancel_requested"} else 1600
+
+
 class LLMSettingsPayload(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
@@ -565,7 +569,7 @@ def batch_delivery_package_job(job_id: str) -> dict:
 def upload_analysis_progress(progress_id: str, response: Response, include_overview: bool = False) -> dict:
     no_store(response)
     progress = load_analysis_progress(progress_id)
-    response = {"progress": progress or {}}
+    payload = {"progress": progress or {}, "poll_after_ms": progress_poll_after_ms(progress.get("status") if isinstance(progress, dict) else "")}
     if isinstance(progress, dict) and progress.get("project_id"):
         try:
             project_id = str(progress["project_id"])
@@ -578,17 +582,17 @@ def upload_analysis_progress(progress_id: str, response: Response, include_overv
             ):
                 progress = dict(progress)
                 progress["live_stream"] = live_stream
-                response["progress"] = progress
+                payload["progress"] = progress
             elif progress_status == "running" and progress.get("current_step") and not progress.get("detail"):
                 progress = dict(progress)
                 progress["detail"] = "正在启动上传分析直播，稍后会显示实时输出。"
-                response["progress"] = progress
+                payload["progress"] = progress
             if include_overview:
-                response["project"] = project_detail(project_id)
-                response["overview"] = build_product_overview_response()
+                payload["project"] = project_detail(project_id)
+                payload["overview"] = build_product_overview_response()
         except Exception:
             pass
-    return response
+    return payload
 
 
 @app.get("/api/skills/backend")
@@ -2288,6 +2292,7 @@ def project_progress(project_id: str, response: Response, include_overview: bool
         "project_id": project_id,
         "status": response_status,
         "progress": redact_public_payload(progress or {}),
+        "poll_after_ms": progress_poll_after_ms(progress.get("status") or response_status),
         "artifacts": meta.get("artifacts", {}),
         "error": redact_sensitive_text(str(meta.get("auto_workflow_error", ""))),
     }
@@ -2374,6 +2379,7 @@ def project_model_assistant_progress(project_id: str, response: Response, includ
         "project_id": project_id,
         "status": progress.get("status") or status,
         "progress": redact_public_payload(progress or {}),
+        "poll_after_ms": progress_poll_after_ms(progress.get("status") or status),
         "artifacts": meta.get("artifacts", {}),
         "error": redact_sensitive_text(str(meta.get("model_assistant_error", ""))),
     }
@@ -2407,6 +2413,7 @@ def project_llm_analysis_progress(project_id: str, response: Response, include_o
         "project_id": project_id,
         "status": progress.get("status") or status,
         "progress": redact_public_payload(progress),
+        "poll_after_ms": progress_poll_after_ms(progress.get("status") or status),
         "artifacts": meta.get("artifacts", {}),
         "error": redact_sensitive_text(str(meta.get("llm_analysis_error", ""))),
     }
