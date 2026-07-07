@@ -456,6 +456,7 @@ def build_product_overview_response(*, refresh: bool = False) -> dict:
     delivery_batches = list_delivery_package_batches()
     settings = load_capacity_settings()
     return redact_public_payload({
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
         "projects": projects_snapshot,
         "action_alias_catalog": ACTION_ALIASES,
         "action_catalog": ACTION_OUTCOMES,

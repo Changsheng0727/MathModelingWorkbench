@@ -23,6 +23,7 @@ const state = {
   actionProgressCatalog: {},
   actionSuccessCatalog: {},
   actionButtonCatalog: {},
+  overviewGeneratedAt: "",
   uploadProgressStop: null,
   uploadProgressTotalSteps: 8,
   projectRestoreTried: false,
@@ -688,6 +689,7 @@ function applyProductOverviewPayload(payload = {}) {
     state.projects = payload.projects;
     pruneSelectedProjects();
   }
+  state.overviewGeneratedAt = payload.generated_at || state.overviewGeneratedAt || "";
   state.actionAliasCatalog = payload.action_alias_catalog || state.actionAliasCatalog || {};
   state.actionCatalog = payload.action_catalog || state.actionCatalog || {};
   state.actionProgressCatalog = payload.action_progress_catalog || state.actionProgressCatalog || {};
@@ -719,6 +721,14 @@ function applyProductOverviewPayload(payload = {}) {
 }
 
 async function loadProductOverview({ restore = false, refresh = false } = {}) {
+  const showLoading = Boolean(els.projectList && (!state.projects.length || refresh));
+  if (showLoading) {
+    els.projectList.setAttribute("aria-busy", "true");
+    els.projectCount?.classList.add("is-loading");
+    if (els.projectCount && !state.projects.length) {
+      els.projectCount.textContent = "正在读取项目状态...";
+    }
+  }
   try {
     applyProductOverviewPayload(await api(`/api/product/overview${refresh ? "?refresh=true" : ""}`));
     if (restore) {
@@ -742,6 +752,11 @@ async function loadProductOverview({ restore = false, refresh = false } = {}) {
       actions: [{ id: "refresh_all", label: "刷新状态", detail: "重新读取本地项目状态。", tone: "neutral" }],
     });
     throw error;
+  } finally {
+    if (showLoading) {
+      els.projectList.removeAttribute("aria-busy");
+      els.projectCount?.classList.remove("is-loading");
+    }
   }
 }
 
@@ -806,11 +821,12 @@ function renderProjectList() {
 
   if (els.projectCount) {
     const filterText = projectFilterLabel(filter);
+    const freshness = state.overviewGeneratedAt ? ` · 刷新 ${formatProgressTime(state.overviewGeneratedAt)}` : "";
     els.projectCount.textContent = projects.length
       ? query || filter !== "all"
-        ? `${filterText}：${filtered.length} / ${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}`
-        : `${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}`
-      : "暂无项目";
+        ? `${filterText}：${filtered.length} / ${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}${freshness}`
+        : `${projects.length} 个项目${selectedCount ? ` · 已选 ${selectedCount}` : ""}${freshness}`
+      : `暂无项目${freshness}`;
   }
 
   if (!projects.length) {
