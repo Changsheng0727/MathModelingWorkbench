@@ -180,10 +180,10 @@ ACTION_BUTTONS.update(
     }
 )
 
-ACTION_OUTCOMES.setdefault("export_audit", "会导出当前项目池的信任审计包。")
-ACTION_PROGRESS.setdefault("export_audit", "正在导出信任审计包。")
-ACTION_SUCCESS.setdefault("export_audit", "已导出信任审计包。")
-ACTION_BUTTONS.setdefault("export_audit", "导出审计包")
+ACTION_OUTCOMES.setdefault("export_audit", "会导出当前项目池的交付质检包。")
+ACTION_PROGRESS.setdefault("export_audit", "正在导出交付质检包。")
+ACTION_SUCCESS.setdefault("export_audit", "已导出交付质检包。")
+ACTION_BUTTONS.setdefault("export_audit", "导出质检包")
 
 for alias, target in ACTION_ALIASES.items():
     if target in ACTION_OUTCOMES:

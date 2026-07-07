@@ -188,7 +188,7 @@ def recommended_actions(
     if deliverable > packaged:
         actions.append(action("batch_packages", "批量生成交付包", "把已就绪论文、结果、审查报告和支撑材料打成正式交付包。", "primary"))
     if not actions:
-        actions.append(action("refresh_all", "刷新产品状态", "重新计算体验雷达、任务中心、信任中心和交付状态。", "neutral"))
+        actions.append(action("refresh_all", "刷新产品状态", "重新计算体验雷达、任务中心、交付质检和交付状态。", "neutral"))
     return actions[:4]
 
 

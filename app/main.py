@@ -453,7 +453,7 @@ def download_product_trust_report(filename: str) -> FileResponse:
     try:
         target = resolve_trust_report_file(filename)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="未找到信任审计导出文件。") from exc
+        raise HTTPException(status_code=404, detail="未找到交付质检导出文件。") from exc
     return FileResponse(target, filename=target.name)
 
 

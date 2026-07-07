@@ -118,24 +118,24 @@ def trust_status(
     queued_jobs: int,
 ) -> tuple[str, str]:
     if not total:
-        return "empty", "暂无信任证据"
+        return "empty", "暂无质检数据"
     if repair_backlog or failed_projects:
-        return "at_risk" if score >= 45 else "blocked", "信任存在风险" if score >= 45 else "已阻断"
+        return "at_risk" if score >= 45 else "blocked", "交付存在风险" if score >= 45 else "交付阻断"
     if queued_jobs > 2:
         return "watch", "队列观察"
     if packages and hashed_packages >= packages and score >= 88:
-        return "trusted", "交付可信"
+        return "trusted", "交付已通过"
     if score >= 70:
         return "watch", "运营观察"
-    return "at_risk", "信任存在风险"
+    return "at_risk", "交付存在风险"
 
 
 def trust_summary(label: str, score: int, total: int, deliverable: int, packages: int, repair_backlog: int, queued_jobs: int) -> str:
-    parts = [f"{label}：{total} 个项目的信任评分为 {score}/100"]
+    parts = [f"{label}：{total} 个项目的交付质检评分为 {score}/100"]
     if deliverable:
         parts.append(f"{deliverable} 个通过交付门禁")
     if packages:
-        parts.append(f"{packages} 个可审计交付包")
+        parts.append(f"{packages} 个带清单交付包")
     if repair_backlog:
         parts.append(f"{repair_backlog} 个修复项")
     if queued_jobs:
@@ -359,8 +359,8 @@ def trust_actions(
         actions.append(
             {
                 "id": "seed_projects",
-                "label": "补充证明项目",
-                "detail": "上传样例竞赛并运行工作流，生成信任证据。",
+                "label": "补充项目样例",
+                "detail": "上传样例竞赛并运行工作流，生成交付质检数据。",
             }
         )
     if not actions and active_jobs:
@@ -368,15 +368,15 @@ def trust_actions(
             {
                 "id": "watch_active_jobs",
                 "label": "观察活跃任务",
-                "detail": "导出下一份审计包前，确认活跃任务成功完成。",
+                "detail": "导出下一份质检包前，确认活跃任务成功完成。",
             }
         )
     if not actions:
         actions.append(
             {
                 "id": "export_audit_bundle",
-                "label": "导出审计包",
-                "detail": "当前信任证据足够干净，可以刷新交付审计包。",
+                "label": "导出质检包",
+                "detail": "当前交付检查结果干净，可以刷新交付质检包。",
             }
         )
     return [enrich_action(action) for action in actions[:4]]

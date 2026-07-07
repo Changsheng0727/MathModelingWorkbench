@@ -177,9 +177,9 @@ def compact_project(project: dict[str, Any]) -> dict[str, Any]:
 
 def build_attestation(trust: dict[str, Any]) -> list[str]:
     return [
-        f"Trust status: {trust.get('label') or trust.get('status') or '-'} at {trust.get('score', 0)}/100.",
+        f"Delivery quality status: {trust.get('label') or trust.get('status') or '-'} at {trust.get('score', 0)}/100.",
         f"Delivery gate coverage: {trust.get('deliverable_count', 0)}/{trust.get('project_count', 0)} projects.",
-        f"Auditable package hashes: {trust.get('hashed_package_count', 0)}/{trust.get('package_count', 0)} packages.",
+        f"Package hash coverage: {trust.get('hashed_package_count', 0)}/{trust.get('package_count', 0)} packages.",
         f"Repair backlog: {trust.get('repair_backlog_count', 0)} items; failed projects: {trust.get('failed_project_count', 0)}.",
         f"Queue pressure: {trust.get('active_job_count', 0)} active jobs and {trust.get('queued_job_count', 0)} queued jobs.",
     ]
@@ -189,17 +189,17 @@ def render_trust_markdown(payload: dict[str, Any]) -> str:
     trust = payload.get("trust", {}) if isinstance(payload.get("trust"), dict) else {}
     projects = payload.get("projects", []) if isinstance(payload.get("projects"), list) else []
     lines = [
-        "# ModelArk Trust Audit Export",
+        "# ModelArk Delivery Quality Export",
         "",
         f"- Generated at: {payload.get('generated_at', '-')}",
-        f"- Trust status: {trust.get('label') or trust.get('status') or '-'}",
-        f"- Trust score: {trust.get('score', 0)}/100",
+        f"- Delivery quality status: {trust.get('label') or trust.get('status') or '-'}",
+        f"- Delivery quality score: {trust.get('score', 0)}/100",
         f"- Projects: {trust.get('project_count', 0)} total, {trust.get('deliverable_count', 0)} deliverable, {trust.get('package_count', 0)} packaged",
         f"- Package hash coverage: {trust.get('hashed_package_count', 0)}/{trust.get('package_count', 0)}",
         "",
         "## Executive Summary",
         "",
-        str(trust.get("summary") or "No trust summary is available yet."),
+        str(trust.get("summary") or "No delivery quality summary is available yet."),
         "",
         "## Attestation",
         "",
@@ -225,7 +225,7 @@ def render_trust_markdown(payload: dict[str, Any]) -> str:
     lines.extend(["", "## Incidents", ""])
     append_rows(lines, trust.get("incidents", []) if isinstance(trust.get("incidents"), list) else [], "No active incidents.")
     lines.extend(["", "## Recommended Actions", ""])
-    append_rows(lines, trust.get("actions", []) if isinstance(trust.get("actions"), list) else [], "No trust actions are required.")
+    append_rows(lines, trust.get("actions", []) if isinstance(trust.get("actions"), list) else [], "No delivery quality actions are required.")
     lines.extend(
         [
             "",
@@ -291,12 +291,12 @@ def write_trust_zip(zip_path: Path, markdown_path: Path, json_path: Path, csv_pa
             "README.md",
             "\n".join(
                 [
-                    "# ModelArk Trust Audit Bundle",
+                    "# ModelArk Delivery Quality Bundle",
                     "",
-                    "This bundle contains a submission-facing trust, SLA, incident, and package-hash snapshot.",
+                    "This bundle contains a submission-facing delivery quality, SLA, incident, and package-hash snapshot.",
                     "",
-                    "- `trust_audit.md`: readable trust report",
-                    "- `trust_audit.json`: structured trust metrics, SLA rows, incidents, actions, and project audit rows",
+                    "- `trust_audit.md`: readable delivery quality report",
+                    "- `trust_audit.json`: structured delivery quality metrics, SLA rows, incidents, actions, and project audit rows",
                     "- `project_audit.csv`: spreadsheet-friendly project evidence index",
                     "",
                 ]

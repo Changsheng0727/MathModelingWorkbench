@@ -221,7 +221,7 @@ export default function WorkbenchPage() {
                 <div id="project-readiness" className="readiness-panel" aria-live="polite"></div>
               </section>
               <details className="advanced-fold">
-                <summary>高级状态：并发、修复、信任与交付</summary>
+                <summary>高级状态：并发、修复与交付检查</summary>
                 <section className="panel wide">
                   <div className="section-title">
                     <h2>解题进度中心</h2>
@@ -232,7 +232,7 @@ export default function WorkbenchPage() {
                 </section>
                 <section className="panel wide">
                   <div className="section-title">
-                    <h2>信任中心</h2>
+                    <h2>交付质检</h2>
                     <button id="refresh-trust-center" className="ghost" type="button">刷新</button>
                   </div>
                   <div id="trust-center" className="trust-center" aria-live="polite"></div>

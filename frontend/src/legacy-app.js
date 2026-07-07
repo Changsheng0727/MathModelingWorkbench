@@ -690,7 +690,7 @@ async function loadProductOverview({ restore = false, refresh = false } = {}) {
       els.growthCenter.innerHTML = `<p class="status">解题进度中心暂不可用：${escapeHtml(error.message)}</p>`;
     }
     if (els.trustCenter) {
-      els.trustCenter.innerHTML = `<p class="status">信任中心暂不可用：${escapeHtml(error.message)}</p>`;
+      els.trustCenter.innerHTML = `<p class="status">交付质检暂不可用：${escapeHtml(error.message)}</p>`;
     }
     renderExperienceGuide({
       status: "warning",
@@ -745,7 +745,7 @@ async function loadTrustCenter({ includeOverview = false } = {}) {
       renderTrustCenter(state.trustMetrics, state.trustExports);
     }
   } catch (error) {
-    els.trustCenter.innerHTML = `<p class="status">信任中心暂不可用：${escapeHtml(error.message)}</p>`;
+    els.trustCenter.innerHTML = `<p class="status">交付质检暂不可用：${escapeHtml(error.message)}</p>`;
   }
 }
 
@@ -2647,8 +2647,8 @@ function renderTrustCenter(trust = {}, trustExports = null) {
   els.trustCenter.innerHTML = `
     <section class="trust-hero" data-status="${escapeHtml(statusTone(trust.status))}">
       <div>
-        <b>${escapeHtml(trust.label || "信任中心")}</b>
-        <p>${escapeHtml(trust.summary || "项目运行后会在这里汇总质量、交付和可审计证据。")}</p>
+        <b>${escapeHtml(trust.label || "交付质检")}</b>
+        <p>${escapeHtml(trust.summary || "项目运行后会在这里汇总质量、交付包和异常处理情况。")}</p>
       </div>
       <strong>${escapeHtml(trust.score ?? 0)}/100</strong>
       ${generatedAt}
@@ -2656,7 +2656,7 @@ function renderTrustCenter(trust = {}, trustExports = null) {
     ${renderTrustExportPanel(latestExport)}
     ${renderRepairCampaignPanel(latestCampaign)}
     <div class="trust-metrics">
-      ${metrics.length ? metrics.map(renderTrustMetric).join("") : '<p class="status">暂无信任指标。</p>'}
+      ${metrics.length ? metrics.map(renderTrustMetric).join("") : '<p class="status">暂无质检指标。</p>'}
     </div>
     <div class="trust-sla">
       ${sla.length ? sla.map(renderTrustSlaRow).join("") : ""}
@@ -2693,15 +2693,15 @@ function renderTrustExportPanel(latest = {}) {
   const hashText = latest.sha256 ? ` · SHA256 ${String(latest.sha256).slice(0, 12)}` : "";
   const latestText = hasLatest
     ? `最近 ${formatProjectTime(latest.generated_at)} · 评分 ${latest.trust_score ?? "-"}${sizeText}${hashText}`
-    : "尚未导出审计包。";
+    : "尚未导出质检包。";
   return `
     <section class="trust-export">
       <div>
-        <b>审计包</b>
+        <b>质检包</b>
         <p>${escapeHtml(latestText)}</p>
       </div>
       <div class="trust-export-actions">
-        ${renderTrustCommandButton({ id: "export_audit", label: "导出审计包" }, "trust-export-button")}
+        ${renderTrustCommandButton({ id: "export_audit", label: "导出质检包" }, "trust-export-button")}
         ${hasLatest ? `<a class="trust-export-link" href="${escapeHtml(latest.download_url)}" target="_blank" rel="noreferrer">下载最新包</a>` : ""}
       </div>
     </section>
@@ -3066,7 +3066,7 @@ function statusLabel(value) {
     submission_ready: "提交就绪",
     solution_ready: "求解就绪",
     incubating: "培育中",
-    trusted: "可信",
+    trusted: "已通过",
     watch: "观察中",
     at_risk: "存在风险",
     hot: "高意向",
@@ -3854,19 +3854,19 @@ els.refreshGrowthMetrics?.addEventListener("click", async () => {
 els.refreshTrustCenter?.addEventListener("click", async () => {
   els.refreshTrustCenter.disabled = true;
   if (els.trustCenterStatus) {
-    els.trustCenterStatus.textContent = "正在刷新质量与交付信任证据。";
+    els.trustCenterStatus.textContent = "正在刷新质量与交付检查。";
   }
   try {
     await loadTrustCenter({ includeOverview: true });
     if (els.trustCenterStatus) {
-      els.trustCenterStatus.textContent = "信任中心已刷新。";
+      els.trustCenterStatus.textContent = "交付质检已刷新。";
     }
-    showToast("信任中心已刷新", "success");
+    showToast("交付质检已刷新", "success");
   } catch (error) {
     if (els.trustCenterStatus) {
-      els.trustCenterStatus.textContent = `信任中心刷新失败：${error.message}`;
+      els.trustCenterStatus.textContent = `交付质检刷新失败：${error.message}`;
     }
-    showToast(`信任中心刷新失败：${error.message}`, "error");
+    showToast(`交付质检刷新失败：${error.message}`, "error");
   } finally {
     els.refreshTrustCenter.disabled = false;
   }
@@ -3943,13 +3943,13 @@ els.trustCenter?.addEventListener("click", async (event) => {
     await syncOverviewAfterAction(payload);
     const report = payload.trust_report || {};
     const sizeText = report.size ? ` · ${report.size}` : "";
-    setTrustStatus(report.filename || report.id ? `信任审计包已导出：${report.filename || report.id}${sizeText}` : success);
+    setTrustStatus(report.filename || report.id ? `交付质检包已导出：${report.filename || report.id}${sizeText}` : success);
     if (report.download_url) {
       window.open(report.download_url, "_blank", "noopener");
     }
-    showToast("信任审计包已就绪", "success");
+    showToast("交付质检包已就绪", "success");
   } catch (error) {
-    const label = command === "repair_campaign" ? "修复行动失败" : "信任审计包导出失败";
+    const label = command === "repair_campaign" ? "修复行动失败" : "交付质检包导出失败";
     setTrustStatus(`${label}：${error.message}`);
     showToast(`${label}：${error.message}`, "error");
   } finally {
