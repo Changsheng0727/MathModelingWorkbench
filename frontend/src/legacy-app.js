@@ -342,12 +342,20 @@ async function checkHealth() {
     els.health.textContent = "已连接";
     els.health.dataset.status = "connected";
     const startupTasks = [
-      ["环境状态", loadEnvironments],
+      ["环境状态", () => loadEnvironments({ includeOverview: true })],
     ];
     const results = await Promise.allSettled(startupTasks.map(([, task]) => task()));
     const failed = results
       .map((result, index) => (result.status === "rejected" ? `${startupTasks[index][0]}：${result.reason?.message || "加载失败"}` : ""))
       .filter(Boolean);
+    if (!state.projects.length) {
+      try {
+        await loadProductOverview();
+      } catch (error) {
+        failed.push(`首页状态：${error.message}`);
+      }
+    }
+    await restoreInitialProject();
     if (failed.length) {
       showToast(`部分启动信息加载失败：${failed.join("；")}`, "warning");
     }
@@ -5829,6 +5837,3 @@ els.runLlmAnalysis.addEventListener("click", async () => {
 initThemeToggle();
 initModuleTabs();
 checkHealth();
-loadProductOverview({ restore: true }).catch((error) => {
-  showToast(`首页状态加载失败：${error.message}`, "warning");
-});

@@ -191,11 +191,12 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/environments")
-def environments(refresh: bool = False, include_overview: bool = False) -> dict:
-    response = detect_environments(refresh=refresh)
+def environments(response: Response, refresh: bool = False, include_overview: bool = False) -> dict:
+    no_store(response)
+    payload = detect_environments(refresh=refresh)
     if include_overview:
-        response["overview"] = build_product_overview_response(refresh=refresh)
-    return response
+        payload["overview"] = build_product_overview_response(refresh=refresh)
+    return payload
 
 
 @app.get("/api/product/capacity")

@@ -17,6 +17,14 @@ def test_product_overview_is_not_browser_cached() -> None:
     assert response.headers["cache-control"] == "no-store"
 
 
+def test_environment_status_is_not_browser_cached() -> None:
+    with patch.object(main, "detect_environments", return_value={"local_python": {"available": True}}):
+        response = TestClient(main.app).get("/api/environments")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+
+
 def test_progress_polling_hint_is_fast_only_while_active() -> None:
     assert main.progress_poll_after_ms("running") < main.progress_poll_after_ms("success")
     assert main.progress_poll_after_ms("queued") == 700
@@ -32,6 +40,7 @@ def test_progress_payload_gets_refresh_timestamp() -> None:
 
 if __name__ == "__main__":
     test_product_overview_is_not_browser_cached()
+    test_environment_status_is_not_browser_cached()
     test_progress_polling_hint_is_fast_only_while_active()
     test_progress_payload_gets_refresh_timestamp()
     print("api_cache_headers_tests_ok")
