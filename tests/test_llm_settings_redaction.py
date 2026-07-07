@@ -102,7 +102,27 @@ def test_llm_settings_marks_stale_successful_test() -> None:
     assert settings["connection_stale"] is True
     assert settings["connection_tone"] == "warning"
     assert settings["connection_test_required"] is True
+    assert settings["connection_action"]["id"] == "test_llm"
     assert settings["last_test_age_seconds"] >= 24 * 3600
+
+
+def test_llm_settings_connection_actions_cover_setup_states() -> None:
+    original_path = llm_settings.SETTINGS_PATH
+    api_key = "sk" + "-test_" + "abcdefghijklmnopqrstuvwxyz"
+    with TemporaryDirectory() as temp_dir:
+        try:
+            llm_settings.SETTINGS_PATH = Path(temp_dir) / "llm.json"
+            missing = llm_settings.get_llm_settings()
+            untested = llm_settings.save_llm_settings(api_key, "https://api.chshapi.org/v1", "gpt-5.5")
+            passed = llm_settings.record_llm_test_result(True, "ok", "ok")
+            failed = llm_settings.record_llm_test_result(False, "failed", "bad key")
+        finally:
+            llm_settings.SETTINGS_PATH = original_path
+
+    assert missing["connection_action"]["id"] == "focus_llm"
+    assert untested["connection_action"]["id"] == "test_llm"
+    assert passed["connection_action"] == {}
+    assert failed["connection_action"]["id"] == "test_llm"
 
 
 def test_save_llm_settings_invalidates_test_when_endpoint_or_model_changes() -> None:
@@ -126,6 +146,7 @@ def test_save_llm_settings_invalidates_test_when_endpoint_or_model_changes() -> 
 
     assert settings["connection_status"] == "untested"
     assert settings["connection_test_required"] is True
+    assert settings["connection_action"]["id"] == "test_llm"
     assert settings["base_url"] == "https://api.deepseek.com/v1"
     assert settings["model"] == "deepseek-chat"
 
@@ -178,6 +199,7 @@ if __name__ == "__main__":
     test_normalize_model_accepts_common_pasted_formats()
     test_record_llm_test_result_persists_redacted_message()
     test_llm_settings_marks_stale_successful_test()
+    test_llm_settings_connection_actions_cover_setup_states()
     test_save_llm_settings_invalidates_test_when_endpoint_or_model_changes()
     test_llm_test_endpoint_returns_redacted_error()
     test_public_progress_payload_redacts_nested_strings()

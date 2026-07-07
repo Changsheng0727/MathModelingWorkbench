@@ -615,9 +615,9 @@ function renderLlmSettings(settings) {
   const endpoint = settings.base_url ? ` · 接口 ${settings.base_url}` : "";
   const strategy = settings.workflow_strategy_label ? ` · ${settings.workflow_strategy_label}` : "";
   if (settings.configured) {
-    setLlmSettingsStatus(`${label}：${detail}${testMeta}${model}${endpoint} · ${settings.masked_api_key} · ${source}${strategy}`, settings.connection_tone || "warning");
+    setLlmSettingsStatus(`${label}：${detail}${testMeta}${model}${endpoint} · ${settings.masked_api_key} · ${source}${strategy}`, settings.connection_tone || "warning", settings.connection_action);
   } else {
-    setLlmSettingsStatus(`${label}：${detail}`, settings.connection_tone || "failed");
+    setLlmSettingsStatus(`${label}：${detail}`, settings.connection_tone || "failed", settings.connection_action);
   }
 }
 
@@ -653,12 +653,17 @@ async function refreshCurrentProjectIfMissing(payload = {}) {
   await refreshCurrentProjectDetail().catch(() => {});
 }
 
-function setLlmSettingsStatus(message, tone = "") {
+function setLlmSettingsStatus(message, tone = "", action = null) {
   if (!els.llmSettingsStatus) {
     return;
   }
   const safeMessage = redactSensitiveText(message || "");
-  els.llmSettingsStatus.textContent = safeMessage;
+  if (action?.id) {
+    const actionLabel = action.button_label || action.buttonLabel || guideActionButtonLabel(action.id) || action.label || "去处理";
+    els.llmSettingsStatus.innerHTML = `<span>${escapeHtml(safeMessage)}</span><button class="status-inline-action" type="button" data-llm-settings-action="${escapeHtml(action.id)}">${escapeHtml(actionLabel)}</button>`;
+  } else {
+    els.llmSettingsStatus.textContent = safeMessage;
+  }
   els.llmSettingsStatus.title = safeMessage.includes("[REDACTED]") ? "错误信息中可能包含密钥，界面已自动隐藏。" : "";
   if (tone) {
     els.llmSettingsStatus.dataset.status = tone;
@@ -4783,6 +4788,21 @@ if (els.openProjectRoot) {
     await openProjectRoot();
   });
 }
+
+els.llmSettingsStatus?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-llm-settings-action]");
+  if (!button) {
+    return;
+  }
+  button.disabled = true;
+  try {
+    await runGuideAction(button.dataset.llmSettingsAction || "");
+  } catch (error) {
+    reportGuideActionError(error);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 els.workflowStrategyInput?.addEventListener("change", () => {
   const selected = els.workflowStrategyInput.value || "balanced";

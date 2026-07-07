@@ -75,6 +75,7 @@ def get_llm_settings() -> dict[str, Any]:
         "connection_label": llm_connection_label(bool(api_key), last_test),
         "connection_detail": llm_connection_detail(bool(api_key), last_test),
         "connection_tone": llm_connection_tone(bool(api_key), last_test),
+        "connection_action": llm_connection_action(bool(api_key), last_test),
     }
 
 
@@ -264,6 +265,19 @@ def llm_connection_tone(configured: bool, last_test: dict[str, Any]) -> str:
             return "warning"
         return "success"
     return "warning"
+
+
+def llm_connection_action(configured: bool, last_test: dict[str, Any]) -> dict[str, str]:
+    if not configured:
+        return {"id": "focus_llm", "label": "填写密钥"}
+    status = llm_connection_status(last_test)
+    if status == "failed":
+        return {"id": "test_llm", "label": "重新测试"}
+    if status == "passed" and llm_connection_stale(last_test):
+        return {"id": "test_llm", "label": "重新测试"}
+    if status == "untested":
+        return {"id": "test_llm", "label": "测试连接"}
+    return {}
 
 
 def normalize_api_key(value: str | None) -> str:
