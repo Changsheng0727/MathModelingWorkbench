@@ -155,20 +155,25 @@ def build_artifact_status(root: Path, artifacts: object) -> dict[str, dict[str, 
 
 
 def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[str, object]:
-    total = len(statuses)
+    counted_statuses = {
+        key: item
+        for key, item in statuses.items()
+        if not item.get("generated_on_demand")
+    }
+    total = len(counted_statuses)
     available = sum(
         1
-        for item in statuses.values()
+        for item in counted_statuses.values()
         if item.get("available") is not False
         and item.get("exists") is not False
         and item.get("is_file") is not False
         and item.get("unsafe_path") is not True
     )
-    unsafe = sum(1 for item in statuses.values() if item.get("unsafe_path"))
-    size_bytes = sum(int(item.get("size_bytes") or 0) for item in statuses.values())
+    unsafe = sum(1 for item in counted_statuses.values() if item.get("unsafe_path"))
+    size_bytes = sum(int(item.get("size_bytes") or 0) for item in counted_statuses.values())
     modified = [
         (str(item.get("modified_at")), key, str(item.get("path") or ""))
-        for key, item in statuses.items()
+        for key, item in counted_statuses.items()
         if is_available_artifact(item) and item.get("modified_at")
     ]
     latest = max(modified) if modified else ("", "", "")
@@ -186,9 +191,9 @@ def summarize_artifact_status(statuses: dict[str, dict[str, object]]) -> dict[st
 
 def is_available_artifact(item: dict[str, object]) -> bool:
     return (
-        item.get("available") is not False
-        and item.get("exists") is not False
-        and item.get("is_file") is not False
+        item.get("available") is True
+        and item.get("exists") is True
+        and item.get("is_file") is True
         and not item.get("unsafe_path")
         and not item.get("generated_on_demand")
     )

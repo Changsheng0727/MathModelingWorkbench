@@ -3415,30 +3415,34 @@ function renderArtifacts(metadata, projectId) {
     grouped.get(group).push([key, label, path, status]);
   });
   const summaryHtml = renderArtifactSummary(artifactSummary);
+  const supportOnlyHint = Number(artifactSummary.total || 0)
+    ? ""
+    : '<p class="artifact-summary" data-status="warning">暂无已生成论文或结果文件；支撑材料包会在打开或下载时自动生成。</p>';
   const foldersHtml = Array.from(grouped.entries())
     .map(([group, groupItems], groupIndex) => {
       const links = groupItems
         .map(([key, label, path, status]) => renderArtifactItem(projectId, key, label, path, status))
         .join("");
       const folderId = `artifact-folder-${groupIndex}`;
+      const expanded = groupIndex === 0;
       const kinds = artifactFolderKinds(groupItems);
       const missing = groupItems.filter(([, , , status]) => status && (status.exists === false || status.is_file === false)).length;
       const summary = `${groupItems.length} 个文件${missing ? ` · ${missing} 个未生成` : kinds ? ` · ${kinds}` : ""}`;
       return `
         <section class="artifact-folder">
-          <button class="artifact-folder-button" type="button" data-artifact-folder="${escapeHtml(folderId)}" aria-expanded="false" aria-controls="${escapeHtml(folderId)}">
+          <button class="artifact-folder-button" type="button" data-artifact-folder="${escapeHtml(folderId)}" aria-expanded="${expanded ? "true" : "false"}" aria-controls="${escapeHtml(folderId)}">
             <span class="artifact-folder-mark" aria-hidden="true"></span>
             <span class="artifact-folder-copy">
               <strong>${escapeHtml(group)}</strong>
               <small>${escapeHtml(summary)}</small>
             </span>
           </button>
-          <div id="${escapeHtml(folderId)}" class="artifact-list" hidden>${links}</div>
+          <div id="${escapeHtml(folderId)}" class="artifact-list"${expanded ? "" : " hidden"}>${links}</div>
         </section>
       `;
     })
     .join("");
-  els.artifacts.innerHTML = `${summaryHtml}${foldersHtml}`;
+  els.artifacts.innerHTML = `${summaryHtml || supportOnlyHint}${foldersHtml}`;
 }
 
 function renderArtifactSummary(summary = {}) {
