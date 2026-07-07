@@ -1483,6 +1483,14 @@ function clearBatchPreflight() {
   state.batchPreflight = null;
 }
 
+function invalidateBatchPreflight(message = "选择已变化，请重新预检。") {
+  const hadPreflight = Boolean(state.batchPreflight);
+  clearBatchPreflight();
+  if (hadPreflight && message && els.batchProjectStatus) {
+    els.batchProjectStatus.textContent = message;
+  }
+}
+
 function currentFilteredProjects() {
   const projects = state.projects || [];
   const query = normalizeSearch(state.projectQuery);
@@ -1500,7 +1508,7 @@ async function startSelectedProjectsBatch() {
   }
   const preflight = currentBatchPreflight();
   if (preflight?.can_submit === false) {
-    els.batchProjectStatus.innerHTML = `${escapeHtml(preflight.summary || "没有可入队项目。")}${renderBatchSkippedItems(preflight.skipped || [])}`;
+    els.batchProjectStatus.innerHTML = `${escapeHtml(preflight.summary || "没有可入队项目。")}${renderBatchCheckedAt(preflight, "预检")}${renderBatchSkippedItems(preflight.skipped || [])}`;
     showToast("预检显示没有可入队项目，请先处理跳过项", "warning");
     updateProjectBatchControls();
     return;
@@ -1553,7 +1561,7 @@ async function startSelectedProjectsBatch() {
     const skipped = Array.isArray(batch.skipped) ? batch.skipped : [];
     const batchStatus = batch.status || (submitted.length ? "success" : "failed");
     const batchSummary = batch.summary || `批量入队完成：${batch.submitted_count || submitted.length} 个进入任务池。`;
-    els.batchProjectStatus.innerHTML = `${escapeHtml(batchSummary)}${renderBatchModeChips(batch)}${renderBatchSkippedItems(skipped)}`;
+    els.batchProjectStatus.innerHTML = `${escapeHtml(batchSummary)}${renderBatchCheckedAt(batch, "提交")}${renderBatchModeChips(batch)}${renderBatchSkippedItems(skipped)}`;
     showToast(
       batchStatus === "failed" ? "批量入队未提交任何项目" : batchSummary,
       batchStatus === "failed" ? "error" : batchStatus === "success" ? "success" : "warning",
@@ -1586,7 +1594,7 @@ async function previewSelectedProjectsBatch() {
     state.batchPreflight = { ...preflight, selection_key: batchSelectionKey() };
     const skipped = Array.isArray(preflight.skipped) ? preflight.skipped : [];
     const readyText = preflight.ready_count ? ` 可点击“批量入队”提交 ${preflight.ready_count} 个项目。` : "";
-    els.batchProjectStatus.innerHTML = `${escapeHtml(preflight.summary || "预检完成。")}${escapeHtml(readyText)}${renderBatchModeChips(preflight)}${renderBatchSkippedItems(skipped)}`;
+    els.batchProjectStatus.innerHTML = `${escapeHtml(preflight.summary || "预检完成。")}${escapeHtml(readyText)}${renderBatchCheckedAt(preflight, "预检")}${renderBatchModeChips(preflight)}${renderBatchSkippedItems(skipped)}`;
     showToast(preflight.summary || "批量预检完成", preflight.status === "failed" ? "error" : preflight.status === "success" ? "success" : "warning");
   } catch (error) {
     els.batchProjectStatus.textContent = `批量预检失败：${error.message}`;
@@ -1613,6 +1621,13 @@ function renderBatchModeChips(batch = {}) {
       ${resumeCount ? `<span data-mode="resume">断点继续 ${escapeHtml(resumeCount)}</span>` : ""}
     </span>
   `;
+}
+
+function renderBatchCheckedAt(batch = {}, label = "预检") {
+  if (!batch.checked_at) {
+    return "";
+  }
+  return `<span class="batch-checked-at">${escapeHtml(label)} ${escapeHtml(formatProgressTime(batch.checked_at))}</span>`;
 }
 
 function renderBatchSkippedItems(skipped = []) {
@@ -4896,7 +4911,7 @@ els.projectList?.addEventListener("change", (event) => {
   } else {
     state.selectedProjectIds.delete(projectId);
   }
-  clearBatchPreflight();
+  invalidateBatchPreflight();
   renderProjectList();
 });
 

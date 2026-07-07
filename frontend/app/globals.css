@@ -1148,6 +1148,19 @@ p {
   background: var(--primary-soft);
 }
 
+.batch-checked-at {
+  display: block;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .batch-skip-list {
   display: grid;
   gap: 6px;

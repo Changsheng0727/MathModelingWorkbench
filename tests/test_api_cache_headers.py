@@ -347,6 +347,7 @@ def test_auto_batch_result_reports_all_skipped_as_failed() -> None:
     assert batch["skipped_count"] == 2
     assert batch["actionable_skipped_count"] == 0
     assert batch["can_submit"] is False
+    assert batch["checked_at"]
     assert "未提交任何项目" in batch["summary"]
 
 
@@ -364,6 +365,7 @@ def test_auto_batch_result_reports_partial_submission_as_warning() -> None:
     assert batch["skipped_count"] == 1
     assert batch["actionable_skipped_count"] == 1
     assert batch["can_submit"] is True
+    assert batch["checked_at"]
     assert batch["start_count"] == 0
     assert batch["resume_count"] == 1
 
