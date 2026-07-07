@@ -204,6 +204,25 @@ def test_batch_llm_preflight_requires_recent_successful_test() -> None:
     ) == ""
 
 
+def test_auto_workflow_preflight_blocks_untested_llm_connection() -> None:
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        artifacts = root / "artifacts"
+        artifacts.mkdir()
+        main.save_json(artifacts / "analysis.json", {"recommended_problem": {"id": "A"}})
+
+        preflight = main.build_auto_workflow_preflight(
+            root,
+            meta={"final_problem": {"id": "A"}},
+            llm_settings={"configured": True, "connection_status": "untested", "last_test": {}},
+        )
+
+    assert preflight["can_start"] is False
+    assert preflight["guide_action"] == "test_llm"
+    assert preflight["action_label"] == "测试连接"
+    assert "成功连接测试记录" in preflight["detail"]
+
+
 def test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm() -> None:
     with TemporaryDirectory() as tmp:
         preflight = main.build_auto_workflow_preflight(
@@ -217,7 +236,7 @@ def test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm() -> No
     assert preflight["action_label"] == "填写接口"
 
 
-def test_auto_workflow_preflight_warns_for_stale_llm_test() -> None:
+def test_auto_workflow_preflight_blocks_stale_llm_test() -> None:
     with TemporaryDirectory() as tmp:
         root = Path(tmp)
         artifacts = root / "artifacts"
@@ -235,8 +254,8 @@ def test_auto_workflow_preflight_warns_for_stale_llm_test() -> None:
             },
         )
 
-    assert preflight["can_start"] is True
-    assert preflight["status"] == "warning"
+    assert preflight["can_start"] is False
+    assert preflight["status"] == "failed"
     assert preflight["guide_action"] == "test_llm"
     assert preflight["action_label"] == "测试连接"
 
@@ -294,8 +313,9 @@ if __name__ == "__main__":
     test_project_summary_focus_prioritizes_untested_llm_connection()
     test_project_readiness_guides_untested_llm_before_auto_start()
     test_batch_llm_preflight_requires_recent_successful_test()
+    test_auto_workflow_preflight_blocks_untested_llm_connection()
     test_auto_workflow_preflight_exposes_recovery_action_for_missing_llm()
-    test_auto_workflow_preflight_warns_for_stale_llm_test()
+    test_auto_workflow_preflight_blocks_stale_llm_test()
     test_auto_workflow_preflight_exposes_problem_selection_action()
     test_progress_polling_hint_is_fast_only_while_active()
     test_progress_live_quiet_seconds_reads_stream_status()

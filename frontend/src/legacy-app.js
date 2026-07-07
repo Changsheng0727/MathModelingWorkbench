@@ -694,7 +694,7 @@ function llmConnectionBlocker(settings = {}) {
   return "";
 }
 
-function llmBatchPreflightIssue(settings = {}) {
+function llmWorkflowPreflightIssue(settings = {}, actionLabel = "启动自动流程") {
   const blocker = llmConnectionBlocker(settings);
   if (blocker) {
     return blocker;
@@ -705,9 +705,13 @@ function llmBatchPreflightIssue(settings = {}) {
   }
   if (settings.connection_stale) {
     const age = settings.last_test_age_label || "较早";
-    return `最近一次成功连接测试在 ${age}，请先重新测试后再批量入队。`;
+    return `最近一次成功连接测试在 ${age}，请先重新测试后再${actionLabel}。`;
   }
   return "";
+}
+
+function llmBatchPreflightIssue(settings = {}) {
+  return llmWorkflowPreflightIssue(settings, "批量入队");
 }
 
 async function restoreInitialProject() {
@@ -2611,9 +2615,9 @@ function currentGuideStep(metadata = {}, analysis = null, experience = {}) {
   }
   if (state.llmSettings?.connection_stale) {
     const age = state.llmSettings?.last_test_age_label || "较早";
-    return guideStep(3, "重测大模型连接", `最近一次成功连接测试在 ${age}。仍可运行，但先重测更稳。`, [
+    return guideStep(3, "重测大模型连接", `最近一次成功连接测试在 ${age}。请先重新测试，再启动一键流程。`, [
       { id: "test_llm", label: "重新测试", primary: true },
-      { id: "start_auto", label: "继续运行" },
+      { id: "focus_llm", label: "检查设置" },
     ], "warning");
   }
   if (["failed", "completed_with_warnings", "cancelled", "requires_api_key"].includes(autoStatus)) {
@@ -5126,12 +5130,12 @@ async function runAutoWorkflow(
     els.autoWorkflowStatus.textContent = "请先在左侧大模型设置中填写接口密钥；大模型+代码自动解题不提供本地降级模式。";
     return;
   }
-  const llmBlocker = llmConnectionBlocker(settings);
+  const llmBlocker = llmWorkflowPreflightIssue(settings, resume ? "继续生成" : "启动自动流程");
   if (llmBlocker) {
     els.autoWorkflowStatus.textContent = `大模型连接未通过：${llmBlocker}`;
     scrollIntoViewIfPossible(els.llmSettingsForm);
     els.testLlmSettings?.focus();
-    showToast("请先重新测试大模型连接，再启动自动流程", "warning");
+    showToast("请先测试大模型连接，再启动自动流程", "warning");
     await refreshCurrentProjectDetail().catch(() => {});
     return;
   }

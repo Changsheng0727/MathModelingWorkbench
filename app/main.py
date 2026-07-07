@@ -2251,7 +2251,7 @@ def build_auto_jobs_response(*, include_overview: bool = False) -> dict:
     return response
 
 
-def llm_batch_preflight_issue(llm_settings: dict) -> str:
+def llm_workflow_preflight_issue(llm_settings: dict, action_label: str = "启动自动流程") -> str:
     if not llm_settings.get("configured"):
         return "请先配置并测试大模型接口。"
     if llm_settings.get("connection_blocked"):
@@ -2262,8 +2262,12 @@ def llm_batch_preflight_issue(llm_settings: dict) -> str:
         return llm_test_preflight_text(last_test)[1]
     if llm_settings.get("connection_stale"):
         age = str(llm_settings.get("last_test_age_label") or "较早").strip()
-        return f"最近一次成功连接测试在 {age}，请先重新测试后再批量入队。"
+        return f"最近一次成功连接测试在 {age}，请先重新测试后再{action_label}。"
     return ""
+
+
+def llm_batch_preflight_issue(llm_settings: dict) -> str:
+    return llm_workflow_preflight_issue(llm_settings, "批量入队")
 
 
 @app.post("/api/auto/batch/start")
@@ -2359,13 +2363,13 @@ def auto_workflow_preflight_blocker(root: Path, *, meta: dict | None = None, res
             "action_label": "填写接口",
             "tone": "warning",
         }
-    test_issue = llm_test_blocking_issue(llm_settings)
+    test_issue = llm_workflow_preflight_issue(llm_settings, "继续生成" if resume else "启动自动流程")
     if test_issue:
         return {
             "detail": test_issue,
             "guide_action": "test_llm",
             "action_label": "测试连接",
-            "tone": "failed",
+            "tone": "failed" if llm_settings.get("connection_blocked") else "warning",
         }
     analysis_path = root / "artifacts" / "analysis.json"
     if not analysis_path.exists():
@@ -2407,19 +2411,6 @@ def auto_workflow_preflight_issue(root: Path, *, meta: dict | None = None, resum
     return str(auto_workflow_preflight_blocker(root, meta=meta, resume=resume, llm_settings=llm_settings).get("detail") or "")
 
 
-def llm_test_blocking_issue(llm_settings: dict) -> str:
-    if llm_settings.get("connection_blocked"):
-        issue = str(llm_settings.get("connection_issue") or "").strip()
-        return f"上次大模型连接测试失败：{issue}" if issue else "上次大模型连接测试失败，请在左侧重新测试连接。"
-    last_test = llm_settings.get("last_test") if isinstance(llm_settings.get("last_test"), dict) else {}
-    if not last_test.get("tested_at") or last_test.get("ok"):
-        return ""
-    diagnosis = last_test.get("diagnosis") if isinstance(last_test.get("diagnosis"), dict) else {}
-    reason = diagnosis.get("label") or last_test.get("message") or "连接测试失败"
-    action = diagnosis.get("suggested_action") or "请在左侧重新测试连接。"
-    return f"上次大模型连接测试失败：{reason}；{action}"
-
-
 def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_settings: dict | None = None) -> dict:
     metadata = meta if isinstance(meta, dict) else load_json(root / "metadata.json")
     llm_settings = llm_settings if isinstance(llm_settings, dict) else get_llm_settings()
@@ -2456,31 +2447,6 @@ def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_sett
             "action_label": start_blocker.get("action_label") or "",
             "action_tone": start_blocker.get("tone") or "warning",
         }
-    last_test = llm_settings.get("last_test") if isinstance(llm_settings.get("last_test"), dict) else {}
-    if not last_test.get("ok"):
-        label, detail = llm_test_preflight_text(last_test)
-        return {
-            "status": "warning",
-            "can_start": True,
-            "can_resume": False,
-            "label": label,
-            "detail": detail,
-            "guide_action": "test_llm",
-            "action_label": "测试连接",
-            "action_tone": "warning",
-        }
-    if llm_settings.get("connection_stale"):
-        age = str(llm_settings.get("last_test_age_label") or "较早").strip()
-        return {
-            "status": "warning",
-            "can_start": True,
-            "can_resume": False,
-            "label": "建议重新测试大模型连接",
-            "detail": f"最近一次成功连接测试在 {age}；仍可开始，但先重测能减少中途失败。",
-            "guide_action": "test_llm",
-            "action_label": "测试连接",
-            "action_tone": "warning",
-        }
     return {
         "status": "success",
         "can_start": True,
@@ -2492,7 +2458,7 @@ def build_auto_workflow_preflight(root: Path, meta: dict | None = None, llm_sett
 
 def llm_test_preflight_text(last_test: dict) -> tuple[str, str]:
     if not last_test.get("tested_at"):
-        return "建议先测试大模型连接", "当前配置还没有成功连接测试记录；仍可开始，但先测试能减少中途失败。"
+        return "建议先测试大模型连接", "当前配置还没有成功连接测试记录；请先测试连接，确认接口、模型名、Key 权限和余额可用。"
     diagnosis = last_test.get("diagnosis") if isinstance(last_test.get("diagnosis"), dict) else {}
     reason = diagnosis.get("label") or last_test.get("message") or "连接测试失败"
     action = diagnosis.get("suggested_action") or "请检查接口地址、模型名、API Key 权限和余额。"
